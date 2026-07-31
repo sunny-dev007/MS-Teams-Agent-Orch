@@ -1,0 +1,10 @@
+## Task Description
+{task_description}
+
+## Code Changes
+{changes_summary}
+
+## File Diffs
+{file_diffs}
+
+Review these changes and provide your assessment as JSON.

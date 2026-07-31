@@ -1,0 +1,13 @@
+## Task Description
+{task_description}
+
+## Repository Structure
+{repo_tree}
+
+## Relevant File Contents
+{file_contents}
+
+## Review Feedback (if any)
+{review_feedback}
+
+Generate the code changes as a JSON array. Only include files that need to be modified or created.

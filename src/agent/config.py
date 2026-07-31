@@ -1,0 +1,54 @@
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # Azure OpenAI
+    azure_openai_endpoint: str = ""
+    azure_openai_api_key: SecretStr = SecretStr("")
+    openai_api_key: SecretStr = SecretStr("")
+    azure_openai_deployment: str = "gpt-4o"
+    azure_openai_api_version: str = "2024-10-21"
+
+    @property
+    def effective_api_key(self) -> str:
+        key = self.azure_openai_api_key.get_secret_value()
+        if not key:
+            key = self.openai_api_key.get_secret_value()
+        return key
+
+    # WhatsApp (Meta Cloud API)
+    whatsapp_verify_token: str = ""
+    whatsapp_access_token: SecretStr = SecretStr("")
+    whatsapp_phone_number_id: str = ""
+    whatsapp_app_secret: SecretStr = SecretStr("")
+
+    # Gmail / Google
+    google_client_id: str = ""
+    google_client_secret: SecretStr = SecretStr("")
+    google_refresh_token: SecretStr = SecretStr("")
+    gmail_watch_label: str = "INBOX"
+    sender_display_name: str = "Sunny Kushwaha"
+
+    # GitHub
+    github_token: SecretStr = SecretStr("")
+    github_default_owner: str = ""
+
+    # Azure DevOps
+    azdo_org_url: str = ""
+    azdo_pat: SecretStr = SecretStr("")
+
+    # App
+    database_url: str = "sqlite+aiosqlite:///./agent.db"
+    workspace_dir: str = "./workspaces"
+    log_level: str = "INFO"
+    allowed_phone_numbers: list[str] = []
+
+
+settings = Settings()

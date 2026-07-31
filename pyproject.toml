@@ -1,0 +1,44 @@
+[project]
+name = "my-personal-ai-agent"
+version = "0.1.0"
+description = "AI-driven multi-agent platform with WhatsApp interface for automated code development workflows"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "langgraph>=0.2",
+    "langchain-openai>=0.2",
+    "langchain-core>=0.3",
+    "aiosqlite>=0.20",
+    "sqlalchemy[asyncio]>=2.0",
+    "google-api-python-client>=2.150",
+    "google-auth>=2.35",
+    "google-auth-oauthlib>=1.2",
+    "gitpython>=3.1",
+    "httpx>=0.27",
+    "pydantic-settings>=2.5",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "httpx>=0.27",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
