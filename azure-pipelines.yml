@@ -85,41 +85,25 @@ stages:
     jobs:
       - job: Deploy
         displayName: "Deploy whatsapp-ai-agent-sunny"
+        timeoutInMinutes: 90
         steps:
           - download: current
             artifact: drop
             displayName: "Download drop artifact"
 
-          - task: AzureWebApp@1
-            displayName: "Deploy to Azure Web App"
-            inputs:
-              azureSubscription: "$(azureSubscription)"
-              appType: webAppLinux
-              appName: "$(appName)"
-              package: "$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
-              runtimeStack: "PYTHON|3.12"
-              # Inline command: Oryx activates antenv and runs from extracted app root.
-              # Use --app-dir src (src-layout). Do not hardcode /home/site/wwwroot/src —
-              # Oryx may extract to /tmp/<id> when output is compressed.
-              startUpCommand: "python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --app-dir src"
-
+          # AzureWebApp@1 times out (~10m) while Oryx remote-build is still running.
+          # Stop the site, deploy with a long wait via Azure CLI, then start + verify.
           - task: AzureCLI@2
-            displayName: "Enable Always On + webhook-ready settings"
+            displayName: "Stop app and prepare deploy settings"
             inputs:
               azureSubscription: "$(azureSubscription)"
               scriptType: bash
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                az webapp config set \
+                az webapp stop \
                   --resource-group "$(resourceGroup)" \
-                  --name "$(appName)" \
-                  --always-on true \
-                  --startup-file "python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --app-dir src"
-                az webapp update \
-                  --resource-group "$(resourceGroup)" \
-                  --name "$(appName)" \
-                  --https-only true
+                  --name "$(appName)"
                 az webapp config appsettings set \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
@@ -128,15 +112,66 @@ stages:
                     ENABLE_ORYX_BUILD=true \
                     ORYX_DISABLE_OUTPUT_COPY_COMPRESSION=true \
                     WEBSITES_PORT=8000 \
-                    WEBSITES_CONTAINER_START_TIME_LIMIT=600
-                # Remove stale absolute PYTHONPATH that breaks Oryx /tmp extraction layout
+                    WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
+                    GIT_PYTHON_REFRESH=quiet
                 az webapp config appsettings delete \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
                   --setting-names PYTHONPATH \
                   || true
-                az webapp restart \
+
+          - task: AzureCLI@2
+            displayName: "ZIP deploy (wait for Oryx build)"
+            inputs:
+              azureSubscription: "$(azureSubscription)"
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                ZIP="$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
+                test -f "$ZIP"
+                echo "Deploying $ZIP"
+                # config-zip waits for remote build; timeout is seconds
+                az webapp deployment source config-zip \
+                  --resource-group "$(resourceGroup)" \
+                  --name "$(appName)" \
+                  --src "$ZIP" \
+                  --timeout 1800
+
+          - task: AzureCLI@2
+            displayName: "Start app, set startup, verify health"
+            inputs:
+              azureSubscription: "$(azureSubscription)"
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                set -euo pipefail
+                STARTUP='python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --app-dir src'
+                az webapp config set \
+                  --resource-group "$(resourceGroup)" \
+                  --name "$(appName)" \
+                  --always-on true \
+                  --startup-file "$STARTUP"
+                az webapp update \
+                  --resource-group "$(resourceGroup)" \
+                  --name "$(appName)" \
+                  --https-only true
+                az webapp start \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)"
-                echo "Webhook URL: https://$(appName).azurewebsites.net/webhooks/whatsapp"
-                echo "Health URL:  https://$(appName).azurewebsites.net/health"
+
+                echo "Waiting for health..."
+                for i in $(seq 1 24); do
+                  CODE=$(curl -sS --max-time 20 -o /tmp/health.json -w "%{http_code}" \
+                    "https://$(appName).azurewebsites.net/health" || echo 000)
+                  echo "attempt $i -> HTTP $CODE"
+                  if [ "$CODE" = "200" ]; then
+                    cat /tmp/health.json
+                    echo
+                    echo "Webhook URL: https://$(appName).azurewebsites.net/webhooks/whatsapp"
+                    exit 0
+                  fi
+                  sleep 10
+                done
+                echo "Health check failed after deploy"
+                exit 1
