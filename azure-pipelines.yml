@@ -98,7 +98,9 @@ stages:
               appName: "$(appName)"
               package: "$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
               runtimeStack: "PYTHON|3.12"
-              startUpCommand: "bash /home/site/wwwroot/infra/startup.sh"
+              # Inline command: Oryx activates antenv. Avoid custom script paths when
+              # Oryx may compress wwwroot (custom bash scripts then exit 127).
+              startUpCommand: "python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000"
 
           - task: AzureCLI@2
             displayName: "Enable Always On + webhook-ready settings"
@@ -112,7 +114,7 @@ stages:
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
                   --always-on true \
-                  --startup-file "bash /home/site/wwwroot/infra/startup.sh"
+                  --startup-file "python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000"
                 az webapp update \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
@@ -123,6 +125,7 @@ stages:
                   --settings \
                     SCM_DO_BUILD_DURING_DEPLOYMENT=true \
                     ENABLE_ORYX_BUILD=true \
+                    ORYX_DISABLE_OUTPUT_COPY_COMPRESSION=true \
                     WEBSITES_PORT=8000 \
                     WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
                     PYTHONPATH=/home/site/wwwroot/src
