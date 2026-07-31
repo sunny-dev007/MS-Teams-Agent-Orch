@@ -1,7 +1,5 @@
 from pathlib import Path
 
-from git import Repo
-
 from agent.agents.state import AgentState
 from agent.core.logging import get_logger
 from agent.services.git_ops import commit_and_push
@@ -11,6 +9,8 @@ logger = get_logger(__name__)
 
 
 async def deploy_code(state: AgentState) -> AgentState:
+    from git import Repo
+
     task_id = state.get("task_id", "unknown")
     workspace_path = state.get("workspace_path", "")
     branch_name = state.get("branch_name", "")

@@ -1,13 +1,26 @@
+from __future__ import annotations
+
 import os
 import shutil
 from pathlib import Path
-
-from git import Repo
+from typing import TYPE_CHECKING
 
 from agent.config import settings
 from agent.core.logging import get_logger
 
+if TYPE_CHECKING:
+    from git import Repo
+
 logger = get_logger(__name__)
+
+
+def _import_repo():
+    # Azure App Service Python image has no system git; keep import lazy so
+    # general WhatsApp chat works without GitPython initializing at startup.
+    os.environ.setdefault("GIT_PYTHON_REFRESH", "quiet")
+    from git import Repo
+
+    return Repo
 
 
 def get_workspace_path(task_id: str) -> Path:
@@ -17,6 +30,7 @@ def get_workspace_path(task_id: str) -> Path:
 
 
 def clone_repo(repo_url: str, task_id: str, branch: str = "main") -> tuple[Repo, Path]:
+    Repo = _import_repo()
     workspace = get_workspace_path(task_id)
     repo_dir = workspace / "repo"
 
