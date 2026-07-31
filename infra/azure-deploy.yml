@@ -99,7 +99,7 @@ stages:
               appName: "$(appName)"
               package: "$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
               runtimeStack: "PYTHON|3.12"
-              startUpCommand: "bash infra/startup.sh"
+              startUpCommand: "bash /home/site/wwwroot/infra/startup.sh"
 
           - task: AzureCLI@2
             displayName: "Enable Always On + webhook-ready settings"
@@ -113,7 +113,7 @@ stages:
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
                   --always-on true \
-                  --startup-file "bash infra/startup.sh"
+                  --startup-file "bash /home/site/wwwroot/infra/startup.sh"
                 az webapp update \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
@@ -125,6 +125,7 @@ stages:
                     SCM_DO_BUILD_DURING_DEPLOYMENT=true \
                     ENABLE_ORYX_BUILD=true \
                     WEBSITES_PORT=8000 \
+                    WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
                     PYTHONPATH=/home/site/wwwroot/src
                 az webapp restart \
                   --resource-group "$(resourceGroup)" \
