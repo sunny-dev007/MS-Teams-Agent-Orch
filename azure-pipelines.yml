@@ -98,9 +98,10 @@ stages:
               appName: "$(appName)"
               package: "$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
               runtimeStack: "PYTHON|3.12"
-              # Inline command: Oryx activates antenv. Avoid custom script paths when
-              # Oryx may compress wwwroot (custom bash scripts then exit 127).
-              startUpCommand: "python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000"
+              # Inline command: Oryx activates antenv and runs from extracted app root.
+              # Use --app-dir src (src-layout). Do not hardcode /home/site/wwwroot/src —
+              # Oryx may extract to /tmp/<id> when output is compressed.
+              startUpCommand: "python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --app-dir src"
 
           - task: AzureCLI@2
             displayName: "Enable Always On + webhook-ready settings"
@@ -114,7 +115,7 @@ stages:
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
                   --always-on true \
-                  --startup-file "python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000"
+                  --startup-file "python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --app-dir src"
                 az webapp update \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
@@ -127,8 +128,13 @@ stages:
                     ENABLE_ORYX_BUILD=true \
                     ORYX_DISABLE_OUTPUT_COPY_COMPRESSION=true \
                     WEBSITES_PORT=8000 \
-                    WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
-                    PYTHONPATH=/home/site/wwwroot/src
+                    WEBSITES_CONTAINER_START_TIME_LIMIT=600
+                # Remove stale absolute PYTHONPATH that breaks Oryx /tmp extraction layout
+                az webapp config appsettings delete \
+                  --resource-group "$(resourceGroup)" \
+                  --name "$(appName)" \
+                  --setting-names PYTHONPATH \
+                  || true
                 az webapp restart \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)"
