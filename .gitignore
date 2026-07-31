@@ -8,6 +8,9 @@ build/
 
 .env
 *.db
+*.db-shm
+*.db-wal
+tmp/
 workspaces/
 
 .venv/

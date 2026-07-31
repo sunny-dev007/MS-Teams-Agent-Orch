@@ -1,5 +1,4 @@
-# Kept in sync with /azure-pipelines.yml (Azure DevOps entrypoint).
-# Prefer editing azure-pipelines.yml at repo root.
+# CI/CD for WhatsApp AI Agent → Azure App Service (whatsapp-ai-agent-sunny)
 trigger:
   branches:
     include:
