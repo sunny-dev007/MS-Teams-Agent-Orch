@@ -20,9 +20,19 @@ async def handle_whatsapp_message(parsed: dict) -> None:
         )
     except Exception:
         logger.exception("Task %s failed", task_id)
-        from agent.services.whatsapp import send_message
+        try:
+            from agent.services.whatsapp import send_message
 
-        await send_message(parsed["phone"], f"Something went wrong with task {task_id}.")
+            await send_message(
+                parsed["phone"],
+                f"Something went wrong with task {task_id}. Please try again.",
+            )
+        except Exception:
+            logger.exception(
+                "Also failed to send error reply for task %s to %s",
+                task_id,
+                parsed["phone"],
+            )
 
 
 async def handle_gmail_notification(history_id: str) -> None:
