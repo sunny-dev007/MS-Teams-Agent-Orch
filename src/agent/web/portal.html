@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sunny Portal — WhatsApp AI Agent</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #121a2b;
+      --text: #e8eefc;
+      --muted: #9db0d0;
+      --accent: #3dd6c6;
+      --accent-2: #7aa7ff;
+      --line: #24314d;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1000px 500px at 10% -10%, #1a3358 0%, transparent 55%),
+        radial-gradient(800px 400px at 100% 0%, #16352f 0%, transparent 50%),
+        var(--bg);
+    }
+    main {
+      width: min(720px, 100%);
+      margin: 0 auto;
+      padding: 2rem 1.25rem 3rem;
+    }
+    .brand {
+      font-size: clamp(1.8rem, 5vw, 2.4rem);
+      letter-spacing: -0.03em;
+      margin: 0 0 0.35rem;
+    }
+    .tagline {
+      color: var(--muted);
+      margin: 0 0 1.5rem;
+      line-height: 1.5;
+    }
+    .panel {
+      background: color-mix(in srgb, var(--panel) 92%, black);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 1.1rem 1.15rem;
+      margin: 0.9rem 0;
+    }
+    h2 {
+      margin: 0 0 0.75rem;
+      font-size: 1.05rem;
+      color: var(--accent-2);
+    }
+    ul {
+      margin: 0;
+      padding-left: 1.1rem;
+      color: var(--text);
+      line-height: 1.7;
+    }
+    .meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .chip {
+      border: 1px solid var(--line);
+      background: #0f1728;
+      color: var(--accent);
+      border-radius: 999px;
+      padding: 0.35rem 0.75rem;
+      font-size: 0.85rem;
+    }
+    a { color: var(--accent); }
+    .hint {
+      color: var(--muted);
+      font-size: 0.92rem;
+      line-height: 1.55;
+    }
+    code {
+      background: #1a2438;
+      padding: 0.1rem 0.35rem;
+      border-radius: 6px;
+    }
+    /* Feature: portal-notes — WhatsApp agent can add items under #feature-list */
+  </style>
+</head>
+<body>
+  <main>
+    <p class="chip" id="portal-version">portal v0.1.0</p>
+    <h1 class="brand">Sunny Portal</h1>
+    <p class="tagline">
+      Personal control surface for <strong>Sunny's WhatsApp AI Agent</strong>.
+      Edit this page through WhatsApp → Azure DevOps → Approve → live deploy.
+    </p>
+
+    <div class="meta">
+      <span class="chip">Azure DevOps E2E</span>
+      <span class="chip">Repo: web.Whatsapp-AI-Agent</span>
+      <span class="chip">Live App Service</span>
+    </div>
+
+    <section class="panel">
+      <h2>Live links</h2>
+      <ul>
+        <li><a href="/portal">This portal</a></li>
+        <li><a href="/health">Agent health</a></li>
+        <li><a href="/docs">API docs</a> (if enabled)</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Features</h2>
+      <ul id="feature-list">
+        <li>WhatsApp-driven coding with human approval</li>
+        <li>GitHub sample app live deploy</li>
+        <li>Azure DevOps portal page (this page)</li>
+      </ul>
+    </section>
+
+    <section class="panel">
+      <h2>Try via WhatsApp</h2>
+      <p class="hint">
+        Say <code>check my repos</code> → <code>2</code> (Azure DevOps) →
+        <code>Project-NIT</code> → <code>web.Whatsapp-AI-Agent</code>, then ask for a
+        small UI change (for example: add a feature bullet, or bump the portal version).
+        Review the preview, then reply <code>Approve</code> to merge and redeploy.
+      </p>
+    </section>
+  </main>
+</body>
+</html>

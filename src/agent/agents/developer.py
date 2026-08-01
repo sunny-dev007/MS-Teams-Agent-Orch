@@ -36,7 +36,17 @@ async def develop_code(state: AgentState) -> AgentState:
             "notification_text": "No repository URL was provided. Please specify a repo.",
         }
 
-    owner, repo_name = parse_repo_url(repo_url)
+    owner, repo_name = "", ""
+    if "dev.azure.com" in repo_url or "visualstudio.com" in repo_url:
+        try:
+            from agent.services.git_ops import _parse_azdo_url
+
+            _, project, repo_name = _parse_azdo_url(repo_url)
+            owner = project
+        except Exception:
+            owner, repo_name = parse_repo_url(repo_url)
+    else:
+        owner, repo_name = parse_repo_url(repo_url)
     branch_name = f"agent/{task_id}"
     provider = state.get("repo_provider") or (
         "azure_devops"
@@ -50,7 +60,11 @@ async def develop_code(state: AgentState) -> AgentState:
         if iteration == 0:
             create_branch(repo, branch_name)
         else:
-            repo.git.checkout(branch_name)
+            # GitPython checkout, or no-op for HTTP workspace (files already on disk)
+            if hasattr(repo, "git"):
+                repo.git.checkout(branch_name)
+            else:
+                create_branch(repo, branch_name)
 
         tree = get_repo_tree(repo_dir)
         relevant_files = _read_relevant_files(repo_dir)
@@ -102,6 +116,14 @@ async def develop_code(state: AgentState) -> AgentState:
             "repo_provider": provider,
             "workspace_path": str(repo_dir),
             "notification_text": changes_summary,
+            **(
+                {
+                    "azdo_project": getattr(repo, "azdo_project", "") or state.get("azdo_project", ""),
+                    "azdo_repo_id": getattr(repo, "azdo_repo_id", "") or state.get("azdo_repo_id", ""),
+                }
+                if provider == "azure_devops"
+                else {}
+            ),
         }
 
     except Exception as e:

@@ -44,6 +44,22 @@ class Settings(BaseSettings):
     azdo_org_url: str = ""
     azdo_pat: SecretStr = SecretStr("")
 
+    # Demo sample app (GitHub phone-browser live preview after WhatsApp APPROVE)
+    sample_app_name: str = "personal-task-api-sunny"
+    sample_app_url: str = "https://personal-task-api-sunny.azurewebsites.net"
+    sample_app_resource_group: str = "ai-agent-rg"
+    sample_app_github_repo: str = "personal-task-api"
+    sample_app_publish_user: str = ""
+    sample_app_publish_password: SecretStr = SecretStr("")
+
+    # Azure DevOps demo target — same agent App Service + portal page E2E
+    azdo_demo_project: str = "Project-NIT"
+    azdo_demo_repo: str = "web.Whatsapp-AI-Agent"
+    agent_app_name: str = "whatsapp-ai-agent-sunny"
+    agent_app_url: str = "https://whatsapp-ai-agent-sunny.azurewebsites.net"
+    agent_app_publish_user: str = ""
+    agent_app_publish_password: SecretStr = SecretStr("")
+
     # App
     database_url: str = "sqlite+aiosqlite:///./agent.db"
     workspace_dir: str = "./workspaces"
