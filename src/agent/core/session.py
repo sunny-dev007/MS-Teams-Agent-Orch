@@ -2,9 +2,13 @@ import datetime
 from typing import Any
 
 from sqlalchemy import JSON, DateTime, String, func, select
+from sqlalchemy.exc import OperationalError, ProgrammingError
 from sqlalchemy.orm import Mapped, mapped_column
 
-from agent.models.db import Base, async_session
+from agent.core.logging import get_logger
+from agent.models.db import Base, async_session, ensure_db_schema
+
+logger = get_logger(__name__)
 
 
 class ConversationSession(Base):
@@ -19,17 +23,42 @@ class ConversationSession(Base):
     )
 
 
+def _empty_session(phone: str) -> dict[str, Any]:
+    return {"phone": phone, "awaiting": None, "provider": None, "data": {}}
+
+
+async def _with_schema_retry(op_name: str, coro_factory):
+    """Run a DB op; if tables are missing after deploy, create schema and retry once."""
+    try:
+        return await coro_factory()
+    except (OperationalError, ProgrammingError) as e:
+        msg = str(e).lower()
+        if "no such table" not in msg and "does not exist" not in msg:
+            raise
+        logger.warning("%s hit missing schema (%s) — ensuring tables and retrying", op_name, e)
+        await ensure_db_schema()
+        return await coro_factory()
+
+
 async def get_session(phone: str) -> dict[str, Any]:
-    async with async_session() as db:
-        row = await db.get(ConversationSession, phone)
-        if not row:
-            return {"phone": phone, "awaiting": None, "provider": None, "data": {}}
-        return {
-            "phone": row.phone,
-            "awaiting": row.awaiting,
-            "provider": row.provider,
-            "data": row.data_json or {},
-        }
+    async def _read() -> dict[str, Any]:
+        async with async_session() as db:
+            row = await db.get(ConversationSession, phone)
+            if not row:
+                return _empty_session(phone)
+            return {
+                "phone": row.phone,
+                "awaiting": row.awaiting,
+                "provider": row.provider,
+                "data": row.data_json or {},
+            }
+
+    try:
+        return await _with_schema_retry("get_session", _read)
+    except Exception:
+        # Never break WhatsApp hello / planner on transient DB issues
+        logger.exception("get_session failed for %s — returning empty session", phone)
+        return _empty_session(phone)
 
 
 async def save_session(
@@ -41,56 +70,73 @@ async def save_session(
     merge_data: bool = True,
     clear_awaiting: bool = False,
 ) -> None:
-    async with async_session() as db:
-        row = await db.get(ConversationSession, phone)
-        if row is None:
-            row = ConversationSession(phone=phone, data_json={})
-            db.add(row)
+    async def _write() -> None:
+        async with async_session() as db:
+            row = await db.get(ConversationSession, phone)
+            if row is None:
+                row = ConversationSession(phone=phone, data_json={})
+                db.add(row)
 
-        if clear_awaiting:
-            row.awaiting = None
-        elif awaiting is not None:
-            row.awaiting = awaiting
+            if clear_awaiting:
+                row.awaiting = None
+            elif awaiting is not None:
+                row.awaiting = awaiting
 
-        if provider is not None:
-            row.provider = provider
+            if provider is not None:
+                row.provider = provider
 
-        if data is not None:
-            if merge_data and row.data_json:
-                merged = dict(row.data_json)
-                merged.update(data)
-                row.data_json = merged
-            else:
-                row.data_json = data
+            if data is not None:
+                if merge_data and row.data_json:
+                    merged = dict(row.data_json)
+                    merged.update(data)
+                    row.data_json = merged
+                else:
+                    row.data_json = data
 
-        await db.commit()
+            await db.commit()
+
+    await _with_schema_retry("save_session", _write)
 
 
 async def clear_session(phone: str) -> None:
-    async with async_session() as db:
-        row = await db.get(ConversationSession, phone)
-        if row:
-            row.awaiting = None
-            row.provider = None
-            row.data_json = {}
-            await db.commit()
+    async def _clear() -> None:
+        async with async_session() as db:
+            row = await db.get(ConversationSession, phone)
+            if row:
+                row.awaiting = None
+                row.provider = None
+                row.data_json = {}
+                await db.commit()
+
+    try:
+        await _with_schema_retry("clear_session", _clear)
+    except Exception:
+        logger.exception("clear_session failed for %s", phone)
 
 
 async def list_recent_task_summaries(limit: int = 5) -> list[dict]:
     from agent.models.task import Task
 
-    async with async_session() as db:
-        result = await db.execute(
-            select(Task).order_by(Task.updated_at.desc()).limit(limit)
-        )
-        rows = result.scalars().all()
-        return [
-            {
-                "id": t.id,
-                "status": t.status,
-                "intent": t.intent,
-                "repo_url": t.repo_url,
-                "pr_url": t.pr_url,
-            }
-            for t in rows
-        ]
+    async def _list() -> list[dict]:
+        async with async_session() as db:
+            result = await db.execute(
+                select(Task).order_by(Task.updated_at.desc()).limit(limit)
+            )
+            rows = result.scalars().all()
+            return [
+                {
+                    "id": t.id,
+                    "status": t.status,
+                    "intent": t.intent,
+                    "repo_url": t.repo_url,
+                    "pr_url": t.pr_url,
+                }
+                for t in rows
+            ]
+
+    try:
+        return await _with_schema_retry("list_recent_task_summaries", _list)
+    except Exception:
+        logger.exception("list_recent_task_summaries failed")
+        return []
+
