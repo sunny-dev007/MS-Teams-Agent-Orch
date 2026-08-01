@@ -1,4 +1,12 @@
 # CI/CD for WhatsApp AI Agent → Azure App Service (whatsapp-ai-agent-sunny)
+#
+# Architecture (fast path):
+#   1) Build stage installs deps ONCE in the pipeline agent into .python_packages
+#   2) Deploy ships a lean zip with prebuilt site-packages
+#   3) App Service Oryx remote-build is OFF (this was the 10–15+ min "Starting the site..." wait)
+#   4) Deploy is async; pipeline only waits on /health (not az CLI site-start polling)
+#
+# Target evolution (Phase 2): ACR + Linux container App Service — deploy becomes image pull (~2–4 min).
 trigger:
   branches:
     include:
@@ -17,7 +25,7 @@ variables:
 
 stages:
   - stage: Build
-    displayName: "Build & Test"
+    displayName: "Build & Test (prebuild deps)"
     jobs:
       - job: Build
         displayName: "Build package"
@@ -35,7 +43,7 @@ stages:
               python -m pip install --upgrade pip
               pip install -r requirements.txt
               pip install .
-            displayName: "Install dependencies"
+            displayName: "Install deps for tests"
 
           - script: |
               set -euo pipefail
@@ -44,6 +52,7 @@ stages:
             displayName: "Run tests"
             continueOnError: true
 
+          # Prebuild site-packages for App Service — eliminates Oryx pip install on the server.
           - script: |
               set -euo pipefail
               STAGE="$(Build.ArtifactStagingDirectory)/app"
@@ -62,8 +71,25 @@ stages:
                 --exclude='*.pyc' \
                 --exclude='.DS_Store' \
                 --exclude='*.egg-info/' \
+                --exclude='sample-apps/' \
+                --exclude='tests/' \
+                --exclude='docs/' \
+                --exclude='*.pdf' \
+                --exclude='test.db*' \
                 "$(Build.SourcesDirectory)/" "$STAGE/"
-            displayName: "Stage deploy files"
+
+              python -m pip install --upgrade pip
+              python -m pip install \
+                --target "$STAGE/.python_packages/lib/site-packages" \
+                -r "$STAGE/requirements.txt"
+              python -m pip install \
+                --target "$STAGE/.python_packages/lib/site-packages" \
+                --no-deps \
+                "$STAGE"
+
+              echo "Package size:"
+              du -sh "$STAGE" "$STAGE/.python_packages" || true
+            displayName: "Stage lean app + prebuilt .python_packages"
 
           - task: ArchiveFiles@2
             displayName: "Create deployment zip"
@@ -79,49 +105,47 @@ stages:
             displayName: "Publish drop artifact"
 
   - stage: Deploy
-    displayName: "Deploy to Azure App Service"
+    displayName: "Deploy (no Oryx / health-gated)"
     dependsOn: Build
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - job: Deploy
         displayName: "Deploy whatsapp-ai-agent-sunny"
-        timeoutInMinutes: 90
+        timeoutInMinutes: 30
         steps:
           - download: current
             artifact: drop
             displayName: "Download drop artifact"
 
-          # AzureWebApp@1 times out (~10m) while Oryx remote-build is still running.
-          # Stop the site, deploy with a long wait via Azure CLI, then start + verify.
           - task: AzureCLI@2
-            displayName: "Stop app and prepare deploy settings"
+            displayName: "Disable remote Oryx build + set startup"
             inputs:
               azureSubscription: "$(azureSubscription)"
               scriptType: bash
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                az webapp stop \
-                  --resource-group "$(resourceGroup)" \
-                  --name "$(appName)"
+                # Do NOT stop the site — stop→start is a major reason for long "Starting the site..." waits.
                 az webapp config appsettings set \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
                   --settings \
-                    SCM_DO_BUILD_DURING_DEPLOYMENT=true \
-                    ENABLE_ORYX_BUILD=true \
-                    ORYX_DISABLE_OUTPUT_COPY_COMPRESSION=true \
+                    SCM_DO_BUILD_DURING_DEPLOYMENT=false \
+                    ENABLE_ORYX_BUILD=false \
                     WEBSITES_PORT=8000 \
-                    WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
-                    GIT_PYTHON_REFRESH=quiet
-                az webapp config appsettings delete \
+                    WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
+                    GIT_PYTHON_REFRESH=quiet \
+                    PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages:/home/site/wwwroot/src"
+
+                STARTUP='python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --app-dir src'
+                az webapp config set \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
-                  --setting-names PYTHONPATH \
-                  || true
+                  --always-on true \
+                  --startup-file "$STARTUP"
 
           - task: AzureCLI@2
-            displayName: "ZIP deploy (wait for Oryx build)"
+            displayName: "ZIP deploy async (no site-start wait)"
             inputs:
               azureSubscription: "$(azureSubscription)"
               scriptType: bash
@@ -130,48 +154,54 @@ stages:
                 set -euo pipefail
                 ZIP="$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
                 test -f "$ZIP"
-                echo "Deploying $ZIP"
-                # config-zip waits for remote build; timeout is seconds
-                az webapp deployment source config-zip \
+                echo "Deploying $ZIP (async; health poll owns success)"
+                # Avoid config-zip --timeout 1800 which blocks 10–15m on "Starting the site..."
+                az webapp deploy \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
-                  --src "$ZIP" \
-                  --timeout 1800
+                  --src-path "$ZIP" \
+                  --type zip \
+                  --async true \
+                  || az webapp deployment source config-zip \
+                       --resource-group "$(resourceGroup)" \
+                       --name "$(appName)" \
+                       --src "$ZIP" \
+                       --timeout 180
 
           - task: AzureCLI@2
-            displayName: "Start app, set startup, verify health"
+            displayName: "Verify /health (success gate)"
             inputs:
               azureSubscription: "$(azureSubscription)"
               scriptType: bash
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                STARTUP='python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --app-dir src'
-                az webapp config set \
-                  --resource-group "$(resourceGroup)" \
-                  --name "$(appName)" \
-                  --always-on true \
-                  --startup-file "$STARTUP"
-                az webapp update \
-                  --resource-group "$(resourceGroup)" \
-                  --name "$(appName)" \
-                  --https-only true
                 az webapp start \
                   --resource-group "$(resourceGroup)" \
-                  --name "$(appName)"
+                  --name "$(appName)" || true
 
-                echo "Waiting for health..."
-                for i in $(seq 1 24); do
-                  CODE=$(curl -sS --max-time 20 -o /tmp/health.json -w "%{http_code}" \
+                echo "Waiting for health (max ~6 minutes)..."
+                for i in $(seq 1 36); do
+                  CODE=$(curl -sS --max-time 15 -o /tmp/health.json -w "%{http_code}" \
                     "https://$(appName).azurewebsites.net/health" || echo 000)
                   echo "attempt $i -> HTTP $CODE"
                   if [ "$CODE" = "200" ]; then
                     cat /tmp/health.json
                     echo
-                    echo "Webhook URL: https://$(appName).azurewebsites.net/webhooks/whatsapp"
+                    echo "Portal: https://$(appName).azurewebsites.net/portal"
+                    echo "Webhook: https://$(appName).azurewebsites.net/webhooks/whatsapp"
                     exit 0
+                  fi
+                  if [ "$CODE" = "403" ]; then
+                    az webapp start \
+                      --resource-group "$(resourceGroup)" \
+                      --name "$(appName)" || true
                   fi
                   sleep 10
                 done
                 echo "Health check failed after deploy"
+                az webapp log deployment list \
+                  --resource-group "$(resourceGroup)" \
+                  --name "$(appName)" \
+                  -o table || true
                 exit 1

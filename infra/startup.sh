@@ -14,6 +14,13 @@ elif [ -f /home/site/wwwroot/antenv/bin/activate ]; then
   source /home/site/wwwroot/antenv/bin/activate
 fi
 
+# Prefer prebuilt site-packages from CI (fast deploy path; Oryx off).
+if [ -d .python_packages/lib/site-packages ]; then
+  export PYTHONPATH="$(pwd)/.python_packages/lib/site-packages:${PYTHONPATH:-}"
+elif [ -d /home/site/wwwroot/.python_packages/lib/site-packages ]; then
+  export PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages:${PYTHONPATH:-}"
+fi
+
 if [ -d src ]; then
   export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src"
 elif [ -d /home/site/wwwroot/src ]; then
