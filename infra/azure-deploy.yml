@@ -1,13 +1,14 @@
 # Kept in sync with /azure-pipelines.yml (Azure DevOps entrypoint).
 # CI/CD for WhatsApp AI Agent → Azure App Service (whatsapp-ai-agent-sunny)
 #
-# Architecture (fast path):
-#   1) Build stage installs deps ONCE in the pipeline agent into .python_packages
-#   2) Deploy ships a lean zip with prebuilt site-packages
-#   3) App Service Oryx remote-build is OFF (this was the 10–15+ min "Starting the site..." wait)
-#   4) Deploy is async; pipeline only waits on /health (not az CLI site-start polling)
+# Reliable path for App Service Python:
+#   - Ship SOURCE only (no host-built .python_packages)
+#   - Let Oryx build antenv ON App Service (matches App Service glibc)
+#   - Do NOT stop the site; deploy async; success = /health 200
 #
-# Target evolution (Phase 2): ACR + Linux container App Service — deploy becomes image pull (~2–4 min).
+# Why not prebuild on ubuntu/docker slim?
+#   cryptography/pydantic wheels from newer glibc fail on App Service with:
+#   GLIBC_2.33 not found — breaks WhatsApp hello when graph imports Google libs.
 trigger:
   branches:
     include:
@@ -26,7 +27,7 @@ variables:
 
 stages:
   - stage: Build
-    displayName: "Build & Test (prebuild deps)"
+    displayName: "Build & Test"
     jobs:
       - job: Build
         displayName: "Build package"
@@ -53,7 +54,6 @@ stages:
             displayName: "Run tests"
             continueOnError: true
 
-          # Prebuild site-packages for App Service — eliminates Oryx pip install on the server.
           - script: |
               set -euo pipefail
               STAGE="$(Build.ArtifactStagingDirectory)/app"
@@ -73,24 +73,10 @@ stages:
                 --exclude='.DS_Store' \
                 --exclude='*.egg-info/' \
                 --exclude='sample-apps/' \
-                --exclude='tests/' \
-                --exclude='docs/' \
-                --exclude='*.pdf' \
-                --exclude='test.db*' \
+                --exclude='.python_packages/' \
+                --exclude='antenv/' \
                 "$(Build.SourcesDirectory)/" "$STAGE/"
-
-              python -m pip install --upgrade pip
-              python -m pip install \
-                --target "$STAGE/.python_packages/lib/site-packages" \
-                -r "$STAGE/requirements.txt"
-              python -m pip install \
-                --target "$STAGE/.python_packages/lib/site-packages" \
-                --no-deps \
-                "$STAGE"
-
-              echo "Package size:"
-              du -sh "$STAGE" "$STAGE/.python_packages" || true
-            displayName: "Stage lean app + prebuilt .python_packages"
+            displayName: "Stage source package (no prebuilt wheels)"
 
           - task: ArchiveFiles@2
             displayName: "Create deployment zip"
@@ -106,47 +92,51 @@ stages:
             displayName: "Publish drop artifact"
 
   - stage: Deploy
-    displayName: "Deploy (no Oryx / health-gated)"
+    displayName: "Deploy (Oryx on App Service)"
     dependsOn: Build
     condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - job: Deploy
         displayName: "Deploy whatsapp-ai-agent-sunny"
-        timeoutInMinutes: 30
+        timeoutInMinutes: 45
         steps:
           - download: current
             artifact: drop
             displayName: "Download drop artifact"
 
           - task: AzureCLI@2
-            displayName: "Disable remote Oryx build + set startup"
+            displayName: "Enable Oryx remote build + startup"
             inputs:
               azureSubscription: "$(azureSubscription)"
               scriptType: bash
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                # Do NOT stop the site — stop→start is a major reason for long "Starting the site..." waits.
+                # Keep site running — avoid long stop/start outages.
                 az webapp config appsettings set \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
                   --settings \
-                    SCM_DO_BUILD_DURING_DEPLOYMENT=false \
-                    ENABLE_ORYX_BUILD=false \
+                    SCM_DO_BUILD_DURING_DEPLOYMENT=true \
+                    ENABLE_ORYX_BUILD=true \
+                    ORYX_DISABLE_OUTPUT_COPY_COMPRESSION=true \
                     WEBSITES_PORT=8000 \
-                    WEBSITES_CONTAINER_START_TIME_LIMIT=300 \
-                    GIT_PYTHON_REFRESH=quiet \
-                    PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages:/home/site/wwwroot/src"
-
-                STARTUP='python -m uvicorn agent.main:app --host 0.0.0.0 --port 8000 --app-dir src'
+                    WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
+                    GIT_PYTHON_REFRESH=quiet
+                # Remove host PYTHONPATH that pointed at incompatible .python_packages
+                az webapp config appsettings delete \
+                  --resource-group "$(resourceGroup)" \
+                  --name "$(appName)" \
+                  --setting-names PYTHONPATH \
+                  || true
                 az webapp config set \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
                   --always-on true \
-                  --startup-file "$STARTUP"
+                  --startup-file "bash infra/startup.sh"
 
           - task: AzureCLI@2
-            displayName: "ZIP deploy async (no site-start wait)"
+            displayName: "ZIP deploy (Oryx builds antenv)"
             inputs:
               azureSubscription: "$(azureSubscription)"
               scriptType: bash
@@ -155,8 +145,8 @@ stages:
                 set -euo pipefail
                 ZIP="$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
                 test -f "$ZIP"
-                echo "Deploying $ZIP (async; health poll owns success)"
-                # Avoid config-zip --timeout 1800 which blocks 10–15m on "Starting the site..."
+                echo "Deploying $ZIP"
+                # Prefer async; do not block 15m on CLI "Starting the site..."
                 az webapp deploy \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
@@ -167,10 +157,10 @@ stages:
                        --resource-group "$(resourceGroup)" \
                        --name "$(appName)" \
                        --src "$ZIP" \
-                       --timeout 180
+                       --timeout 240
 
           - task: AzureCLI@2
-            displayName: "Verify /health (success gate)"
+            displayName: "Verify /health"
             inputs:
               azureSubscription: "$(azureSubscription)"
               scriptType: bash
@@ -181,16 +171,14 @@ stages:
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" || true
 
-                echo "Waiting for health (max ~6 minutes)..."
-                for i in $(seq 1 36); do
+                echo "Waiting for health (Oryx may take several minutes)..."
+                for i in $(seq 1 48); do
                   CODE=$(curl -sS --max-time 15 -o /tmp/health.json -w "%{http_code}" \
                     "https://$(appName).azurewebsites.net/health" || echo 000)
                   echo "attempt $i -> HTTP $CODE"
                   if [ "$CODE" = "200" ]; then
                     cat /tmp/health.json
                     echo
-                    echo "Portal: https://$(appName).azurewebsites.net/portal"
-                    echo "Webhook: https://$(appName).azurewebsites.net/webhooks/whatsapp"
                     exit 0
                   fi
                   if [ "$CODE" = "403" ]; then
@@ -198,11 +186,7 @@ stages:
                       --resource-group "$(resourceGroup)" \
                       --name "$(appName)" || true
                   fi
-                  sleep 10
+                  sleep 15
                 done
                 echo "Health check failed after deploy"
-                az webapp log deployment list \
-                  --resource-group "$(resourceGroup)" \
-                  --name "$(appName)" \
-                  -o table || true
                 exit 1

@@ -3,6 +3,8 @@ set -euo pipefail
 
 # Oryx may run this from an extracted /tmp app path (not always wwwroot).
 # Activate virtualenv from the current working directory first.
+# Do NOT use host-built .python_packages — those wheels often need newer GLIBC
+# than Azure App Service provides (breaks cryptography → WhatsApp graph import).
 if [ -f antenv/bin/activate ]; then
   # shellcheck disable=SC1091
   source antenv/bin/activate
@@ -12,13 +14,6 @@ elif [ -f /antenv/bin/activate ]; then
 elif [ -f /home/site/wwwroot/antenv/bin/activate ]; then
   # shellcheck disable=SC1091
   source /home/site/wwwroot/antenv/bin/activate
-fi
-
-# Prefer prebuilt site-packages from CI (fast deploy path; Oryx off).
-if [ -d .python_packages/lib/site-packages ]; then
-  export PYTHONPATH="$(pwd)/.python_packages/lib/site-packages:${PYTHONPATH:-}"
-elif [ -d /home/site/wwwroot/.python_packages/lib/site-packages ]; then
-  export PYTHONPATH="/home/site/wwwroot/.python_packages/lib/site-packages:${PYTHONPATH:-}"
 fi
 
 if [ -d src ]; then

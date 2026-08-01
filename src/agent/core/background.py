@@ -1,6 +1,7 @@
 import uuid
 
 from agent.core.logging import get_logger
+from agent.planner.agent import is_simple_greeting
 
 logger = get_logger(__name__)
 
@@ -8,8 +9,23 @@ logger = get_logger(__name__)
 async def handle_whatsapp_message(parsed: dict) -> None:
     task_id = str(uuid.uuid4())[:8]
     phone = parsed["phone"]
-    message = parsed["message"]
+    message = (parsed["message"] or "").strip()
     logger.info("Processing task %s from %s", task_id, phone)
+
+    # Fast-path: greetings/help must not import LangGraph / Google / cryptography.
+    # Prebuilt site-packages can break native wheels; greetings should still work.
+    if is_simple_greeting(message) or message.lower() in {"help", "menu", "?", "commands"}:
+        try:
+            from agent.core.persona import GREETING_REPLY, HELP_MENU
+            from agent.services.whatsapp import send_message
+
+            text = HELP_MENU if message.lower() in {"help", "menu", "?", "commands"} else GREETING_REPLY
+            await send_message(phone, text)
+            logger.info("Fast-path reply sent for task %s", task_id)
+            return
+        except Exception:
+            logger.exception("Fast-path reply failed for task %s", task_id)
+            # Fall through to full graph as a backup
 
     # Instant ack so Sunny sees feedback within seconds (before LLM / graph work).
     try:
