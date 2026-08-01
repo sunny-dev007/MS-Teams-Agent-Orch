@@ -1,0 +1,18 @@
+# CI for personal-task-api sample (WhatsApp agent E2E)
+trigger:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: UsePythonVersion@0
+    inputs:
+      versionSpec: "3.12"
+
+  - script: |
+      python -m pip install --upgrade pip
+      pip install fastapi uvicorn httpx
+      python -c "from main import app; print('import_ok', app.title)"
+    displayName: Install and smoke-import app
+    workingDirectory: $(Build.SourcesDirectory)

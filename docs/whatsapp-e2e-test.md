@@ -25,13 +25,22 @@ For meetings: re-run `python scripts/setup_gmail_oauth.py --credentials ...` (Ca
 3. Pick project (AzDO) then repo by number
 4. Send coding instruction
 
-## 5) Code change on sample app
-1. Ensure `sample-apps/personal-task-api` is in a cloneable GitHub/AzDO repo
-2. Through the wizard, select that repo
-3. Ask: `Add DELETE /tasks/{id} endpoint and reject empty titles with 400`
-4. Agent develops + reviews → asks `APPROVE <id>` / `REJECT <id>`
-5. Reply `APPROVE <id>`
-6. Expect PR/pipeline links + **Final evaluation** step-by-step message
+## 5) Code change on sample app (recommended path)
+
+Sample repo (already published):
+https://github.com/sunny-dev007/personal-task-api
+
+WhatsApp steps:
+1. `check my repos`
+2. Reply `1` (GitHub)
+3. Pick **personal-task-api** (by number)
+4. Ask: `Add DELETE /tasks/{id} endpoint and reject empty titles with HTTP 400`
+5. Wait for `APPROVE <task_id>` → reply `APPROVE <task_id>`
+6. Expect GitHub PR + Actions link + final evaluation
+
+Azure DevOps path (after AzDO URL fix):
+1. `check my repos` → `2` → `Project-NIT` → pick any repo you want to change
+2. Same approve flow (PR/pipeline on AzDO)
 
 ## 6) Status
 Send `task status` or `5`

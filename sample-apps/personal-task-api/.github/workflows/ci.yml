@@ -1,0 +1,21 @@
+name: personal-task-api-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install and smoke import
+        run: |
+          pip install fastapi uvicorn
+          python -c "from main import app; print('import_ok', app.title)"
