@@ -85,7 +85,55 @@ async def list_pipelines(project: str) -> list[dict]:
         return resp.json().get("value", [])
 
 
-async def trigger_pipeline(project: str, pipeline_id: int, branch: str = "main") -> dict:
+async def find_pipeline_for_repo(project: str, repo_name: str) -> dict | None:
+    """Resolve the pipeline that belongs to a repo — never use pipelines[0]."""
+    if not repo_name:
+        return None
+    target = repo_name.strip().lower()
+    pipelines = await list_pipelines(project)
+    exact = next((p for p in pipelines if (p.get("name") or "").lower() == target), None)
+    if exact:
+        return exact
+    # Prefer name containment only when unambiguous
+    partial = [
+        p
+        for p in pipelines
+        if target in (p.get("name") or "").lower()
+        or (p.get("name") or "").lower() in target
+    ]
+    if len(partial) == 1:
+        return partial[0]
+    if partial:
+        logger.warning(
+            "Ambiguous AzDO pipelines for repo %s: %s — refusing to guess",
+            repo_name,
+            [p.get("name") for p in partial],
+        )
+    return None
+
+
+async def trigger_pipeline(
+    project: str,
+    pipeline_id: int,
+    branch: str = "main",
+    *,
+    expected_repo_name: str | None = None,
+) -> dict:
+    """Trigger a pipeline run. Refuses cross-repo triggers when expected_repo_name is set.
+
+    Note: AzDO UI labels REST-triggered runs as 'Manually run' by the PAT owner.
+    Prefer merge-triggered CI for repo deploys; do not call with pipelines[0].
+    """
+    if expected_repo_name:
+        match = await find_pipeline_for_repo(project, expected_repo_name)
+        if not match or int(match.get("id") or -1) != int(pipeline_id):
+            raise RuntimeError(
+                f"Refusing to trigger pipeline id={pipeline_id} for project {project}: "
+                f"it does not match repo '{expected_repo_name}' "
+                f"(resolved={match.get('name') if match else None}, id={match.get('id') if match else None}). "
+                "This guard prevents cross-triggering pipelines like Linux.SmartDocs-WebApp."
+            )
+
     url = _project_api(project, f"pipelines/{pipeline_id}/runs?api-version=7.1")
     payload = {
         "resources": {
@@ -98,8 +146,79 @@ async def trigger_pipeline(project: str, pipeline_id: int, branch: str = "main")
         resp = await client.post(url, json=payload, headers=_headers(), timeout=30)
         resp.raise_for_status()
         run = resp.json()
-        logger.info("Triggered Azure DevOps pipeline run #%s", run.get("id"))
+        logger.info(
+            "Triggered Azure DevOps pipeline run #%s (definition=%s)",
+            run.get("id"),
+            pipeline_id,
+        )
         return run
+
+
+async def list_builds(
+    project: str,
+    *,
+    status_filter: str = "1,32",
+    top: int = 10,
+    repository_id: str | None = None,
+) -> list[dict]:
+    """List AzDO builds. statusFilter: 1=inProgress, 32=notStarted."""
+    qs = f"build/builds?statusFilter={status_filter}&$top={top}&api-version=7.1"
+    if repository_id:
+        qs += f"&repositoryId={repository_id}&repositoryType=TfsGit"
+    url = _project_api(project, qs)
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers=_headers(), timeout=30)
+        resp.raise_for_status()
+        return resp.json().get("value", [])
+
+
+async def list_active_builds(
+    project: str,
+    *,
+    repository_id: str | None = None,
+    repo_name: str | None = None,
+) -> list[dict]:
+    """Return in-progress / not-started builds scoped to ONE repo (never project-wide)."""
+    repo_id = repository_id
+    if not repo_id and repo_name:
+        try:
+            repo = await get_repository(project, repo_name)
+            repo_id = repo.get("id")
+        except Exception:
+            logger.warning("Could not resolve AzDO repo %s in %s", repo_name, project)
+
+    # Safety: without a repo scope we must not report SmartDocs/other project pipelines
+    if not repo_id and not repo_name:
+        logger.warning(
+            "list_active_builds called without repo scope for project %s — returning empty",
+            project,
+        )
+        return []
+
+    try:
+        builds = await list_builds(
+            project, status_filter="1,32", top=15, repository_id=repo_id
+        )
+    except Exception:
+        logger.warning("Failed listing AzDO builds for project %s", project)
+        return []
+
+    active_states = {"inProgress", "notStarted", "cancelling", "postponed"}
+    wanted = (repo_name or "").strip().lower()
+    out: list[dict] = []
+    for b in builds:
+        status = (b.get("status") or "").replace(" ", "")
+        if status not in active_states and str(b.get("status")) not in ("1", "32", "4", "8"):
+            continue
+        repo_ref = ((b.get("repository") or {}).get("name") or "").lower()
+        if wanted and repo_ref and repo_ref != wanted:
+            continue
+        if repo_id:
+            rid = (b.get("repository") or {}).get("id")
+            if rid and str(rid) != str(repo_id):
+                continue
+        out.append(b)
+    return out
 
 
 async def get_pull_request(project: str, repo_id: str, pr_id: int) -> dict:

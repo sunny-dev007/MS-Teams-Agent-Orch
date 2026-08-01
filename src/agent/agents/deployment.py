@@ -1,13 +1,12 @@
 from agent.agents.state import AgentState
 from agent.config import settings
 from agent.core.logging import get_logger
+from agent.services.ci_gate import check_ci_busy_for_context, wait_for_ci_idle
 from agent.services.git_ops import commit_and_push
 from agent.services.github import (
     create_pull_request,
-    list_workflows,
     merge_pull_request,
     parse_repo_url,
-    trigger_workflow,
 )
 from agent.services import azure_devops as azdo
 from agent.services.sample_deploy import (
@@ -28,20 +27,15 @@ def _detect_provider(state: AgentState) -> str:
     return "github"
 
 
-async def _merge_and_live_deploy(
+async def _merge_github_pr(
     *,
     owner: str,
     repo_name: str,
     pr_number: int,
     task_id: str,
     user_msg: str,
-    workspace_path: str,
-) -> tuple[bool, str, str]:
-    """Merge PR to main, then live-deploy sample app. Returns (merged, live_url, error)."""
-    merged = False
-    live_url = ""
-    error = ""
-
+) -> tuple[bool, str]:
+    """Merge GitHub PR only (CI owns first deploy). Returns (merged, error)."""
     try:
         await merge_pull_request(
             owner,
@@ -49,30 +43,29 @@ async def _merge_and_live_deploy(
             int(pr_number),
             commit_title=f"agent({task_id}): {user_msg[:60]}",
         )
-        merged = True
         logger.info("Merged PR #%s for task %s", pr_number, task_id)
+        return True, ""
     except Exception as e:
         msg = str(e).lower()
         if "already merged" in msg or "405" in msg or "pull request is not mergeable" in msg:
-            # Treat already-merged as success for deploy path
-            logger.warning("Merge reported issue for PR #%s: %s — continuing to deploy", pr_number, e)
-            merged = True
-        else:
-            logger.exception("Merge failed for task %s", task_id)
-            return False, "", f"Merge failed: {e}"
+            logger.warning("Merge reported issue for PR #%s: %s — continuing", pr_number, e)
+            return True, ""
+        logger.exception("Merge failed for task %s", task_id)
+        return False, f"Merge failed: {e}"
 
-    # Prefer workspace zip (exact approved files); fall back to GitHub main zipball
+
+async def _kudu_sample_fallback(workspace_path: str, owner: str, repo_name: str) -> tuple[str, str]:
     try:
         live_url = await deploy_sample_app_from_workspace(workspace_path)
+        return live_url, ""
     except Exception as e1:
         logger.warning("Workspace live-deploy failed (%s); trying GitHub main", e1)
         try:
             live_url = await deploy_sample_app_from_github(owner, repo_name, ref="main")
+            return live_url, ""
         except Exception as e2:
-            logger.exception("GitHub-main live-deploy also failed for task %s", task_id)
-            error = f"Live deploy failed: {e2}"
-
-    return merged, live_url, error
+            logger.exception("GitHub-main live-deploy also failed")
+            return "", f"Live deploy failed: {e2}"
 
 
 async def deploy_code(state: AgentState) -> AgentState:
@@ -102,6 +95,53 @@ async def deploy_code(state: AgentState) -> AgentState:
                 "notification_text": "Deployment failed — could not parse GitHub owner/repo.",
             }
 
+    # Re-check provider CI before mutating remotes (isolated per provider/repo)
+    ci_ctx = {
+        "provider": provider,
+        "owner": owner,
+        "repo_name": repo_name,
+        "repo_url": state.get("repo_url", ""),
+        "project": state.get("azdo_project", ""),
+        "repo_id": state.get("azdo_repo_id", ""),
+    }
+    busy = await check_ci_busy_for_context(ci_ctx)
+    if busy.busy:
+        phone = state.get("whatsapp_phone", "")
+        if phone and task_id:
+            try:
+                from agent.core.session import save_session
+
+                await save_session(
+                    phone,
+                    awaiting="approval",
+                    provider=provider,
+                    data={
+                        "pending_task_id": task_id,
+                        "workspace_path": workspace_path,
+                        "branch_name": branch_name,
+                        "repo_url": state.get("repo_url", ""),
+                        "repo_owner": owner,
+                        "repo_name": repo_name,
+                        "repo_provider": provider,
+                        "azdo_project": state.get("azdo_project", ""),
+                        "azdo_repo_id": state.get("azdo_repo_id", ""),
+                        "user_message": user_msg,
+                        "file_changes": state.get("file_changes") or [],
+                    },
+                    merge_data=False,
+                )
+            except Exception:
+                logger.exception("Failed to re-persist approval session after CI busy")
+        return {
+            **state,
+            "status": "awaiting_approval",
+            "approval_status": "pending",
+            "pipeline_status": "busy",
+            "pipeline_url": busy.url or state.get("pipeline_url", "N/A"),
+            "notification_text": busy.wait_message(),
+            "error": "ci_busy",
+        }
+
     try:
         from agent.services.git_ops import open_workspace
 
@@ -120,110 +160,16 @@ async def deploy_code(state: AgentState) -> AgentState:
         if provider == "azure_devops":
             return await _deploy_azdo(state, task_id, sha, branch_name, user_msg)
 
-        pr = await create_pull_request(
+        return await _deploy_github(
+            state,
+            task_id=task_id,
+            sha=sha,
+            branch_name=branch_name,
+            user_msg=user_msg,
             owner=owner,
-            repo=repo_name,
-            title=f"[AI Agent] {user_msg[:60]}",
-            body=(
-                f"## Automated by Sunny's Personal AI Agent\n\n"
-                f"**Task ID:** {task_id}\n"
-                f"**Request:** {user_msg[:200]}\n\n"
-                f"### Changes\n"
-                + "\n".join(
-                    f"- {c.get('action', 'modify')} `{c['path']}`"
-                    for c in state.get("file_changes", [])
-                )
-            ),
-            head=branch_name,
-            base="main",
+            repo_name=repo_name,
+            workspace_path=workspace_path,
         )
-        pr_url = pr.get("html_url", "")
-        pr_number = pr.get("number")
-
-        pipeline_url = ""
-        try:
-            workflows = await list_workflows(owner, repo_name)
-            deploy_wf = next(
-                (
-                    w
-                    for w in workflows
-                    if "deploy" in (w.get("name") or "").lower()
-                    or "deploy" in (w.get("path") or "").lower()
-                ),
-                None,
-            )
-            wf = deploy_wf or (workflows[0] if workflows else None)
-            if wf:
-                triggered = await trigger_workflow(
-                    owner, repo_name, str(wf["id"]), "main" if deploy_wf else branch_name
-                )
-                if triggered:
-                    pipeline_url = f"https://github.com/{owner}/{repo_name}/actions"
-        except Exception:
-            logger.warning("Could not trigger CI workflow for task %s", task_id)
-
-        merged = False
-        live_url = ""
-        deploy_error = ""
-        if repo_name == settings.sample_app_github_repo and pr_number:
-            merged, live_url, deploy_error = await _merge_and_live_deploy(
-                owner=owner,
-                repo_name=repo_name,
-                pr_number=int(pr_number),
-                task_id=task_id,
-                user_msg=user_msg,
-                workspace_path=workspace_path,
-            )
-            if live_url:
-                pipeline_url = pipeline_url or f"https://github.com/{owner}/{repo_name}/actions"
-
-        lines = [
-            "*Final deployment complete*" if live_url else "*Deployment result*",
-            f"*Merged to main:* {'yes' if merged else 'no'}",
-        ]
-        if live_url:
-            lines.extend(
-                [
-                    f"*Live app:* {live_url}",
-                    f"*Docs:* {live_url}/docs",
-                    "Open on your *phone browser* and refresh — no GitHub visit needed.",
-                ]
-            )
-        else:
-            lines.append(f"*PR:* {pr_url}")
-            if deploy_error:
-                lines.append(f"*Live deploy error:* {deploy_error}")
-            else:
-                lines.append("Live deploy was skipped for this repo.")
-
-        detail = "\n".join(lines)
-        logger.info(
-            "Deployed task %s: PR=%s merged=%s live=%s",
-            task_id,
-            pr_url,
-            merged,
-            live_url or "-",
-        )
-        return {
-            **state,
-            "status": "completed" if (merged or pr_url) else "failed",
-            "commit_sha": sha,
-            "pr_url": pr_url,
-            "pipeline_url": pipeline_url or "N/A",
-            "repo_provider": "github",
-            "notification_text": detail,
-            "evaluation_text": (
-                f"1. Your WhatsApp approval authorized deployment\n"
-                f"2. Changes merged to `main`: {'yes' if merged else 'no'}\n"
-                f"3. Live deploy: {live_url or deploy_error or 'skipped'}\n"
-                f"4. Pipeline: {pipeline_url or 'N/A'}\n"
-                + (
-                    "5. Done — refresh phone browser to see changes"
-                    if live_url
-                    else "5. Code is on GitHub; live app still needs a successful deploy"
-                )
-            ),
-        }
 
     except Exception as e:
         logger.exception("Deployment failed for task %s", task_id)
@@ -235,6 +181,137 @@ async def deploy_code(state: AgentState) -> AgentState:
         }
 
 
+async def _deploy_github(
+    state: AgentState,
+    *,
+    task_id: str,
+    sha: str,
+    branch_name: str,
+    user_msg: str,
+    owner: str,
+    repo_name: str,
+    workspace_path: str,
+) -> AgentState:
+    """GitHub-only path: PR → merge → wait for Actions → Kudu only if CI did not finish."""
+    pr = await create_pull_request(
+        owner=owner,
+        repo=repo_name,
+        title=f"[AI Agent] {user_msg[:60]}",
+        body=(
+            f"## Automated by Sunny's Personal AI Agent\n\n"
+            f"**Task ID:** {task_id}\n"
+            f"**Request:** {user_msg[:200]}\n\n"
+            f"### Changes\n"
+            + "\n".join(
+                f"- {c.get('action', 'modify')} `{c['path']}`"
+                for c in state.get("file_changes", [])
+            )
+        ),
+        head=branch_name,
+        base="main",
+    )
+    pr_url = pr.get("html_url", "")
+    pr_number = pr.get("number")
+    pipeline_url = f"https://github.com/{owner}/{repo_name}/actions"
+    pipeline_status = "skipped"
+
+    merged = False
+    live_url = ""
+    deploy_error = ""
+    is_sample = repo_name == settings.sample_app_github_repo
+
+    if is_sample and pr_number:
+        merged, deploy_error = await _merge_github_pr(
+            owner=owner,
+            repo_name=repo_name,
+            pr_number=int(pr_number),
+            task_id=task_id,
+            user_msg=user_msg,
+        )
+        if merged:
+            # Do NOT manually trigger workflow_dispatch — merge to main already starts Actions.
+            ci_ctx = {
+                "provider": "github",
+                "owner": owner,
+                "repo_name": repo_name,
+            }
+            idle = await wait_for_ci_idle(ci_ctx, timeout_sec=540, poll_sec=15)
+            if idle.busy or idle.detail == "no_ci_observed":
+                pipeline_status = "timeout" if idle.busy else "no_ci"
+                pipeline_url = idle.url or pipeline_url
+                logger.warning(
+                    "GitHub CI %s for %s/%s — Kudu fallback",
+                    pipeline_status,
+                    owner,
+                    repo_name,
+                )
+                live_url, kudu_err = await _kudu_sample_fallback(
+                    workspace_path, owner, repo_name
+                )
+                if kudu_err:
+                    deploy_error = kudu_err
+                elif live_url:
+                    pipeline_status = "kudu_fallback"
+            else:
+                # Actions deploy owns the live app — do not run a second Kudu deploy.
+                pipeline_status = "succeeded"
+                pipeline_url = idle.url or pipeline_url
+                live_url = settings.sample_app_url
+
+    lines = [
+        "*Final deployment complete*" if live_url else "*Deployment result*",
+        f"*Merged to main:* {'yes' if merged else 'no'}",
+        f"*GitHub Actions:* {pipeline_status}",
+    ]
+    if live_url:
+        lines.extend(
+            [
+                f"*Live app:* {live_url}",
+                f"*Docs:* {live_url.rstrip('/')}/docs",
+                "Open on your *phone browser* and refresh — no GitHub visit needed.",
+            ]
+        )
+    else:
+        lines.append(f"*PR:* {pr_url}")
+        if deploy_error:
+            lines.append(f"*Live deploy error:* {deploy_error}")
+        else:
+            lines.append("Live deploy was skipped for this repo.")
+    if pipeline_url:
+        lines.append(f"*Pipeline:* {pipeline_url}")
+
+    detail = "\n".join(lines)
+    logger.info(
+        "Deployed GitHub task %s: PR=%s merged=%s live=%s ci=%s",
+        task_id,
+        pr_url,
+        merged,
+        live_url or "-",
+        pipeline_status,
+    )
+    return {
+        **state,
+        "status": "completed" if (merged or pr_url) else "failed",
+        "commit_sha": sha,
+        "pr_url": pr_url,
+        "pipeline_url": pipeline_url or "N/A",
+        "pipeline_status": pipeline_status,
+        "repo_provider": "github",
+        "notification_text": detail,
+        "evaluation_text": (
+            f"1. Your WhatsApp approval authorized GitHub deployment\n"
+            f"2. Changes merged to `main`: {'yes' if merged else 'no'}\n"
+            f"3. Live deploy: {live_url or deploy_error or 'skipped'}\n"
+            f"4. Pipeline: {pipeline_status} — {pipeline_url or 'N/A'}\n"
+            + (
+                "5. Done — refresh phone browser to see changes"
+                if live_url
+                else "5. Code is on GitHub; live app still needs a successful deploy"
+            )
+        ),
+    }
+
+
 async def _deploy_azdo(
     state: AgentState,
     task_id: str,
@@ -242,6 +319,7 @@ async def _deploy_azdo(
     branch_name: str,
     user_msg: str,
 ) -> AgentState:
+    """Azure DevOps-only path: PR → merge → wait for pipeline → Kudu only if needed."""
     from agent.services.sample_deploy import deploy_agent_app_from_workspace
 
     project = state.get("azdo_project", "")
@@ -262,7 +340,6 @@ async def _deploy_azdo(
         except Exception:
             logger.exception("Failed to resolve AzDO project/repo from URL")
 
-    # Recover ids from HTTP workspace meta if still missing
     if (not project or not repo_id) and state.get("workspace_path"):
         try:
             from agent.services.git_ops import open_workspace
@@ -297,18 +374,18 @@ async def _deploy_azdo(
     org = settings.azdo_org_url.rstrip("/")
     pr_url = f"{org}/{project}/_git/{repo_name or repo_id}/pullrequest/{pr_id}"
 
-    pipeline_url = "N/A"
+    # Link only the pipeline that belongs to THIS repo (never pipelines[0] / SmartDocs).
+    pipeline_url = f"{org}/{project}/_build"
     try:
-        pipelines = await azdo.list_pipelines(project)
-        if pipelines:
-            run = await azdo.trigger_pipeline(project, pipelines[0]["id"], "main")
-            run_id = run.get("id")
+        owned = await azdo.find_pipeline_for_repo(project, repo_name or "")
+        if owned:
             pipeline_url = (
-                f"{org}/{project}/_build?definitionId={pipelines[0]['id']}&id={run_id}"
+                f"{org}/{project}/_build?definitionId={owned.get('id')}"
             )
     except Exception:
-        logger.warning("Could not trigger AzDO pipeline for task %s", task_id)
+        logger.warning("Could not resolve owning pipeline for %s/%s", project, repo_name)
 
+    pipeline_status = "skipped"
     merged = False
     live_url = ""
     deploy_error = ""
@@ -330,31 +407,58 @@ async def _deploy_azdo(
                 deploy_error = f"Merge failed: {e}"
 
         if merged:
-            try:
-                live_url = await deploy_agent_app_from_workspace(
-                    state.get("workspace_path", "")
+            # Merge to main starts ONLY web.Whatsapp-AI-Agent CI.
+            # Never call trigger_pipeline()/pipelines[0] — that wrongly fired Linux.SmartDocs-WebApp.
+            ci_ctx = {
+                "provider": "azure_devops",
+                "project": project,
+                "repo_name": repo_name,
+                "repo_id": str(repo_id),
+            }
+            idle = await wait_for_ci_idle(ci_ctx, timeout_sec=720, poll_sec=20)
+            if idle.url:
+                pipeline_url = idle.url
+            if idle.busy or idle.detail == "no_ci_observed":
+                pipeline_status = "timeout" if idle.busy else "no_ci"
+                logger.warning(
+                    "AzDO CI %s for %s/%s — Kudu fallback",
+                    pipeline_status,
+                    project,
+                    repo_name,
                 )
-                live_url = f"{live_url.rstrip('/')}/portal"
-            except Exception as e:
-                logger.exception("AzDO live deploy failed for task %s", task_id)
-                deploy_error = f"Live deploy failed: {e}"
+                try:
+                    base = await deploy_agent_app_from_workspace(
+                        state.get("workspace_path", "")
+                    )
+                    live_url = f"{base.rstrip('/')}/portal"
+                    pipeline_status = "kudu_fallback"
+                except Exception as e:
+                    logger.exception("AzDO Kudu fallback failed for task %s", task_id)
+                    deploy_error = f"Live deploy failed: {e}"
+            else:
+                # Azure Pipelines Deploy stage owns the live app — no second Kudu deploy.
+                pipeline_status = "succeeded"
+                live_url = f"{settings.agent_app_url.rstrip('/')}/portal"
 
     if live_url:
         detail = (
             "*Final deployment complete*\n"
             f"*Merged to main:* yes\n"
+            f"*Azure Pipelines:* {pipeline_status}\n"
             f"*Live portal:* {live_url}\n"
+            f"*Pipeline:* {pipeline_url}\n"
             "Open on your *phone browser* and refresh — no Azure DevOps visit needed."
         )
     else:
         detail = (
             f"*Azure DevOps PR:* {pr_url}\n"
             f"*Merged to main:* {'yes' if merged else 'no'}\n"
+            f"*Azure Pipelines:* {pipeline_status}\n"
         )
         if deploy_error:
             detail += f"*Live deploy error:* {deploy_error}"
         else:
-            detail += "Live deploy runs automatically for web.Whatsapp-AI-Agent after approve."
+            detail += "Live deploy runs via Azure Pipelines after merge to main."
 
     return {
         **state,
@@ -362,6 +466,7 @@ async def _deploy_azdo(
         "commit_sha": sha,
         "pr_url": pr_url,
         "pipeline_url": pipeline_url,
+        "pipeline_status": pipeline_status,
         "repo_provider": "azure_devops",
         "azdo_project": project,
         "azdo_repo_id": str(repo_id),
@@ -371,7 +476,7 @@ async def _deploy_azdo(
             "1. Your WhatsApp approval authorized Azure DevOps deployment\n"
             f"2. Changes merged to `main`: {'yes' if merged else 'no'}\n"
             f"3. Live portal: {live_url or deploy_error or 'skipped'}\n"
-            f"4. Pipeline: {pipeline_url}\n"
+            f"4. Pipeline: {pipeline_status} — {pipeline_url}\n"
             + (
                 "5. Done — refresh phone browser on /portal"
                 if live_url

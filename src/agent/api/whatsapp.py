@@ -104,6 +104,41 @@ async def _resolve_task_id(phone: str, explicit_task_id: str | None) -> str | No
     return None
 
 
+async def _pending_deploy_context(phone: str, task_id: str) -> dict[str, str]:
+    """Load provider-isolated repo context for CI gate (session first)."""
+    from agent.core.session import get_session
+    from agent.services.ci_gate import context_from_session_data
+
+    session = await get_session(phone)
+    data = dict(session.get("data") or {})
+    if session.get("provider") and not data.get("repo_provider"):
+        data["repo_provider"] = session.get("provider")
+    ctx = context_from_session_data(data)
+    if ctx.get("provider") and (ctx.get("repo_name") or ctx.get("project")):
+        return ctx
+
+    # Fallback: hydrate from LangGraph checkpoint if session was thin
+    try:
+        from agent.agents import graph as graph_mod
+
+        compiled = await graph_mod._get_compiled()
+        snap = await compiled.aget_state({"configurable": {"thread_id": task_id}})
+        values = dict(snap.values or {})
+        return context_from_session_data(
+            {
+                "repo_provider": values.get("repo_provider") or "",
+                "repo_owner": values.get("repo_owner") or "",
+                "repo_name": values.get("repo_name") or "",
+                "repo_url": values.get("repo_url") or "",
+                "azdo_project": values.get("azdo_project") or "",
+                "azdo_repo_id": values.get("azdo_repo_id") or "",
+            }
+        )
+    except Exception:
+        logger.warning("Could not load checkpoint context for task %s", task_id)
+        return ctx
+
+
 async def _resume_with_approval(
     explicit_task_id: str | None, approval: str, phone: str
 ) -> None:
@@ -122,12 +157,55 @@ async def _resume_with_approval(
             logger.exception("Failed to send missing-approval reply")
         return
 
-    try:
-        await send_message(
-            phone,
-            f"Got it, Sunny — final approval received for `{task_id}`.\n"
-            "Merging to main and deploying live…",
+    lock_key = ""
+    acquired = False
+    if approval == "approved":
+        from agent.services.ci_gate import (
+            check_deploy_blocked,
+            deploy_lock_key,
+            release_deploy,
+            try_acquire_deploy,
         )
+
+        ctx = await _pending_deploy_context(phone, task_id)
+        blocked = await check_deploy_blocked(ctx, task_id=task_id)
+        if blocked.busy:
+            try:
+                await send_message(phone, blocked.wait_message())
+            except Exception:
+                logger.exception("Failed to send CI-busy reply for task %s", task_id)
+            return
+
+        lock_key = deploy_lock_key(
+            ctx.get("provider") or "",
+            owner=ctx.get("owner") or "",
+            repo_name=ctx.get("repo_name") or "",
+            project=ctx.get("project") or "",
+        )
+        acquired = await try_acquire_deploy(lock_key, task_id)
+        if not acquired:
+            try:
+                await send_message(
+                    phone,
+                    "A deploy for this repository is already in progress.\n"
+                    "Please wait until it finishes, then try *Approve* again.",
+                )
+            except Exception:
+                logger.exception("Failed to send deploy-lock reply for task %s", task_id)
+            return
+
+    try:
+        if approval == "approved":
+            await send_message(
+                phone,
+                f"Got it, Sunny — final approval received for `{task_id}`.\n"
+                "CI is clear. Merging to main and deploying live…",
+            )
+        else:
+            await send_message(
+                phone,
+                f"Got it — rejecting changes for `{task_id}`.",
+            )
     except Exception:
         logger.exception("Failed to send approval ack for task %s", task_id)
 
@@ -138,3 +216,8 @@ async def _resume_with_approval(
     except Exception:
         logger.exception("Failed to resume task %s with approval=%s", task_id, approval)
         await send_message(phone, f"Failed to process approval for task {task_id}.")
+    finally:
+        if acquired and lock_key:
+            from agent.services.ci_gate import release_deploy
+
+            await release_deploy(lock_key, task_id)

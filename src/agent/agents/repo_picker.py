@@ -88,6 +88,23 @@ async def browse_repos(state: AgentState) -> AgentState:
                 }
             )
 
+        # Feature: CI gate — do not accept work on a repo while its pipeline is running
+        from agent.services.ci_gate import check_deploy_blocked, context_from_session_data
+
+        gate_data = {
+            **data,
+            "repo_provider": provider,
+        }
+        blocked = await check_deploy_blocked(context_from_session_data(gate_data))
+        if blocked.busy:
+            return {
+                **state,
+                "status": "repo_picker",
+                "repo_provider": provider,
+                "notification_text": blocked.wait_message()
+                + "\n\nPick another repo, or try this one again after the pipeline finishes.",
+            }
+
         await save_session(phone, awaiting="code_instruction", provider=provider, data=data)
         return {
             **state,
@@ -114,6 +131,21 @@ async def browse_repos(state: AgentState) -> AgentState:
                 "status": "failed",
                 "notification_text": "Session lost the repo URL. Say *check my repos* to start again.",
             }
+
+        from agent.services.ci_gate import check_deploy_blocked, context_from_session_data
+
+        blocked = await check_deploy_blocked(
+            context_from_session_data({**data, "repo_provider": provider})
+        )
+        if blocked.busy:
+            return {
+                **state,
+                "status": "repo_picker",
+                "repo_provider": provider,
+                "notification_text": blocked.wait_message()
+                + "\n\nKeep this instruction and try again after the pipeline finishes.",
+            }
+
         # Hand off to develop_code path
         await clear_session(phone)
         return {

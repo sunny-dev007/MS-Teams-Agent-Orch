@@ -65,8 +65,8 @@ async def plan(state: AgentState) -> AgentState:
             # Bare approve/reject should be handled in the WhatsApp webhook.
             # If we land here, remind Sunny instead of starting a new empty deploy.
             lower = user_msg.lower().strip()
+            tid = (session.get("data") or {}).get("pending_task_id") or "unknown"
             if lower.startswith("approve") or lower.startswith("reject"):
-                tid = (session.get("data") or {}).get("pending_task_id") or "unknown"
                 return {
                     **state,
                     "intent": "general",
@@ -76,12 +76,40 @@ async def plan(state: AgentState) -> AgentState:
                     ),
                     "planned_by": AGENT_NAME,
                 }
+
+            # Soft CI check while waiting — do not start a new request for same repo
+            try:
+                from agent.services.ci_gate import (
+                    check_ci_busy_for_context,
+                    context_from_session_data,
+                )
+
+                busy = await check_ci_busy_for_context(
+                    context_from_session_data(
+                        {
+                            **(session.get("data") or {}),
+                            "repo_provider": session.get("provider")
+                            or (session.get("data") or {}).get("repo_provider", ""),
+                        }
+                    )
+                )
+                if busy.busy:
+                    return {
+                        **state,
+                        "intent": "general",
+                        "notification_text": busy.wait_message()
+                        + f"\n\nPending approval task: `{tid}` — try *Approve* after CI finishes.",
+                        "planned_by": AGENT_NAME,
+                    }
+            except Exception:
+                logger.exception("%s CI check during approval wait failed", AGENT_NAME)
+
             return {
                 **state,
                 "intent": "general",
                 "notification_text": (
                     f"You have a coding change waiting.\n"
-                    f"Reply *APPROVE {(session.get('data') or {}).get('pending_task_id', '')}* "
+                    f"Reply *APPROVE {tid}* "
                     f"or *REJECT …* to continue."
                 ),
                 "planned_by": AGENT_NAME,

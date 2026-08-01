@@ -165,6 +165,8 @@ async def _request_approval(state: AgentState) -> AgentState:
                 "repo_owner": state.get("repo_owner", ""),
                 "repo_name": state.get("repo_name", ""),
                 "repo_provider": state.get("repo_provider", ""),
+                "azdo_project": state.get("azdo_project", ""),
+                "azdo_repo_id": state.get("azdo_repo_id", ""),
                 "user_message": state.get("user_message", "") or state.get("email_body", ""),
                 "file_changes": state.get("file_changes") or [],
             },
@@ -401,8 +403,17 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
         ):
             node = list(event.keys())[0] if event else "unknown"
             logger.info("Task %s (resumed): '%s'", task_id, node)
+        # Keep approval session if deploy deferred because CI was busy
         if whatsapp_phone:
-            await clear_session(whatsapp_phone)
+            try:
+                snap = await compiled.aget_state(config)
+                final = dict(snap.values or {})
+            except Exception:
+                final = {}
+            if final.get("error") == "ci_busy" or final.get("pipeline_status") == "busy":
+                logger.info("Keeping approval session for %s — CI still busy", task_id)
+            else:
+                await clear_session(whatsapp_phone)
         return
     except Exception:
         logger.warning("Command resume unavailable; manual deploy/reject path", exc_info=True)
@@ -412,8 +423,9 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
     if approval_status == "approved":
         values = await run_deployer(values)
         values = await run_notifier(values)
-        values = await run_evaluator(values)
-        await run_notifier(values)
+        if values.get("error") != "ci_busy" and values.get("pipeline_status") != "busy":
+            values = await run_evaluator(values)
+            await run_notifier(values)
     else:
         values["status"] = "rejected"
         values["notification_text"] = "You rejected the changes. Nothing was pushed."
@@ -421,7 +433,7 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
         values = await run_evaluator(values)
         await run_notifier(values)
 
-    if whatsapp_phone:
+    if whatsapp_phone and values.get("error") != "ci_busy" and values.get("pipeline_status") != "busy":
         await clear_session(whatsapp_phone)
 
 

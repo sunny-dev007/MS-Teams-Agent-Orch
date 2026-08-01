@@ -66,6 +66,55 @@ async def list_workflows(owner: str, repo: str) -> list[dict]:
         return resp.json().get("workflows", [])
 
 
+async def list_workflow_runs(
+    owner: str,
+    repo: str,
+    *,
+    status: str | None = None,
+    branch: str | None = None,
+    per_page: int = 10,
+) -> list[dict]:
+    """List GitHub Actions workflow runs (optionally filtered by status/branch)."""
+    url = f"{GITHUB_API}/repos/{owner}/{repo}/actions/runs"
+    params: dict[str, str | int] = {"per_page": per_page}
+    if status:
+        params["status"] = status
+    if branch:
+        params["branch"] = branch
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers=_headers(), params=params, timeout=30)
+        resp.raise_for_status()
+        return resp.json().get("workflow_runs", [])
+
+
+async def list_active_workflow_runs(
+    owner: str,
+    repo: str,
+    *,
+    branch: str | None = None,
+) -> list[dict]:
+    """Return queued / in-progress / waiting runs for a GitHub repo."""
+    active: list[dict] = []
+    seen: set[int] = set()
+    for status in ("queued", "in_progress", "waiting", "pending", "requested"):
+        try:
+            runs = await list_workflow_runs(
+                owner, repo, status=status, branch=branch, per_page=10
+            )
+        except Exception:
+            logger.warning(
+                "Failed listing GitHub runs status=%s for %s/%s", status, owner, repo
+            )
+            continue
+        for run in runs:
+            rid = int(run.get("id") or 0)
+            if rid and rid not in seen:
+                seen.add(rid)
+                active.append(run)
+    return active
+
+
 def parse_repo_url(url: str) -> tuple[str, str]:
     url = url.rstrip("/").removesuffix(".git")
     parts = url.split("/")
