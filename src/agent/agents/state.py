@@ -59,6 +59,10 @@ class AgentState(TypedDict, total=False):
     # Evaluation
     evaluation_text: str
 
+    # Multi-agent metadata
+    planned_by: str
+    handled_by: str
+
     # Communication
     whatsapp_phone: str
     notification_text: str

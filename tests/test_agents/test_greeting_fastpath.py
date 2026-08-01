@@ -1,6 +1,6 @@
 import pytest
 
-from agent.agents.router import is_simple_greeting
+from agent.planner.agent import is_simple_greeting, plan
 from agent.core.persona import GREETING_REPLY, HELP_MENU
 
 
@@ -42,17 +42,27 @@ async def test_health_deep_includes_whatsapp(client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_router_help_fastpath():
-    from agent.agents.router import route_input
-
-    result = await route_input({"user_message": "help", "task_id": "t1", "whatsapp_phone": ""})
+async def test_planner_help_fastpath():
+    result = await plan({"user_message": "help", "task_id": "t1", "whatsapp_phone": ""})
     assert result["intent"] == "general"
+    assert result["planned_by"] == "planner"
     assert "Personal AI Agent" in result["notification_text"]
 
 
 @pytest.mark.asyncio
-async def test_router_emails_fastpath():
-    from agent.agents.router import route_input
-
-    result = await route_input({"user_message": "check my emails", "task_id": "t1", "whatsapp_phone": ""})
+async def test_planner_emails_fastpath():
+    result = await plan({"user_message": "check my emails", "task_id": "t1", "whatsapp_phone": ""})
     assert result["intent"] == "check_email"
+    assert result["planned_by"] == "planner"
+
+
+@pytest.mark.asyncio
+async def test_graph_uses_planner_entry():
+    from agent.agents.graph import build_graph
+
+    g = build_graph()
+    assert "planner" in g.nodes
+    assert "email_agent" in g.nodes
+    assert "github_agent" not in g.nodes  # github is used via repo_wizard, not a top-level node
+    assert "repo_wizard" in g.nodes
+    assert "coding_developer" in g.nodes

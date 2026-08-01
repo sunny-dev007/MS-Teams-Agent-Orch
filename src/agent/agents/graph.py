@@ -1,21 +1,25 @@
+"""LangGraph orchestration — planner routes; specialists execute in isolation."""
+
+from __future__ import annotations
+
 import uuid
 
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 from langgraph.graph import END, StateGraph
 
-from agent.agents.deployment import deploy_code
-from agent.agents.developer import develop_code
-from agent.agents.evaluator import evaluate_result, task_status
-from agent.agents.gmail_agent import compose_and_send_email, read_gmail
-from agent.agents.meeting import schedule_meeting
-from agent.agents.notification import notify
-from agent.agents.repo_picker import browse_repos
-from agent.agents.reviewer import review_code
-from agent.agents.router import route_input
 from agent.agents.state import AgentState
 from agent.config import settings
 from agent.core.logging import get_logger
-from agent.core.persona import get_persona_prompt
+from agent.planner.agent import plan
+from agent.specialists.calendar_agent import run_calendar
+from agent.specialists.coding_deployer import run_deployer
+from agent.specialists.coding_developer import run_developer
+from agent.specialists.coding_reviewer import run_reviewer
+from agent.specialists.email_agent import run_email, run_send_email
+from agent.specialists.evaluator_agent import run_evaluator, run_task_status
+from agent.specialists.general_agent import run_general
+from agent.specialists.notifier_agent import run_notifier
+from agent.specialists.repo_wizard import run_repo_wizard
 
 logger = get_logger(__name__)
 
@@ -34,7 +38,7 @@ async def _get_compiled():
     _checkpointer_cm = AsyncSqliteSaver.from_conn_string(DB_PATH)
     _checkpointer = await _checkpointer_cm.__aenter__()
     _compiled = build_graph().compile(checkpointer=_checkpointer)
-    logger.info("Compiled LangGraph with persistent SQLite checkpointer")
+    logger.info("Compiled planner→specialists graph")
     return _compiled
 
 
@@ -50,41 +54,40 @@ async def close_graph_resources() -> None:
     _compiled = None
 
 
-def _route_after_classify(state: AgentState) -> str:
+def _route_after_plan(state: AgentState) -> str:
     intent = state.get("intent", "")
-
     if intent == "check_email":
-        return "read_gmail"
+        return "email_agent"
     if intent == "send_email":
-        return "send_email"
+        return "send_email_agent"
     if intent == "schedule_meeting":
-        return "schedule_meeting"
+        return "calendar_agent"
     if intent == "browse_repos":
-        return "browse_repos"
+        return "repo_wizard"
     if intent == "task_status":
-        return "task_status"
+        return "task_status_agent"
     if intent in ("code_change", "bug_fix"):
         if not state.get("repo_url"):
-            return "browse_repos"
-        return "develop_code"
+            return "repo_wizard"
+        return "coding_developer"
     if intent in ("approval_yes", "approval_no"):
         return "handle_approval"
-    return "notify_general"
+    return "general_agent"
 
 
-def _route_after_gmail(state: AgentState) -> str:
+def _route_after_email(state: AgentState) -> str:
     if state.get("intent") == "code_change" and state.get("repo_url"):
-        return "develop_code"
+        return "notify_then_develop"
     return "notify_result"
 
 
-def _route_after_browse(state: AgentState) -> str:
+def _route_after_repo_wizard(state: AgentState) -> str:
     if state.get("intent") == "code_change" and state.get("repo_url"):
-        return "start_dev_notify"
+        return "notify_then_develop"
     return "notify_picker"
 
 
-def _route_after_meeting(state: AgentState) -> str:
+def _route_after_calendar(state: AgentState) -> str:
     if state.get("evaluation_text") or state.get("status") == "failed":
         return "notify_meeting"
     return "notify_meeting_ask"
@@ -93,18 +96,16 @@ def _route_after_meeting(state: AgentState) -> str:
 def _route_after_review(state: AgentState) -> str:
     result = state.get("review_result", "")
     iteration = state.get("review_iteration", 0)
-
     if result == "approved":
         return "request_approval"
     if iteration >= 3:
         return "notify_result"
-    return "develop_code"
+    return "coding_developer"
 
 
 def _route_after_approval(state: AgentState) -> str:
-    status = state.get("approval_status", "")
-    if status == "approved":
-        return "deploy_code"
+    if state.get("approval_status") == "approved":
+        return "coding_deployer"
     return "notify_rejected"
 
 
@@ -121,7 +122,7 @@ async def _request_approval(state: AgentState) -> AgentState:
     }
 
 
-async def _handle_approval_response(state: AgentState) -> AgentState:
+async def _handle_approval(state: AgentState) -> AgentState:
     if state.get("approval_status") == "rejected":
         return {
             **state,
@@ -131,112 +132,83 @@ async def _handle_approval_response(state: AgentState) -> AgentState:
     return state
 
 
-async def _notify_general(state: AgentState) -> AgentState:
-    if state.get("notification_text"):
-        return {**state, "status": "general_response"}
-
-    import time
-
-    from langchain_core.messages import HumanMessage, SystemMessage
-
-    from agent.services.llm import get_llm
-
-    llm = get_llm(temperature=0.3)
-    t0 = time.perf_counter()
-    response = await llm.ainvoke([
-        SystemMessage(
-            content=(
-                get_persona_prompt()
-                + "\n\nAnswer concisely for WhatsApp. Prefer bullets over long paragraphs."
-            )
-        ),
-        HumanMessage(content=state.get("user_message", "Hello")),
-    ])
-    logger.info(
-        "General reply LLM took %.2fs for task %s",
-        time.perf_counter() - t0,
-        state.get("task_id"),
-    )
-    return {
-        **state,
-        "status": "general_response",
-        "notification_text": response.content,
-    }
-
-
 def build_graph() -> StateGraph:
     graph = StateGraph(AgentState)
 
-    graph.add_node("route_input", route_input)
-    graph.add_node("read_gmail", read_gmail)
-    graph.add_node("schedule_meeting", schedule_meeting)
-    graph.add_node("browse_repos", browse_repos)
-    graph.add_node("task_status", task_status)
-    graph.add_node("develop_code", develop_code)
-    graph.add_node("review_code", review_code)
+    # Planner (routing only)
+    graph.add_node("planner", plan)
+
+    # Specialists
+    graph.add_node("email_agent", run_email)
+    graph.add_node("send_email_agent", run_send_email)
+    graph.add_node("calendar_agent", run_calendar)
+    graph.add_node("repo_wizard", run_repo_wizard)
+    graph.add_node("task_status_agent", run_task_status)
+    graph.add_node("coding_developer", run_developer)
+    graph.add_node("coding_reviewer", run_reviewer)
+    graph.add_node("coding_deployer", run_deployer)
+    graph.add_node("general_agent", run_general)
+    graph.add_node("evaluator", run_evaluator)
+
+    # Notifier (WhatsApp I/O)
+    graph.add_node("notify_result", run_notifier)
+    graph.add_node("notify_picker", run_notifier)
+    graph.add_node("notify_meeting", run_notifier)
+    graph.add_node("notify_meeting_ask", run_notifier)
+    graph.add_node("notify_general", run_notifier)
+    graph.add_node("notify_dev", run_notifier)
+    graph.add_node("notify_then_develop", run_notifier)
+    graph.add_node("notify_approval", run_notifier)
+    graph.add_node("notify_rejected", run_notifier)
+    graph.add_node("notify_email_sent", run_notifier)
+    graph.add_node("notify_evaluation", run_notifier)
+
     graph.add_node("request_approval", _request_approval)
-    graph.add_node("notify_approval", notify)
-    graph.add_node("handle_approval", _handle_approval_response)
-    graph.add_node("deploy_code", deploy_code)
-    graph.add_node("notify_result", notify)
-    graph.add_node("notify_rejected", notify)
-    graph.add_node("notify_general", _notify_general)
-    graph.add_node("notify_general_send", notify)
-    graph.add_node("notify_gmail", notify)
-    graph.add_node("notify_dev", notify)
-    graph.add_node("start_dev_notify", notify)
-    graph.add_node("send_email", compose_and_send_email)
-    graph.add_node("notify_email_sent", notify)
-    graph.add_node("notify_meeting", notify)
-    graph.add_node("notify_meeting_ask", notify)
-    graph.add_node("notify_picker", notify)
-    graph.add_node("evaluate_result", evaluate_result)
-    graph.add_node("notify_evaluation", notify)
+    graph.add_node("handle_approval", _handle_approval)
 
-    graph.set_entry_point("route_input")
+    graph.set_entry_point("planner")
 
-    graph.add_conditional_edges("route_input", _route_after_classify, {
-        "read_gmail": "read_gmail",
-        "send_email": "send_email",
-        "schedule_meeting": "schedule_meeting",
-        "browse_repos": "browse_repos",
-        "task_status": "task_status",
-        "develop_code": "develop_code",
+    graph.add_conditional_edges("planner", _route_after_plan, {
+        "email_agent": "email_agent",
+        "send_email_agent": "send_email_agent",
+        "calendar_agent": "calendar_agent",
+        "repo_wizard": "repo_wizard",
+        "task_status_agent": "task_status_agent",
+        "coding_developer": "coding_developer",
         "handle_approval": "handle_approval",
-        "notify_general": "notify_general",
+        "general_agent": "general_agent",
     })
 
-    graph.add_edge("send_email", "notify_email_sent")
-    graph.add_edge("notify_email_sent", "evaluate_result")
+    graph.add_edge("send_email_agent", "notify_email_sent")
+    graph.add_edge("notify_email_sent", "evaluator")
 
-    graph.add_conditional_edges("schedule_meeting", _route_after_meeting, {
+    graph.add_conditional_edges("calendar_agent", _route_after_calendar, {
         "notify_meeting": "notify_meeting",
         "notify_meeting_ask": "notify_meeting_ask",
     })
-    graph.add_edge("notify_meeting", "evaluate_result")
+    graph.add_edge("notify_meeting", "evaluator")
     graph.add_edge("notify_meeting_ask", END)
 
-    graph.add_edge("task_status", "notify_result")
+    graph.add_edge("task_status_agent", "notify_result")
 
-    graph.add_conditional_edges("browse_repos", _route_after_browse, {
-        "start_dev_notify": "start_dev_notify",
+    graph.add_conditional_edges("repo_wizard", _route_after_repo_wizard, {
+        "notify_then_develop": "notify_then_develop",
         "notify_picker": "notify_picker",
     })
     graph.add_edge("notify_picker", END)
-    graph.add_edge("start_dev_notify", "develop_code")
+    graph.add_edge("notify_then_develop", "coding_developer")
 
-    graph.add_conditional_edges("read_gmail", _route_after_gmail, {
-        "develop_code": "notify_gmail",
+    graph.add_conditional_edges("email_agent", _route_after_email, {
+        "notify_then_develop": "notify_then_develop",
         "notify_result": "notify_result",
     })
-    graph.add_edge("notify_gmail", "develop_code")
 
-    graph.add_edge("develop_code", "notify_dev")
-    graph.add_edge("notify_dev", "review_code")
+    graph.add_edge("coding_developer", "notify_dev")
+    graph.add_edge("notify_dev", "coding_reviewer")
 
-    graph.add_conditional_edges("review_code", _route_after_review, {
+    graph.add_conditional_edges("coding_reviewer", _route_after_review, {
         "request_approval": "request_approval",
-        "develop_code": "develop_code",
+        "coding_developer": "coding_developer",
         "notify_result": "notify_result",
     })
 
@@ -244,19 +216,18 @@ def build_graph() -> StateGraph:
     graph.add_edge("notify_approval", END)
 
     graph.add_conditional_edges("handle_approval", _route_after_approval, {
-        "deploy_code": "deploy_code",
+        "coding_deployer": "coding_deployer",
         "notify_rejected": "notify_rejected",
     })
-    graph.add_edge("notify_rejected", "evaluate_result")
-    graph.add_edge("deploy_code", "notify_result")
+    graph.add_edge("notify_rejected", "evaluator")
+    graph.add_edge("coding_deployer", "notify_result")
 
-    # notify_result used by several paths — then final evaluation
-    graph.add_edge("notify_result", "evaluate_result")
-    graph.add_edge("evaluate_result", "notify_evaluation")
+    graph.add_edge("notify_result", "evaluator")
+    graph.add_edge("evaluator", "notify_evaluation")
     graph.add_edge("notify_evaluation", END)
 
-    graph.add_edge("notify_general", "notify_general_send")
-    graph.add_edge("notify_general_send", END)
+    graph.add_edge("general_agent", "notify_general")
+    graph.add_edge("notify_general", END)
 
     return graph
 
@@ -284,17 +255,13 @@ async def run_graph(
     compiled = await _get_compiled()
     config = {"configurable": {"thread_id": task_id}}
     t0 = time.perf_counter()
-    logger.info("Starting graph execution for task %s", task_id)
+    logger.info("Starting planner graph task=%s", task_id)
 
     async for event in compiled.astream(initial_state, config):
         node = list(event.keys())[0] if event else "unknown"
         logger.info("Task %s: completed node '%s'", task_id, node)
 
-    logger.info(
-        "Graph execution completed for task %s in %.2fs",
-        task_id,
-        time.perf_counter() - t0,
-    )
+    logger.info("Task %s completed in %.2fs", task_id, time.perf_counter() - t0)
 
 
 async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) -> None:
@@ -310,7 +277,7 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
         "status": "rejected" if approval_status == "rejected" else "deploying",
     }
 
-    logger.info("Resuming graph for task %s with approval=%s", task_id, approval_status)
+    logger.info("Resuming task %s approval=%s", task_id, approval_status)
 
     try:
         from langgraph.types import Command
@@ -320,48 +287,44 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
             config,
         ):
             node = list(event.keys())[0] if event else "unknown"
-            logger.info("Task %s (resumed): completed node '%s'", task_id, node)
+            logger.info("Task %s (resumed): '%s'", task_id, node)
         return
     except Exception:
-        logger.warning("Command resume unavailable; using manual deploy/reject path")
+        logger.warning("Command resume unavailable; manual deploy/reject path")
 
-    # Manual continuation using checkpointed state values when possible
     snapshot = await compiled.aget_state(config)
     values = dict(snapshot.values or {})
     values.update(state_update)
 
     if approval_status == "approved":
-        values = await deploy_code(values)
-        values = await notify(values)
-        values = await evaluate_result(values)
-        await notify(values)
+        values = await run_deployer(values)
+        values = await run_notifier(values)
+        values = await run_evaluator(values)
+        await run_notifier(values)
     else:
         values["status"] = "rejected"
         values["notification_text"] = "You rejected the changes. Nothing was pushed."
-        values = await notify(values)
-        values = await evaluate_result(values)
-        await notify(values)
+        values = await run_notifier(values)
+        values = await run_evaluator(values)
+        await run_notifier(values)
 
 
 async def run_gmail_flow(history_id: str) -> None:
     task_id = str(uuid.uuid4())[:8]
     phone = settings.allowed_phone_numbers[0] if settings.allowed_phone_numbers else ""
-
     initial_state: AgentState = {
         "task_id": task_id,
         "status": "PENDING",
         "source": "gmail",
         "intent": "check_email",
-        "user_message": f"Check emails (triggered by push notification, historyId={history_id})",
+        "user_message": f"Check emails (triggered by push, historyId={history_id})",
         "whatsapp_phone": phone,
         "review_iteration": 0,
         "messages": [],
     }
-
     compiled = await _get_compiled()
     config = {"configurable": {"thread_id": task_id}}
-    logger.info("Starting Gmail-triggered flow, task %s, historyId=%s", task_id, history_id)
-
+    # Jump into email specialist via planner-compatible state
     async for event in compiled.astream(initial_state, config):
         node = list(event.keys())[0] if event else "unknown"
-        logger.info("Task %s (gmail): completed node '%s'", task_id, node)
+        logger.info("Task %s (gmail): '%s'", task_id, node)
