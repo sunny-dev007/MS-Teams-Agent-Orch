@@ -25,22 +25,30 @@ For meetings: re-run `python scripts/setup_gmail_oauth.py --credentials ...` (Ca
 3. Pick project (AzDO) then repo by number
 4. Send coding instruction
 
-## 5) Code change on sample app (recommended path)
+## 5) Code change on sample app (phone browser path)
 
-Sample repo (already published):
-https://github.com/sunny-dev007/personal-task-api
+Open on phone browser first:
+- App: https://personal-task-api-sunny.azurewebsites.net/
+- Docs: https://personal-task-api-sunny.azurewebsites.net/docs
+- Health: https://personal-task-api-sunny.azurewebsites.net/health
 
-WhatsApp steps:
-1. `check my repos`
-2. Reply `1` (GitHub)
-3. Pick **personal-task-api** (by number)
-4. Ask: `Add DELETE /tasks/{id} endpoint and reject empty titles with HTTP 400`
-5. Wait for `APPROVE <task_id>` → reply `APPROVE <task_id>`
-6. Expect GitHub PR + Actions link + final evaluation
+Sample repo: https://github.com/sunny-dev007/personal-task-api
 
-Azure DevOps path (after AzDO URL fix):
-1. `check my repos` → `2` → `Project-NIT` → pick any repo you want to change
-2. Same approve flow (PR/pipeline on AzDO)
+WhatsApp steps (do this from phone only):
+1. `hello`
+2. `help`
+3. `check my emails` (optional)
+4. `check my repos`
+5. Reply `1` (GitHub)
+6. Pick **personal-task-api** by number
+7. `Add DELETE /tasks/{id} endpoint and reject empty titles with HTTP 400`
+8. When asked, reply `APPROVE <task_id>` (exact task id from the bot)
+9. Wait for evaluation: PR + merged + **Live app** URL
+10. Refresh phone browser `/` and `/docs` — DELETE should appear; empty title POST should return 400
+
+Azure DevOps path:
+1. `check my repos` → `2` → `Project-NIT` → pick a repo
+2. Same coding + `APPROVE` flow (PR on AzDO; live phone redeploy is only for personal-task-api)
 
 ## 6) Status
 Send `task status` or `5`

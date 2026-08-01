@@ -61,6 +61,31 @@ async def plan(state: AgentState) -> AgentState:
     if phone:
         session = await get_session(phone)
         awaiting = session.get("awaiting")
+        if awaiting == "approval":
+            # Bare approve/reject should be handled in the WhatsApp webhook.
+            # If we land here, remind Sunny instead of starting a new empty deploy.
+            lower = user_msg.lower().strip()
+            if lower.startswith("approve") or lower.startswith("reject"):
+                tid = (session.get("data") or {}).get("pending_task_id") or "unknown"
+                return {
+                    **state,
+                    "intent": "general",
+                    "notification_text": (
+                        f"Please reply *APPROVE {tid}* or *REJECT {tid}* "
+                        "(or just *Approve* / *Reject*)."
+                    ),
+                    "planned_by": AGENT_NAME,
+                }
+            return {
+                **state,
+                "intent": "general",
+                "notification_text": (
+                    f"You have a coding change waiting.\n"
+                    f"Reply *APPROVE {(session.get('data') or {}).get('pending_task_id', '')}* "
+                    f"or *REJECT …* to continue."
+                ),
+                "planned_by": AGENT_NAME,
+            }
         if awaiting:
             logger.info("%s: continue awaiting=%s task=%s", AGENT_NAME, awaiting, state.get("task_id"))
             updates: dict = {

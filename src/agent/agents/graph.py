@@ -93,9 +93,18 @@ def _route_after_calendar(state: AgentState) -> str:
     return "notify_meeting_ask"
 
 
+def _route_after_developer(state: AgentState) -> str:
+    """Skip review/approval when development failed (e.g. git missing)."""
+    if state.get("status") == "failed":
+        return "evaluator"
+    return "coding_reviewer"
+
+
 def _route_after_review(state: AgentState) -> str:
     result = state.get("review_result", "")
     iteration = state.get("review_iteration", 0)
+    if state.get("status") == "failed" or not state.get("file_changes"):
+        return "notify_result"
     if result == "approved":
         return "request_approval"
     if iteration >= 3:
@@ -109,15 +118,62 @@ def _route_after_approval(state: AgentState) -> str:
     return "notify_rejected"
 
 
+def _format_change_preview(file_changes: list, max_chars: int = 2800) -> str:
+    """WhatsApp-friendly preview so Sunny can review without opening GitHub."""
+    if not file_changes:
+        return "No file changes listed."
+
+    parts: list[str] = []
+    used = 0
+    for change in file_changes:
+        action = change.get("action", "modify")
+        path = change.get("path", "?")
+        content = (change.get("content") or "").strip()
+        header = f"*{action}* `{path}`"
+        if not content:
+            block = header
+        else:
+            # Keep preview readable on phone
+            snippet = content if len(content) <= 900 else content[:900] + "\n…(truncated)"
+            block = f"{header}\n```\n{snippet}\n```"
+        if used + len(block) + 2 > max_chars:
+            parts.append("_(more changes truncated — approve to deploy all)_")
+            break
+        parts.append(block)
+        used += len(block) + 2
+    return "\n\n".join(parts)
+
+
 async def _request_approval(state: AgentState) -> AgentState:
     changes = state.get("file_changes", [])
-    changes_text = "\n".join(
-        f"- {c.get('action', 'modify')} `{c['path']}`" for c in changes
-    )
+    preview = _format_change_preview(changes)
+    phone = state.get("whatsapp_phone", "")
+    task_id = state.get("task_id", "")
+    # Persist deploy context so bare "Approve" / checkpoint loss still works
+    if phone and task_id:
+        from agent.core.session import save_session
+
+        await save_session(
+            phone,
+            awaiting="approval",
+            provider=state.get("repo_provider") or "",
+            data={
+                "pending_task_id": task_id,
+                "workspace_path": state.get("workspace_path", ""),
+                "branch_name": state.get("branch_name", ""),
+                "repo_url": state.get("repo_url", ""),
+                "repo_owner": state.get("repo_owner", ""),
+                "repo_name": state.get("repo_name", ""),
+                "repo_provider": state.get("repo_provider", ""),
+                "user_message": state.get("user_message", "") or state.get("email_body", ""),
+                "file_changes": state.get("file_changes") or [],
+            },
+            merge_data=False,
+        )
     return {
         **state,
         "status": "awaiting_approval",
-        "notification_text": changes_text or "Changes ready for review.",
+        "notification_text": preview,
         "approval_status": "pending",
     }
 
@@ -204,7 +260,10 @@ def build_graph() -> StateGraph:
     })
 
     graph.add_edge("coding_developer", "notify_dev")
-    graph.add_edge("notify_dev", "coding_reviewer")
+    graph.add_conditional_edges("notify_dev", _route_after_developer, {
+        "coding_reviewer": "coding_reviewer",
+        "evaluator": "evaluator",
+    })
 
     graph.add_conditional_edges("coding_reviewer", _route_after_review, {
         "request_approval": "request_approval",
@@ -265,6 +324,9 @@ async def run_graph(
 
 
 async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) -> None:
+    from agent.core.session import clear_session, get_session
+    from agent.services.git_ops import get_workspace_path
+
     compiled = await _get_compiled()
     config = {"configurable": {"thread_id": task_id}}
 
@@ -277,7 +339,58 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
         "status": "rejected" if approval_status == "rejected" else "deploying",
     }
 
-    logger.info("Resuming task %s approval=%s", task_id, approval_status)
+    # Hydrate deploy context from session (bare Approve) and/or local workspace
+    session = await get_session(whatsapp_phone) if whatsapp_phone else {}
+    pending = dict(session.get("data") or {})
+    pending_id = pending.get("pending_task_id") or ""
+    if pending_id and pending_id != task_id:
+        # Prefer the explicit APPROVE <id>; only use session fields when IDs match
+        # or when session has no conflicting pending id.
+        pending = {}
+    elif not pending_id or pending_id == task_id:
+        for key in (
+            "workspace_path",
+            "branch_name",
+            "repo_url",
+            "repo_owner",
+            "repo_name",
+            "repo_provider",
+            "user_message",
+            "file_changes",
+        ):
+            if pending.get(key) and not state_update.get(key):
+                state_update[key] = pending[key]
+
+    # Checkpoint may already have values — merge after loading snapshot below
+    try:
+        snapshot = await compiled.aget_state(config)
+        values = dict(snapshot.values or {})
+    except Exception:
+        values = {}
+
+    for key, val in list(state_update.items()):
+        if val not in (None, "", [], {}):
+            values[key] = val
+        elif key not in values and val is not None:
+            values[key] = val
+
+    # Reconstruct workspace path if missing but files exist on disk
+    if not values.get("workspace_path"):
+        repo_dir = get_workspace_path(task_id) / "repo"
+        if repo_dir.exists():
+            values["workspace_path"] = str(repo_dir)
+    if not values.get("branch_name"):
+        values["branch_name"] = f"agent/{task_id}"
+
+    state_update = values  # type: ignore[assignment]
+
+    logger.info(
+        "Resuming task %s approval=%s workspace=%s branch=%s",
+        task_id,
+        approval_status,
+        state_update.get("workspace_path"),
+        state_update.get("branch_name"),
+    )
 
     try:
         from langgraph.types import Command
@@ -288,13 +401,13 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
         ):
             node = list(event.keys())[0] if event else "unknown"
             logger.info("Task %s (resumed): '%s'", task_id, node)
+        if whatsapp_phone:
+            await clear_session(whatsapp_phone)
         return
     except Exception:
-        logger.warning("Command resume unavailable; manual deploy/reject path")
+        logger.warning("Command resume unavailable; manual deploy/reject path", exc_info=True)
 
-    snapshot = await compiled.aget_state(config)
-    values = dict(snapshot.values or {})
-    values.update(state_update)
+    values = dict(state_update)
 
     if approval_status == "approved":
         values = await run_deployer(values)
@@ -307,6 +420,9 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
         values = await run_notifier(values)
         values = await run_evaluator(values)
         await run_notifier(values)
+
+    if whatsapp_phone:
+        await clear_session(whatsapp_phone)
 
 
 async def run_gmail_flow(history_id: str) -> None:

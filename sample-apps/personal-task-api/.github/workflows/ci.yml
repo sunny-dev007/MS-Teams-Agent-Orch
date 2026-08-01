@@ -1,4 +1,4 @@
-name: personal-task-api-ci
+name: personal-task-api-ci-cd
 
 on:
   push:
@@ -19,3 +19,20 @@ jobs:
         run: |
           pip install fastapi uvicorn
           python -c "from main import app; print('import_ok', app.title)"
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure requirements.txt
+        run: |
+          if [ ! -f requirements.txt ]; then
+            printf 'fastapi>=0.115\nuvicorn[standard]>=0.30\n' > requirements.txt
+          fi
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: personal-task-api-sunny
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}

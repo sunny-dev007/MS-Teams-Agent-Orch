@@ -72,6 +72,25 @@ def parse_repo_url(url: str) -> tuple[str, str]:
     return parts[-2], parts[-1]
 
 
+async def merge_pull_request(
+    owner: str,
+    repo: str,
+    number: int,
+    commit_title: str | None = None,
+) -> dict:
+    url = f"{GITHUB_API}/repos/{owner}/{repo}/pulls/{number}/merge"
+    payload = {
+        "merge_method": "squash",
+        "commit_title": commit_title or f"Merge PR #{number} via Sunny AI Agent",
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.put(url, json=payload, headers=_headers(), timeout=30)
+        resp.raise_for_status()
+        result = resp.json()
+        logger.info("Merged PR #%s on %s/%s", number, owner, repo)
+        return result
+
+
 async def list_repos(per_page: int = 20) -> list[dict]:
     """List repos for the authenticated user, preferring GITHUB_DEFAULT_OWNER."""
     owner = settings.github_default_owner.strip()

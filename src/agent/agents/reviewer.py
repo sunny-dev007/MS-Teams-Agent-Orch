@@ -23,11 +23,15 @@ async def review_code(state: AgentState) -> AgentState:
     iteration = state.get("review_iteration", 0)
 
     if not file_changes:
+        # Never auto-approve empty work — that produced false APPROVE prompts
+        # after clone/dev failures.
         return {
             **state,
-            "review_result": "approved",
-            "review_comments": "No changes to review.",
-            "status": "review_complete",
+            "review_result": "rejected",
+            "review_comments": "No code changes were produced to review.",
+            "status": "failed",
+            "notification_text": "No code changes were produced to review.",
+            "error": state.get("error") or "No file changes to review",
         }
 
     changes_summary = "\n".join(

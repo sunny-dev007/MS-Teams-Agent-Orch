@@ -18,19 +18,19 @@ STATUS_TEMPLATES = {
         "*Comments:*\n{detail}"
     ),
     "awaiting_approval": (
-        "*Sunny's AI Agent* — Ready for your approval (`{task_id}`)\n\n"
+        "*Sunny's AI Agent* — Review changes before deploy (`{task_id}`)\n\n"
         "*Repo:* {repo}\n"
-        "*Branch:* {branch}\n"
-        "*Changes:*\n{detail}\n\n"
-        "Reply *APPROVE {task_id}* or *REJECT {task_id}*"
+        "*Nothing pushed to main yet*\n\n"
+        "*Proposed changes:*\n{detail}\n\n"
+        "Reply *APPROVE {task_id}* (or *final approval*) to merge into main and deploy live.\n"
+        "Reply *REJECT {task_id}* to cancel."
     ),
     "deploying": (
-        "*Sunny's AI Agent* — Pushing code and triggering pipeline (`{task_id}`)..."
+        "*Sunny's AI Agent* — Final approval received (`{task_id}`)\n"
+        "Merging to main and deploying live…"
     ),
     "completed": (
-        "*Sunny's AI Agent* — Completed (`{task_id}`)\n\n"
-        "*PR:* {pr_url}\n"
-        "*Pipeline:* {pipeline_url}"
+        "*Sunny's AI Agent* — Deployment completed (`{task_id}`)\n\n{detail}"
     ),
     "failed": (
         "*Sunny's AI Agent* — Failed (`{task_id}`)\n\n*Error:* {detail}"
