@@ -10,13 +10,13 @@ from googleapiclient.discovery import build
 
 from agent.config import settings
 from agent.core.logging import get_logger
-from agent.core.oauth import get_google_credentials
+from agent.core.oauth import get_calendar_credentials, get_gmail_credentials
 
 logger = get_logger(__name__)
 
 
 def _calendar_service():
-    creds = get_google_credentials()
+    creds = get_calendar_credentials()
     return build("calendar", "v3", credentials=creds)
 
 
@@ -111,10 +111,9 @@ def send_calendar_invite_email(
     description: str = "",
 ) -> dict:
     """Fallback when Calendar API fails: email an invite-style message via Gmail."""
-    from agent.core.oauth import get_gmail_credentials
+    creds = get_gmail_credentials()
     from googleapiclient.discovery import build as gbuild
 
-    creds = get_gmail_credentials()
     service = gbuild("gmail", "v1", credentials=creds)
     profile = service.users().getProfile(userId="me").execute()
     sender = profile.get("emailAddress", "")
