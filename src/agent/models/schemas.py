@@ -27,3 +27,4 @@ class WhatsAppMessage(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "healthy"
     version: str = "0.1.0"
+    whatsapp: dict | None = None

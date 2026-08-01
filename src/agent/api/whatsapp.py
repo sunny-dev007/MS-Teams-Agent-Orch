@@ -74,6 +74,13 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
 async def _resume_with_approval(task_id: str, approval: str, phone: str) -> None:
     try:
+        from agent.services.whatsapp import send_message
+
+        await send_message(phone, f"Got it, Sunny — applying your {approval} on `{task_id}`…")
+    except Exception:
+        logger.exception("Failed to send approval ack for task %s", task_id)
+
+    try:
         from agent.agents.graph import resume_graph
         await resume_graph(task_id, approval, phone)
     except Exception:

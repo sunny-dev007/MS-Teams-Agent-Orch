@@ -1,0 +1,23 @@
+"""
+Personal Task API (sample)
+
+Run locally:
+  pip install fastapi uvicorn
+  uvicorn main:app --reload --port 8091
+
+E2E with Sunny's WhatsApp agent:
+1. Push this folder to GitHub (or use local remote URL the agent can clone)
+2. WhatsApp: "check my repos" → GitHub → select personal-task-api
+3. Ask: "Add DELETE /tasks/{id} endpoint"
+4. Wait for APPROVE <task_id> → reply APPROVE
+5. Confirm PR + final evaluation message
+"""
+
+[project]
+name = "personal-task-api"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+]

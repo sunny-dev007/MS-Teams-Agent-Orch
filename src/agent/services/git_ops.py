@@ -37,11 +37,14 @@ def clone_repo(repo_url: str, task_id: str, branch: str = "main") -> tuple[Repo,
     if repo_dir.exists():
         shutil.rmtree(repo_dir)
 
-    token = settings.github_token.get_secret_value()
-    if token and "github.com" in repo_url:
-        auth_url = repo_url.replace("https://", f"https://{token}@")
-    else:
-        auth_url = repo_url
+    auth_url = repo_url
+    gh_token = settings.github_token.get_secret_value()
+    azdo_pat = settings.azdo_pat.get_secret_value()
+    if gh_token and "github.com" in repo_url:
+        auth_url = repo_url.replace("https://", f"https://{gh_token}@")
+    elif azdo_pat and ("dev.azure.com" in repo_url or "visualstudio.com" in repo_url):
+        # Azure DevOps HTTPS: https://:{pat}@dev.azure.com/org/project/_git/repo
+        auth_url = repo_url.replace("https://", f"https://:{azdo_pat}@")
 
     logger.info("Cloning %s into %s", repo_url, repo_dir)
     repo = Repo.clone_from(auth_url, str(repo_dir), branch=branch)

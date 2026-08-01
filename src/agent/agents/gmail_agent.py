@@ -4,6 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.agents.state import AgentState
 from agent.core.logging import get_logger
+from agent.core.persona import get_persona_prompt
 from agent.services.gmail import get_message, list_recent_messages, send_email
 from agent.services.llm import get_llm
 
@@ -15,9 +16,6 @@ CLASSIFY_PROMPT = """You are an email classification agent. Analyze the email an
 2. Is it actionable (requires code changes, bug fix, feature request, PR review)?
 3. Extract the repository URL if mentioned.
 
-Email senders from GitHub typically end with @github.com or notifications@github.com.
-Azure DevOps notifications come from azuredevops@microsoft.com.
-
 Respond in JSON:
 {
   "is_repo_related": true/false,
@@ -28,43 +26,53 @@ Respond in JSON:
   "priority": "high" | "medium" | "low"
 }"""
 
+DIGEST_PROMPT = """You write WhatsApp-friendly email digests for Sunny Kushwaha.
+Given raw email metadata, produce a comprehensive but scannable digest.
+
+Rules:
+- Use short sections and bullets
+- For each email: From, Subject, Summary (1-2 lines), Suggested action
+- Group or highlight anything urgent
+- Do NOT invent email content that is not present
+- Keep total length suitable for WhatsApp (aim under 3500 chars)
+"""
+
 
 async def read_gmail(state: AgentState) -> AgentState:
     task_id = state.get("task_id", "unknown")
 
     try:
-        messages = list_recent_messages(max_results=5)
+        messages = list_recent_messages(max_results=12)
 
         if not messages:
             return {
                 **state,
                 "status": "email_summary",
-                "notification_text": "No new emails found in your inbox.",
+                "notification_text": "No emails found in your inbox, Sunny.",
+                "evaluation_text": "1. Checked Gmail inbox\n2. No messages found\n3. Done",
             }
 
+        emails: list[dict] = []
         actionable_emails = []
-        summaries = []
 
         for msg_ref in messages:
             email = get_message(msg_ref["id"])
-            classification = await _classify_email(email)
+            emails.append(email)
+            # Only classify a few for actionable coding handoff to save latency
+            if len(actionable_emails) < 2 and len(emails) <= 5:
+                classification = await _classify_email(email)
+                if classification.get("is_actionable") and classification.get("is_repo_related"):
+                    actionable_emails.append({"email": email, "classification": classification})
 
-            subject = email.get("subject", "(no subject)")
-            summaries.append(f"• *{subject}*\n  From: {email.get('from', '?')}")
-
-            if classification.get("is_actionable"):
-                actionable_emails.append({
-                    "email": email,
-                    "classification": classification,
-                })
+        digest = await _build_digest(emails)
 
         if actionable_emails:
             top = actionable_emails[0]
             cls = top["classification"]
             email = top["email"]
-
-            logger.info("Found actionable email: %s → %s", email["subject"], cls.get("action_type"))
-
+            logger.info(
+                "Found actionable email: %s → %s", email["subject"], cls.get("action_type")
+            )
             return {
                 **state,
                 "intent": "code_change",
@@ -75,19 +83,32 @@ async def read_gmail(state: AgentState) -> AgentState:
                 "user_message": cls.get("summary", email["subject"]),
                 "status": "task_started",
                 "notification_text": (
-                    f"Found actionable email:\n"
+                    f"{digest}\n\n"
+                    "---\n"
+                    "*Actionable coding item detected*\n"
                     f"*Subject:* {email['subject']}\n"
                     f"*Action:* {cls.get('summary', 'N/A')}\n"
-                    f"*Repo:* {cls.get('repo_url', 'N/A')}\n\n"
-                    f"Starting development..."
+                    f"*Repo:* {cls.get('repo_url') or 'not found — tell me the repo'}\n\n"
+                    "Starting development if repo is known…"
+                ),
+                "evaluation_text": (
+                    f"1. Fetched {len(emails)} recent emails\n"
+                    "2. Built digest for WhatsApp\n"
+                    f"3. Detected actionable item: {email['subject']}\n"
+                    "4. Handing off to developer agent"
                 ),
             }
 
-        summary_text = "\n".join(summaries[:5])
         return {
             **state,
             "status": "email_summary",
-            "notification_text": f"Found {len(messages)} recent emails, none require action:\n\n{summary_text}",
+            "notification_text": digest,
+            "evaluation_text": (
+                f"1. Fetched {len(emails)} recent emails\n"
+                "2. Built comprehensive WhatsApp digest\n"
+                "3. No coding handoff required\n"
+                "4. Done"
+            ),
         }
 
     except Exception as e:
@@ -100,15 +121,38 @@ async def read_gmail(state: AgentState) -> AgentState:
         }
 
 
+async def _build_digest(emails: list[dict]) -> str:
+    llm = get_llm(temperature=0.2)
+    payload = []
+    for e in emails[:12]:
+        payload.append(
+            {
+                "from": e.get("from", ""),
+                "subject": e.get("subject", ""),
+                "snippet": (e.get("snippet") or e.get("body", "")[:400]),
+            }
+        )
+    response = await llm.ainvoke([
+        SystemMessage(content=get_persona_prompt() + "\n\n" + DIGEST_PROMPT),
+        HumanMessage(content=json.dumps(payload, indent=2)),
+    ])
+    text = (response.content or "").strip()
+    if len(text) > 3900:
+        text = text[:3900] + "\n…(truncated)"
+    return text
+
+
 async def _classify_email(email: dict) -> dict:
     llm = get_llm(temperature=0)
-    content = f"Subject: {email.get('subject', '')}\nFrom: {email.get('from', '')}\n\n{email.get('body', '')[:2000]}"
-
+    content = (
+        f"Subject: {email.get('subject', '')}\n"
+        f"From: {email.get('from', '')}\n\n"
+        f"{email.get('body', '')[:2000]}"
+    )
     response = await llm.ainvoke([
         SystemMessage(content=CLASSIFY_PROMPT),
         HumanMessage(content=content),
     ])
-
     try:
         start = response.content.find("{")
         end = response.content.rfind("}") + 1
@@ -116,7 +160,6 @@ async def _classify_email(email: dict) -> dict:
             return json.loads(response.content[start:end])
     except json.JSONDecodeError:
         pass
-
     return {"is_repo_related": False, "is_actionable": False, "action_type": "info_only"}
 
 
@@ -140,16 +183,27 @@ async def compose_and_send_email(state: AgentState) -> AgentState:
     if not subject or not body:
         llm = get_llm(temperature=0.3)
         response = await llm.ainvoke([
-            SystemMessage(content="You are an email composition assistant. Based on the user's request, generate an appropriate email subject and body. Respond in JSON: {\"subject\": \"...\", \"body\": \"...\"}"),
-            HumanMessage(content=f"User request: {user_msg}\nRecipient: {to}\nSubject hint: {subject or 'none'}\nBody hint: {body or 'none'}"),
+            SystemMessage(
+                content=(
+                    get_persona_prompt()
+                    + "\n\nCompose email JSON: {\"subject\": \"...\", \"body\": \"...\"}"
+                )
+            ),
+            HumanMessage(
+                content=(
+                    f"User request: {user_msg}\nRecipient: {to}\n"
+                    f"Subject hint: {subject or 'none'}\nBody hint: {body or 'none'}"
+                )
+            ),
         ])
         try:
-            import json
-            parsed = json.loads(response.content[response.content.find("{"):response.content.rfind("}") + 1])
-            subject = subject or parsed.get("subject", "Message from AI Agent")
+            parsed = json.loads(
+                response.content[response.content.find("{") : response.content.rfind("}") + 1]
+            )
+            subject = subject or parsed.get("subject", "Message from Sunny's AI Agent")
             body = body or parsed.get("body", user_msg)
         except Exception:
-            subject = subject or "Message from AI Agent"
+            subject = subject or "Message from Sunny's AI Agent"
             body = body or user_msg
 
     try:
@@ -158,7 +212,8 @@ async def compose_and_send_email(state: AgentState) -> AgentState:
         return {
             **state,
             "status": "general_response",
-            "notification_text": f"Email sent successfully to {to}\n*Subject:* {subject}",
+            "notification_text": f"Email sent to {to}\n*Subject:* {subject}",
+            "evaluation_text": f"1. Composed email\n2. Sent to {to}\n3. Subject: {subject}\n4. Done",
         }
     except Exception as e:
         logger.exception("Failed to send email for task %s", task_id)

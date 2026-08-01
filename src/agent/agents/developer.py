@@ -38,6 +38,11 @@ async def develop_code(state: AgentState) -> AgentState:
 
     owner, repo_name = parse_repo_url(repo_url)
     branch_name = f"agent/{task_id}"
+    provider = state.get("repo_provider") or (
+        "azure_devops"
+        if "dev.azure.com" in repo_url or "visualstudio.com" in repo_url
+        else "github"
+    )
 
     try:
         repo, repo_dir = clone_repo(repo_url, task_id)
@@ -94,6 +99,7 @@ async def develop_code(state: AgentState) -> AgentState:
             "branch_name": branch_name,
             "repo_owner": owner,
             "repo_name": repo_name,
+            "repo_provider": provider,
             "workspace_path": str(repo_dir),
             "notification_text": changes_summary,
         }

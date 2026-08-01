@@ -23,8 +23,35 @@ from agent.models.db import init_db
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging()
+    # Ensure ORM models are registered before create_all
+    from agent.core import session as _session_models  # noqa: F401
+    from agent.models import task as _task_models  # noqa: F401
+
     await init_db()
-    yield
+
+    from agent.core.logging import get_logger
+    from agent.services.whatsapp import check_access_token
+
+    log = get_logger(__name__)
+    token_status = await check_access_token()
+    if token_status.get("ok"):
+        log.info(
+            "WhatsApp token OK (%s)",
+            token_status.get("display_phone_number") or token_status.get("phone_number_id"),
+        )
+    else:
+        log.error(
+            "WhatsApp token check failed at startup: %s — replies will not be delivered until "
+            "WHATSAPP_ACCESS_TOKEN is replaced with a long-lived or System User token.",
+            token_status,
+        )
+
+    try:
+        yield
+    finally:
+        from agent.agents.graph import close_graph_resources
+
+        await close_graph_resources()
 
 
 app = FastAPI(

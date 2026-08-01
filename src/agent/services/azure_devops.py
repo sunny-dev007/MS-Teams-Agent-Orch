@@ -74,3 +74,11 @@ async def list_pipelines(project: str) -> list[dict]:
         resp = await client.get(url, headers=_headers(), timeout=30)
         resp.raise_for_status()
         return resp.json().get("value", [])
+
+
+async def list_repositories(project: str) -> list[dict]:
+    url = _api_url(f"{project}/_apis/git/repositories?api-version=7.1")
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers=_headers(), timeout=30)
+        resp.raise_for_status()
+        return resp.json().get("value", [])

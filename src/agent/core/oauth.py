@@ -9,10 +9,12 @@ logger = get_logger(__name__)
 SCOPES = [
     "https://www.googleapis.com/auth/gmail.readonly",
     "https://www.googleapis.com/auth/gmail.send",
+    "https://www.googleapis.com/auth/calendar.events",
 ]
 
 
 def get_gmail_credentials() -> Credentials:
+    """Shared Google credentials (Gmail + Calendar scopes)."""
     creds = Credentials(
         token=None,
         refresh_token=settings.google_refresh_token.get_secret_value(),
@@ -22,5 +24,9 @@ def get_gmail_credentials() -> Credentials:
         scopes=SCOPES,
     )
     creds.refresh(Request())
-    logger.info("Gmail credentials refreshed")
+    logger.info("Google credentials refreshed")
     return creds
+
+
+# Back-compat alias
+get_google_credentials = get_gmail_credentials

@@ -70,3 +70,24 @@ def parse_repo_url(url: str) -> tuple[str, str]:
     url = url.rstrip("/").removesuffix(".git")
     parts = url.split("/")
     return parts[-2], parts[-1]
+
+
+async def list_repos(per_page: int = 20) -> list[dict]:
+    """List repos for the authenticated user, preferring GITHUB_DEFAULT_OWNER."""
+    owner = settings.github_default_owner.strip()
+    async with httpx.AsyncClient() as client:
+        if owner:
+            url = f"{GITHUB_API}/users/{owner}/repos"
+            params = {"sort": "updated", "per_page": per_page, "type": "all"}
+            resp = await client.get(url, headers=_headers(), params=params, timeout=30)
+            if resp.status_code == 404:
+                url = f"{GITHUB_API}/orgs/{owner}/repos"
+                resp = await client.get(url, headers=_headers(), params=params, timeout=30)
+            resp.raise_for_status()
+            return resp.json()
+
+        url = f"{GITHUB_API}/user/repos"
+        params = {"sort": "updated", "per_page": per_page, "affiliation": "owner,collaborator"}
+        resp = await client.get(url, headers=_headers(), params=params, timeout=30)
+        resp.raise_for_status()
+        return resp.json()

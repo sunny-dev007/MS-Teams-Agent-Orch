@@ -1,38 +1,49 @@
 from agent.agents.state import AgentState
 from agent.core.logging import get_logger
-from agent.services.whatsapp import send_message
+from agent.services.whatsapp import WhatsAppAuthError, send_message
 
 logger = get_logger(__name__)
 
 STATUS_TEMPLATES = {
-    "task_started": "🤖 *Task {task_id}* started.\n\n{detail}",
+    "task_started": (
+        "*Sunny's AI Agent* — Task `{task_id}` started\n\n{detail}"
+    ),
     "development_complete": (
-        "🔧 *Task {task_id}* — Development complete.\n\n"
-        "*Changes:*\n{detail}\n\n"
-        "Sending to reviewer..."
+        "*Sunny's AI Agent* — Development complete (`{task_id}`)\n\n"
+        "*Changes:*\n{detail}\n\nSending to reviewer..."
     ),
     "review_complete": (
-        "📝 *Task {task_id}* — Review complete.\n\n"
+        "*Sunny's AI Agent* — Review complete (`{task_id}`)\n\n"
         "*Result:* {review_result}\n"
         "*Comments:*\n{detail}"
     ),
     "awaiting_approval": (
-        "✅ *Task {task_id}* — Ready for your approval!\n\n"
+        "*Sunny's AI Agent* — Ready for your approval (`{task_id}`)\n\n"
         "*Repo:* {repo}\n"
         "*Branch:* {branch}\n"
         "*Changes:*\n{detail}\n\n"
         "Reply *APPROVE {task_id}* or *REJECT {task_id}*"
     ),
-    "deploying": "🚀 *Task {task_id}* — Pushing code and triggering pipeline...",
+    "deploying": (
+        "*Sunny's AI Agent* — Pushing code and triggering pipeline (`{task_id}`)..."
+    ),
     "completed": (
-        "✅ *Task {task_id}* — Completed!\n\n"
+        "*Sunny's AI Agent* — Completed (`{task_id}`)\n\n"
         "*PR:* {pr_url}\n"
         "*Pipeline:* {pipeline_url}"
     ),
-    "failed": "❌ *Task {task_id}* — Failed.\n\n*Error:* {detail}",
-    "rejected": "🚫 *Task {task_id}* — Rejected. Changes discarded.",
-    "email_summary": "📧 *Email Summary:*\n\n{detail}",
+    "failed": (
+        "*Sunny's AI Agent* — Failed (`{task_id}`)\n\n*Error:* {detail}"
+    ),
+    "rejected": (
+        "*Sunny's AI Agent* — Rejected (`{task_id}`). Changes were not pushed."
+    ),
+    "email_summary": "*Email digest for Sunny*\n\n{detail}",
+    "meeting_scheduled": "*Meeting scheduled*\n\n{detail}",
+    "repo_picker": "{detail}",
+    "evaluation": "*Final evaluation*\n\n{detail}",
     "general_response": "{detail}",
+    "ack": "{detail}",
 }
 
 
@@ -57,7 +68,14 @@ async def notify(state: AgentState) -> AgentState:
 
     try:
         await send_message(phone, text)
+    except WhatsAppAuthError:
+        logger.error(
+            "Cannot notify WhatsApp for task %s: access token expired/invalid.",
+            state.get("task_id"),
+        )
     except Exception:
-        logger.exception("Failed to send WhatsApp notification for task %s", state.get("task_id"))
+        logger.exception(
+            "Failed to send WhatsApp notification for task %s", state.get("task_id")
+        )
 
     return state
