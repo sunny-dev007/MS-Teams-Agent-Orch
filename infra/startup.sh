@@ -26,8 +26,12 @@ fi
 # Persistent storage survives Oryx zip deploy (wwwroot is replaced each release).
 if [ -n "${WEBSITE_SITE_NAME:-}" ]; then
   mkdir -p /home/site/data/workspaces
+  # Touch DB file so SQLite never fails with "unable to open database file"
+  # when App Settings point at /home/site/data before the first write.
+  : > /home/site/data/agent.db
   export DATABASE_URL="${DATABASE_URL:-sqlite+aiosqlite:////home/site/data/agent.db}"
   export WORKSPACE_DIR="${WORKSPACE_DIR:-/home/site/data/workspaces}"
+  echo "Persistent data dir: /home/site/data (DATABASE_URL set)"
 fi
 
 PORT="${PORT:-${WEBSITES_PORT:-8000}}"

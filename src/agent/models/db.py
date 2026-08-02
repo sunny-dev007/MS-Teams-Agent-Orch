@@ -2,8 +2,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase
 
 from agent.config import settings
+from agent.core.sqlite_paths import ensure_sqlite_file, to_aiosqlite_url
 
-engine = create_async_engine(settings.database_url, echo=False)
+# Create parent dir before first connection (fixes Azure "unable to open database file").
+_db_file = ensure_sqlite_file(settings.database_url)
+_db_url = to_aiosqlite_url(_db_file)
+engine = create_async_engine(_db_url, echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 

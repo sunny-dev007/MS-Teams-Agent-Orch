@@ -33,7 +33,10 @@ from agent.workflow.gates import (
 
 logger = get_logger(__name__)
 
-DB_PATH = settings.database_url.replace("sqlite+aiosqlite:///", "")
+from agent.core.sqlite_paths import ensure_sqlite_file
+
+# Ensure parent dir exists before LangGraph opens the checkpointer (Azure /home/site/data).
+DB_PATH = str(ensure_sqlite_file(settings.database_url))
 
 _checkpointer_cm = None
 _checkpointer = None
@@ -41,14 +44,16 @@ _compiled = None
 
 
 async def _get_compiled():
-    global _checkpointer_cm, _checkpointer, _compiled
+    global _checkpointer_cm, _checkpointer, _compiled, DB_PATH
     if _compiled is not None:
         return _compiled
 
+    # Re-ensure on each cold compile — deploy may race before /home/site/data exists.
+    DB_PATH = str(ensure_sqlite_file(settings.database_url))
     _checkpointer_cm = AsyncSqliteSaver.from_conn_string(DB_PATH)
     _checkpointer = await _checkpointer_cm.__aenter__()
     _compiled = build_graph().compile(checkpointer=_checkpointer)
-    logger.info("Compiled planner→specialists graph")
+    logger.info("Compiled planner→specialists graph (checkpoint=%s)", DB_PATH)
     return _compiled
 
 

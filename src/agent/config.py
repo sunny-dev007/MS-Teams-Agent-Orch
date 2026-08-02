@@ -6,11 +6,16 @@ from pathlib import Path
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from agent.core.sqlite_paths import ensure_sqlite_file, to_aiosqlite_url
+
 
 def _azure_data_dir() -> Path | None:
     if os.getenv("WEBSITE_SITE_NAME"):
         path = Path("/home/site/data")
-        path.mkdir(parents=True, exist_ok=True)
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
         return path
     return None
 
@@ -95,13 +100,24 @@ class Settings(BaseSettings):
     @classmethod
     def _default_persistent_db(cls, value: str | None) -> str:
         explicit = (value or "").strip()
-        if explicit and "/home/site/data/" in explicit:
-            return explicit
         data = _azure_data_dir()
-        if data is not None and (
-            not explicit or explicit in ("sqlite+aiosqlite:///./agent.db", "sqlite:///./agent.db")
-        ):
-            return f"sqlite+aiosqlite:///{data / 'agent.db'}"
+
+        # Azure App Service — always land on a writable absolute path under /home/site/data.
+        if data is not None:
+            if explicit and "/home/site/data" in explicit:
+                path = ensure_sqlite_file(
+                    explicit if "://" in explicit else f"sqlite+aiosqlite:///{explicit}"
+                )
+                return to_aiosqlite_url(path)
+            if not explicit or explicit in (
+                "sqlite+aiosqlite:///./agent.db",
+                "sqlite:///./agent.db",
+                "sqlite+aiosqlite:///agent.db",
+            ):
+                return to_aiosqlite_url(ensure_sqlite_file(to_aiosqlite_url(data / "agent.db")))
+            # Explicit non-default URL on Azure — still ensure parent exists.
+            return to_aiosqlite_url(ensure_sqlite_file(explicit))
+
         return explicit or "sqlite+aiosqlite:///./agent.db"
 
     @field_validator("workspace_dir", mode="before")
@@ -109,6 +125,7 @@ class Settings(BaseSettings):
     def _default_persistent_workspace(cls, value: str | None) -> str:
         explicit = (value or "").strip()
         if explicit and explicit.startswith("/home/site/data"):
+            Path(explicit).mkdir(parents=True, exist_ok=True)
             return explicit
         data = _azure_data_dir()
         if data is not None and explicit in ("", "./workspaces", "workspaces"):

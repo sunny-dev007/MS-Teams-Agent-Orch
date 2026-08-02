@@ -76,15 +76,20 @@ async def handle_whatsapp_message(parsed: dict) -> None:
             user_message=message,
             whatsapp_phone=phone,
         )
-    except Exception:
+    except Exception as exc:
         logger.exception("Task %s failed", task_id)
         try:
             from agent.services.whatsapp import send_message
 
-            await send_message(
-                phone,
-                f"Something went wrong with task {task_id}. Please try again.",
-            )
+            detail = str(exc)
+            if "unable to open database file" in detail.lower():
+                msg = (
+                    f"Something went wrong with task {task_id} "
+                    "(temporary storage startup). Please wait 30 seconds and try again."
+                )
+            else:
+                msg = f"Something went wrong with task {task_id}. Please try again."
+            await send_message(phone, msg)
         except Exception:
             logger.exception("Failed error reply for task %s", task_id)
 
