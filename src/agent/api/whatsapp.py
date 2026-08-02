@@ -132,16 +132,32 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
     pr_manual_match = PR_MANUAL_PATTERN.match(message)
     pr_ready_match = PR_READY_PATTERN.match(message)
 
+    # Plan PROCEED must work even if session was lost after deploy (task id in message).
+    if proceed_match and awaiting in (GATE_PLAN, None, ""):
+        tid = _task_id_from_match(proceed_match) or session_data.get("pending_task_id")
+        if awaiting == GATE_PLAN or tid:
+            background_tasks.add_task(
+                _resume_gate, GATE_PLAN, "approved", parsed["phone"], tid
+            )
+            return {"status": "ok"}
+        background_tasks.add_task(
+            _send_gate_hint,
+            parsed["phone"],
+            "To continue the plan, reply *PROCEED <task_id>* "
+            "(use the id from the Implementation plan message).\n"
+            "Or say *check my repos* to start fresh.",
+        )
+        return {"status": "ok"}
+
     if awaiting == GATE_PLAN:
         if reject_match:
             background_tasks.add_task(
                 _resume_gate, GATE_PLAN, "rejected", parsed["phone"], _task_id_from_match(reject_match)
             )
-        elif proceed_match or (
-            approve_match
-            and (message.lower().strip() in ("approve", "approved") or "plan" in message.lower())
+        elif approve_match and (
+            message.lower().strip() in ("approve", "approved") or "plan" in message.lower()
         ):
-            tid = _task_id_from_match(proceed_match) or _task_id_from_match(approve_match)
+            tid = _task_id_from_match(approve_match) or session_data.get("pending_task_id")
             background_tasks.add_task(
                 _resume_gate, GATE_PLAN, "approved", parsed["phone"], tid
             )

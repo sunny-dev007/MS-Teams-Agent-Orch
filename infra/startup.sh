@@ -24,14 +24,15 @@ elif [ -d /home/site/wwwroot/src ]; then
 fi
 
 # Persistent storage survives Oryx zip deploy (wwwroot is replaced each release).
+# NEVER truncate agent.db — that wipes WhatsApp sessions and LangGraph checkpoints.
 if [ -n "${WEBSITE_SITE_NAME:-}" ]; then
   mkdir -p /home/site/data/workspaces
-  # Touch DB file so SQLite never fails with "unable to open database file"
-  # when App Settings point at /home/site/data before the first write.
-  : > /home/site/data/agent.db
+  if [ ! -f /home/site/data/agent.db ]; then
+    touch /home/site/data/agent.db
+  fi
   export DATABASE_URL="${DATABASE_URL:-sqlite+aiosqlite:////home/site/data/agent.db}"
   export WORKSPACE_DIR="${WORKSPACE_DIR:-/home/site/data/workspaces}"
-  echo "Persistent data dir: /home/site/data (DATABASE_URL set)"
+  echo "Persistent data dir: /home/site/data (db exists=$( [ -f /home/site/data/agent.db ] && echo yes || echo no ))"
 fi
 
 PORT="${PORT:-${WEBSITES_PORT:-8000}}"

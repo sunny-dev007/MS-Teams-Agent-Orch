@@ -12,6 +12,13 @@ from agent.api.whatsapp import (
 from agent.workflow.gates import GATE_DEPLOY, GATE_MANUAL_PR, GATE_PLAN, GATE_PR_MODE
 
 
+def test_proceed_bare_and_with_id():
+    assert PROCEED_PATTERN.match("Proceed")
+    assert PROCEED_PATTERN.match("proceed")
+    assert _task_id_from_match(PROCEED_PATTERN.match("PROCEED 815ca0cc")) == "815ca0cc"
+    assert _task_id_from_match(PROCEED_PATTERN.match("Proceed")) is None
+
+
 def test_proceed_plan_with_task_id():
     m = PROCEED_PATTERN.match("PROCEED abc12345")
     assert _task_id_from_match(m) == "abc12345"

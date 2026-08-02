@@ -94,8 +94,18 @@ async def save_session(
                     row.data_json = data
 
             await db.commit()
+            logger.info(
+                "Saved session phone=%s awaiting=%s task=%s",
+                phone,
+                row.awaiting,
+                (row.data_json or {}).get("pending_task_id"),
+            )
 
-    await _with_schema_retry("save_session", _write)
+    try:
+        await _with_schema_retry("save_session", _write)
+    except Exception:
+        logger.exception("save_session failed for %s awaiting=%s", phone, awaiting)
+        raise
 
 
 async def clear_session(phone: str) -> None:

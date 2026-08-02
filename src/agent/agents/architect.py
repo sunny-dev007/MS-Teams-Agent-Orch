@@ -171,12 +171,10 @@ def _guess_target_files(user_msg: str, repo_tree: str) -> list[str]:
             candidates.append(path)
 
     if not candidates and "portal" in msg:
-        for hint in ("portal.html", "static/portal.html", "src/agent/static/portal.html"):
-            if hint in tree_lower:
-                candidates.append(hint)
-                break
-        if not candidates:
-            candidates.append("portal page (main UI template)")
+        if "src/agent/web/portal.html" in tree_lower or "agent/web/portal.html" in tree_lower:
+            candidates.append("src/agent/web/portal.html")
+        else:
+            candidates.append("src/agent/web/portal.html")
 
     if not candidates:
         candidates.append("relevant UI / template files for this repo")

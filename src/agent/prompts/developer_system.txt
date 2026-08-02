@@ -32,3 +32,4 @@ Rules:
   `from pydantic_settings import BaseSettings, SettingsConfigDict`
 - Do NOT rewrite or stub `src/agent/config.py` unless the task explicitly requires a settings change; keep all existing fields
 - Do NOT rewrite `src/agent/api/portal.py` to use Jinja2 or `from src.agent.config import ...`; keep FileResponse serving `src/agent/web/portal.html`
+- Portal UI lives at `src/agent/web/portal.html` (NOT `src/web/portal.html`)

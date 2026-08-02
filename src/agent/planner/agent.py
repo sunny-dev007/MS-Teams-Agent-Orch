@@ -214,17 +214,30 @@ async def plan(state: AgentState) -> AgentState:
         updates["repo_url"] = result["repo_url"]
     if intent in ("approval_yes", "approval_no"):
         # Never start an empty deploy from phrases like "please go ahead"
-        # unless WhatsApp session actually has a pending approval.
+        # unless WhatsApp session actually has a pending gate.
         pending = await get_session(phone) if phone else {"awaiting": None, "data": {}}
-        if pending.get("awaiting") != "approval":
+        awaiting = pending.get("awaiting")
+        if awaiting == "plan_approval":
+            tid = result.get("task_id") or (pending.get("data") or {}).get("pending_task_id")
+            return {
+                **state,
+                "intent": "general",
+                "notification_text": (
+                    "You still have an *implementation plan* waiting.\n"
+                    f"Reply *PROCEED {tid or '<task_id>'}* to start development, "
+                    f"or *REJECT {tid or '<task_id>'}* to cancel."
+                ),
+                "planned_by": AGENT_NAME,
+            }
+        if awaiting != "approval":
             return {
                 **state,
                 "intent": "general",
                 "notification_text": (
                     "I don't have a pending coding change waiting for approval.\n\n"
-                    "Say *check my repos* to start a change, or if you already have a task id "
-                    "reply *APPROVE <task_id>*.\n"
-                    "After development+review you will get an explicit *APPROVE* prompt."
+                    "• After a *plan*, reply *PROCEED <task_id>*\n"
+                    "• After review, reply *APPROVE <task_id>* to deploy\n"
+                    "• Or say *check my repos* to start a new change"
                 ),
                 "planned_by": AGENT_NAME,
             }

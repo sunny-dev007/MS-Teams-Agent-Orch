@@ -263,23 +263,26 @@ def format_plan_rejected(task_id: str) -> str:
     )
 
 
-def format_resume_failed(task_id: str, reason: str = "") -> str:
-    detail = reason or "Task checkpoint was not found on the server."
-    return (
-        f"*Could not resume* task `{task_id}`\n\n"
-        f"{detail}\n\n"
-        "*What you can do:*\n"
-        "• Reply *status* to see pending steps\n"
-        "• *stop* or *new task* to clear session\n"
-        "• *check my repos* to start fresh"
-    )
-
-
 def format_no_pending_task() -> str:
     return (
         "*No pending task* waiting for your input.\n\n"
         "*Start coding:* *check my repos* → pick GitHub or Azure DevOps\n"
-        "*Or* reply *APPROVE <task_id>* if you have an id from a recent message."
+        "*Plan waiting:* reply *PROCEED <task_id>*\n"
+        "*Deploy waiting:* reply *APPROVE <task_id>*"
+    )
+
+
+def format_resume_failed(task_id: str, reason: str = "") -> str:
+    detail = reason or (
+        "Task checkpoint was not found on the server "
+        "(often after an app restart). Start the change again."
+    )
+    return (
+        f"*Could not resume* task `{task_id}`\n\n"
+        f"{detail}\n\n"
+        "*What you can do:*\n"
+        "• *stop* to clear session\n"
+        "• *check my repos* to start fresh"
     )
 
 
