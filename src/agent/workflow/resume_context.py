@@ -175,6 +175,9 @@ def format_gate_hint(
             "*Your options:*",
             "• *1* or *AI REVIEW* — detailed score + review on WhatsApp",
             f"• *2* or *MANUAL REVIEW* — review in {provider}",
+            "",
+            "_Live deploy runs only after *APPROVE* merges to `main`. "
+            "Agent-branch pipelines are validate-only (Deploy skipped)._",
         ])
         if pr_url:
             lines.append(f"\n*PR:* {pr_url}")

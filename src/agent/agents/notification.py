@@ -45,9 +45,11 @@ STATUS_TEMPLATES = {
     "awaiting_approval": (
         "*Sunny's AI Agent* — Review changes before deploy (`{task_id}`)\n\n"
         "*Repo:* {repo}\n"
-        "*Nothing pushed to main yet*\n\n"
+        "*Nothing on live App Service yet*\n\n"
         "*Proposed changes:*\n{detail}\n\n"
-        "Reply *APPROVE {task_id}* (or *final approval*) to merge into main and deploy live.\n"
+        "Reply *APPROVE {task_id}* (or *final approval*) to *merge into main* "
+        "and run the real Deploy stage on App Service.\n"
+        "(Pipeline runs on `agent/*` are validate-only — Deploy stays skipped until main.)\n"
         "Reply *REJECT {task_id}* to cancel."
     ),
     "deploying": (

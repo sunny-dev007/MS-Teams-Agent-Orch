@@ -45,7 +45,9 @@ def test_pr_validation_success_copy_not_deployment():
         CiTerminalResult(outcome="succeeded", url="https://dev.azure.com/x/p/_build/results?buildId=9"),
     )
     assert "PR checks passed" in text
+    assert "validate only" in text.lower() or "not* live" in text.lower() or "skipped" in text.lower()
     assert "Deployment completed" not in text
+    assert "APPROVE" in text
 
 
 @pytest.mark.asyncio

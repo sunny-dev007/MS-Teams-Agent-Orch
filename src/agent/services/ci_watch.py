@@ -534,10 +534,12 @@ def format_pr_validation_notification(
     if result.ok:
         return (
             f"*Sunny's AI Agent* — PR checks passed (`{task_id}`)\n\n"
-            f"*Azure Pipelines:* {result.outcome}\n"
+            f"*Azure Pipelines:* {result.outcome} (validate only — *not* live deploy)\n"
             f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
             f"*PR:* {watch.get('pr_url') or 'N/A'}\n\n"
-            "You can continue with *AI review* / *APPROVE* when ready. "
+            "Deploy to App Service is *skipped* on the agent branch on purpose.\n"
+            "To go live: finish *AI review* (reply *1*), then *APPROVE* — "
+            "that merges to `main` and runs the real Deploy stage.\n\n"
             "Context is kept until *STOP* or *check my repos*."
         )
     return (

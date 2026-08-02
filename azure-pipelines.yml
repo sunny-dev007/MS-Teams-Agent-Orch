@@ -8,13 +8,15 @@
 # Why not prebuild on ubuntu/docker slim?
 #   cryptography/pydantic wheels from newer glibc fail on App Service with:
 #   GLIBC_2.33 not found — breaks WhatsApp hello when graph imports Google libs.
+# Live App Service deploy runs ONLY from main (after WhatsApp APPROVE merges the PR).
+# Agent feature branches must NOT deploy — that caused "Deploy skipped" confusion and
+# previously let bad agent PRs break production when merged without a clean main CI.
 trigger:
   branches:
     include:
       - main
-      - agent/*
 
-# Validate agent feature branches / PRs so test_fixer can repair before merge.
+# PR validation (tests only) when an agent/* PR targets main — Deploy stage stays skipped.
 pr:
   branches:
     include:
@@ -28,6 +30,7 @@ variables:
   appName: "whatsapp-ai-agent-sunny"
   resourceGroup: "ai-agent-rg"
   pythonVersion: "3.12"
+  isMain: $[eq(variables['Build.SourceBranch'], 'refs/heads/main')]
 
 stages:
   - stage: Build
@@ -38,6 +41,18 @@ stages:
         steps:
           - checkout: self
             clean: true
+
+          - script: |
+              set -euo pipefail
+              echo "Branch: $(Build.SourceBranch)"
+              echo "Reason: $(Build.Reason)"
+              if [ "$(Build.SourceBranch)" = "refs/heads/main" ] && [ "$(Build.Reason)" != "PullRequest" ]; then
+                echo "Mode: MAIN — Deploy stage will run after tests pass."
+              else
+                echo "Mode: VALIDATE ONLY — Deploy is intentionally skipped."
+                echo "Live deploy happens only after WhatsApp APPROVE merges this PR into main."
+              fi
+            displayName: "CI mode (main deploy vs PR validate)"
 
           - task: UsePythonVersion@0
             inputs:
@@ -132,7 +147,13 @@ stages:
   - stage: Deploy
     displayName: "Deploy (Oryx on App Service)"
     dependsOn: Build
-    condition: and(succeeded('Build'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    # Production App Service only from main branch CI — never from agent/* or PR validation.
+    condition: |
+      and(
+        succeeded('Build'),
+        eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+        ne(variables['Build.Reason'], 'PullRequest')
+      )
     jobs:
       - job: Deploy
         displayName: "Deploy whatsapp-ai-agent-sunny"

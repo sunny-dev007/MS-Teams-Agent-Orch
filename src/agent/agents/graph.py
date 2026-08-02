@@ -212,6 +212,9 @@ async def _request_pr_review_mode(state: AgentState) -> AgentState:
         "status": "pr_created",
         "notification_text": (
             f"*Pull request:* {state.get('pr_url', 'N/A')}\n\n"
+            "_CI may run on this PR as *validate only*. "
+            "Live App Service deploy happens only after you *APPROVE* "
+            "(merge to `main`)._\n\n"
             f"How should this PR be reviewed?\n"
             f"1. *AI review* — detailed score on WhatsApp\n"
             f"2. *Manual review* — review in {provider}\n\n"
