@@ -79,6 +79,15 @@ stages:
               print("BaseSettings import guard OK")
               PY
               PYTHONPATH=src python -c "from agent.config import settings; print('config OK', settings.azure_openai_deployment)"
+              PYTHONPATH=src python - <<'PY'
+              from agent.main import app
+              paths = set(app.openapi().get("paths") or {})
+              required = ("/webhooks/whatsapp", "/webhooks/gmail", "/health", "/portal")
+              missing = [p for p in required if p not in paths]
+              if missing:
+                  raise SystemExit(f"main.py missing routes {missing}; agent rewrite blocked")
+              print("Route mount guard OK", required)
+              PY
               PYTHONPATH=src python -m pytest tests/ -v --tb=short -q
             displayName: "Run tests"
 

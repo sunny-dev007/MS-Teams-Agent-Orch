@@ -33,6 +33,16 @@ _PORTAL_REQUIRED = (
     "portal.html",
 )
 
+# Agent portal redesigns must never gut the FastAPI entrypoint (causes webhook 404s).
+_MAIN_REQUIRED = (
+    "whatsapp_router",
+    "gmail_router",
+    "health_router",
+    "portal_router",
+    "include_router",
+    "lifespan",
+)
+
 
 _FORBIDDEN_IMPORT = "from " + "pydantic" + " import " + "BaseSettings"
 
@@ -88,6 +98,17 @@ def is_config_path(path: str) -> bool:
 def is_portal_api_path(path: str) -> bool:
     normalized = path.replace("\\", "/").lstrip("./")
     return normalized.endswith("agent/api/portal.py") or normalized == "src/agent/api/portal.py"
+
+
+def is_main_app_path(path: str) -> bool:
+    normalized = path.replace("\\", "/").lstrip("./")
+    return normalized.endswith("agent/main.py") or normalized == "src/agent/main.py"
+
+
+def main_change_is_safe(content: str) -> bool:
+    if "from src.agent" in content:
+        return False
+    return all(marker in content for marker in _MAIN_REQUIRED)
 
 
 def is_legacy_web_portal_path(path: str) -> bool:
@@ -163,6 +184,22 @@ def sanitize_file_changes(
                 if existing.is_file():
                     logger.warning(
                         "Rejecting unsafe rewrite of %s — keeping existing file",
+                        path,
+                    )
+                    continue
+                logger.warning("Rejecting unsafe create of %s", path)
+                continue
+
+        if is_main_app_path(path) and action == "delete":
+            logger.warning("Refusing to delete %s (agent guard)", path)
+            continue
+
+        if is_main_app_path(path) and action in ("modify", "create"):
+            if not isinstance(content, str) or not main_change_is_safe(content):
+                existing = repo_dir / path
+                if existing.is_file():
+                    logger.warning(
+                        "Rejecting unsafe rewrite of %s — keeping existing entrypoint",
                         path,
                     )
                     continue
