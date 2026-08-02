@@ -483,6 +483,32 @@ async def run_graph(
     logger.info("Task %s completed in %.2fs", task_id, time.perf_counter() - t0)
 
 
+async def _ensure_deploy_feedback(
+    phone: str,
+    task_id: str,
+    final: dict,
+    *,
+    gate: str,
+) -> None:
+    """Send WhatsApp if deploy resume ended in failure without a user-visible reason."""
+    from agent.workflow.gates import GATE_DEPLOY
+    from agent.services.deploy_notify import format_deploy_step_failed, send_deploy_progress
+
+    if not phone or gate != GATE_DEPLOY:
+        return
+    if final.get("pipeline_status") == "watching":
+        return
+    if final.get("status") not in ("failed", "awaiting_approval"):
+        return
+    detail = (final.get("notification_text") or final.get("error") or "").strip()
+    if not detail:
+        detail = "Deploy did not finish — checkpoint or workspace may be missing on the server."
+    await send_deploy_progress(
+        phone,
+        format_deploy_step_failed(task_id, "Deploy after approval", detail),
+    )
+
+
 async def resume_graph(
     task_id: str,
     approval_status: str,
@@ -493,7 +519,13 @@ async def resume_graph(
 ) -> None:
     from agent.core.session import clear_session, get_session
     from agent.services.git_ops import get_workspace_path
-    from agent.workflow.gates import GATE_DEPLOY, GATE_MANUAL_PR, GATE_PLAN, GATE_PR_MODE
+    from agent.workflow.gates import (
+        GATE_DEPLOY,
+        GATE_MANUAL_PR,
+        GATE_PLAN,
+        GATE_PR_MODE,
+        hydrate_state_from_session,
+    )
 
     compiled = await _get_compiled()
     config = {"configurable": {"thread_id": task_id}}
@@ -572,6 +604,8 @@ async def resume_graph(
     if not values.get("branch_name"):
         values["branch_name"] = f"agent/{task_id}"
 
+    values = await hydrate_state_from_session(values, session)
+
     needs_repo = gate in (GATE_PLAN, GATE_PR_MODE, GATE_MANUAL_PR, GATE_DEPLOY)
     if needs_repo and not values.get("repo_url") and not values.get("workspace_path"):
         from agent.workflow.resume_context import format_resume_failed
@@ -620,9 +654,20 @@ async def resume_graph(
                     await clear_session(whatsapp_phone)
             elif gate == GATE_DEPLOY and not keep_session and awaiting_after is None:
                 await clear_session(whatsapp_phone)
+            await _ensure_deploy_feedback(whatsapp_phone, task_id, final, gate=gate)
         return
     except Exception:
         logger.warning("Command resume unavailable; manual path", exc_info=True)
+        if whatsapp_phone and gate == GATE_DEPLOY:
+            from agent.services.deploy_notify import format_resume_deploy_failed, send_deploy_progress
+
+            await send_deploy_progress(
+                whatsapp_phone,
+                format_resume_deploy_failed(
+                    task_id,
+                    "Resuming from saved session (graph checkpoint unavailable).",
+                ),
+            )
 
     # Fallback manual path (deploy gate only)
     if gate != GATE_DEPLOY:
@@ -649,6 +694,9 @@ async def resume_graph(
         "pipeline_status"
     ) not in ("busy", "watching"):
         await clear_session(whatsapp_phone)
+
+    if whatsapp_phone:
+        await _ensure_deploy_feedback(whatsapp_phone, task_id, values, gate=gate)
 
 
 async def run_gmail_flow(history_id: str) -> None:

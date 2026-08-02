@@ -1,3 +1,5 @@
+import asyncio
+
 from agent.agents.state import AgentState
 from agent.config import settings
 from agent.core.logging import get_logger
@@ -189,11 +191,24 @@ async def deploy_code(state: AgentState) -> AgentState:
 
     except Exception as e:
         logger.exception("Deployment failed for task %s", task_id)
+        from agent.services.deploy_notify import (
+            format_deploy_step_failed,
+            send_deploy_progress,
+            user_facing_deploy_error,
+        )
+
+        phone = state.get("whatsapp_phone", "")
+        reason = user_facing_deploy_error(e, step="deployment")
+        if phone:
+            await send_deploy_progress(
+                phone,
+                format_deploy_step_failed(task_id, "Push / merge / deploy", reason),
+            )
         return {
             **state,
             "status": "failed",
             "error": str(e),
-            "notification_text": f"Deployment failed: {e}",
+            "notification_text": reason,
         }
 
 
@@ -421,31 +436,71 @@ async def _deploy_azdo(
     )
 
     if is_demo_repo and pr_id:
+        from agent.services.ci_watch import save_ci_watch, start_azdo_ci_watch
+        from agent.services.deploy_notify import (
+            format_merge_failed,
+            format_merging_pr,
+            format_pipeline_watching,
+            send_deploy_progress,
+            user_facing_deploy_error,
+        )
+
+        phone = state.get("whatsapp_phone", "")
+        live_url = f"{settings.agent_app_url.rstrip('/')}/portal"
+
+        # Persist BEFORE merge — survives App Service recycle during self-deploy pipeline.
         try:
-            await azdo.merge_pull_request(project, str(repo_id), int(pr_id))
+            await save_ci_watch(
+                task_id=task_id,
+                phone=phone,
+                project=project,
+                repo_name=repo_name or "",
+                repo_id=str(repo_id),
+                pr_url=pr_url,
+                pipeline_url=pipeline_url,
+                commit_sha=sha,
+                live_url=live_url,
+                notes="pre_merge",
+            )
+        except Exception:
+            logger.exception("Failed pre-merge CI watch for task %s", task_id)
+
+        await send_deploy_progress(
+            phone,
+            format_merging_pr(task_id, pr_url, pr_id),
+        )
+
+        try:
+            merge_result = await asyncio.wait_for(
+                azdo.merge_pull_request(project, str(repo_id), int(pr_id)),
+                timeout=120,
+            )
             merged = True
+            src = (merge_result.get("lastMergeSourceCommit") or {}).get("commitId")
+            if src:
+                sha = src
+        except asyncio.TimeoutError:
+            merged = False
+            deploy_error = user_facing_deploy_error("merge timed out", step="merge to main")
+            await send_deploy_progress(
+                phone,
+                format_merge_failed(task_id, pr_url, deploy_error),
+            )
         except Exception as e:
             msg = str(e).lower()
             if "completed" in msg or "already" in msg:
                 merged = True
             else:
                 logger.exception("AzDO merge failed for task %s", task_id)
-                deploy_error = f"Merge failed: {e}"
+                deploy_error = user_facing_deploy_error(e, step="merge to main")
+                await send_deploy_progress(
+                    phone,
+                    format_merge_failed(task_id, pr_url, deploy_error),
+                )
 
         if merged:
-            # Merge to main starts ONLY web.Whatsapp-AI-Agent CI.
-            # Never call trigger_pipeline()/pipelines[0] — that wrongly fired Linux.SmartDocs-WebApp.
-            #
-            # Important: this pipeline redeploys THIS App Service and kills the process.
-            # Persist a durable CI watch + background poller so WhatsApp still gets a
-            # Final evaluation after success / failed / canceled (GitHub path unchanged).
-            live_url = f"{settings.agent_app_url.rstrip('/')}/portal"
             pipeline_status = "watching"
-            phone = state.get("whatsapp_phone", "")
             try:
-                from agent.services.ci_watch import save_ci_watch, start_azdo_ci_watch
-                from agent.services.whatsapp import send_message
-
                 await save_ci_watch(
                     task_id=task_id,
                     phone=phone,
@@ -456,24 +511,17 @@ async def _deploy_azdo(
                     pipeline_url=pipeline_url,
                     commit_sha=sha,
                     live_url=live_url,
+                    notes="post_merge",
                 )
-                if phone:
-                    await send_message(
-                        phone,
-                        (
-                            f"*Sunny's AI Agent* — Merged to main (`{task_id}`)\n\n"
-                            "Azure Pipeline is running now.\n"
-                            "I will send a *Final evaluation* on WhatsApp when it "
-                            "*succeeds*, *fails*, or is *canceled*.\n"
-                            f"*Pipeline:* {pipeline_url}"
-                        ),
-                    )
+                await send_deploy_progress(
+                    phone,
+                    format_pipeline_watching(task_id, pipeline_url),
+                )
                 start_azdo_ci_watch(task_id)
             except Exception:
                 logger.exception(
-                    "Failed to start durable AzDO CI watch for task %s", task_id
+                    "Failed post-merge CI watch for task %s", task_id
                 )
-                # Last-resort only if watch setup failed — avoid fighting a live pipeline.
                 try:
                     base = await deploy_agent_app_from_workspace(
                         state.get("workspace_path", "")
@@ -482,8 +530,12 @@ async def _deploy_azdo(
                     pipeline_status = "kudu_fallback"
                 except Exception as e:
                     logger.exception("AzDO Kudu fallback failed for task %s", task_id)
-                    deploy_error = f"Live deploy failed: {e}"
+                    deploy_error = user_facing_deploy_error(e, step="live deploy")
                     pipeline_status = "failed"
+                    await send_deploy_progress(
+                        phone,
+                        format_merge_failed(task_id, pr_url, deploy_error),
+                    )
 
     if pipeline_status == "watching":
         detail = (
@@ -529,9 +581,17 @@ async def _deploy_azdo(
             "5. PR created; live portal still needs a successful deploy"
         )
 
+    final_status = "failed"
+    if merged or pipeline_status == "watching":
+        final_status = "completed"
+    elif deploy_error:
+        final_status = "failed"
+    elif pr_url and not is_demo_repo:
+        final_status = "completed"
+
     return {
         **state,
-        "status": "completed" if (merged or pr_url) else "failed",
+        "status": final_status,
         "commit_sha": sha,
         "pr_url": pr_url,
         "pipeline_url": pipeline_url,

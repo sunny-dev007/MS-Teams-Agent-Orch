@@ -431,9 +431,17 @@ async def _resume_with_approval(
         from agent.agents.graph import resume_graph
 
         await resume_graph(task_id, approval, phone)
-    except Exception:
+    except Exception as exc:
         logger.exception("Failed to resume task %s with approval=%s", task_id, approval)
-        await send_message(phone, f"Failed to process approval for task {task_id}.")
+        from agent.services.deploy_notify import format_resume_deploy_failed, send_deploy_progress
+
+        await send_deploy_progress(
+            phone,
+            format_resume_deploy_failed(
+                task_id,
+                f"Unexpected error after approval: {exc.__class__.__name__}. Reply *APPROVE {task_id}* to retry.",
+            ),
+        )
     finally:
         if acquired and lock_key:
             from agent.services.ci_gate import release_deploy
