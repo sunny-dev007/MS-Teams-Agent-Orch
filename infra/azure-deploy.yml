@@ -4,11 +4,8 @@
 # Reliable path for App Service Python:
 #   - Ship SOURCE only (no host-built .python_packages)
 #   - Let Oryx build antenv ON App Service (matches App Service glibc)
-#   - Do NOT stop the site; deploy async; success = /health 200
-#
-# Why not prebuild on ubuntu/docker slim?
-#   cryptography/pydantic wheels from newer glibc fail on App Service with:
-#   GLIBC_2.33 not found — breaks WhatsApp hello when graph imports Google libs.
+#   - Kudu async zipdeploy (do not block on 10m site-start watcher)
+#   - Success = /health 200 after Oryx finishes
 trigger:
   branches:
     include:
@@ -44,15 +41,15 @@ stages:
               set -euo pipefail
               python -m pip install --upgrade pip
               pip install -r requirements.txt
+              pip install "pydantic-settings>=2.5"
+              pip install pytest pytest-asyncio httpx
               pip install .
             displayName: "Install deps for tests"
 
           - script: |
               set -euo pipefail
-              pip install pytest pytest-asyncio httpx
-              PYTHONPATH=src python -m pytest tests/ -v --tb=short
+              PYTHONPATH=src python -m pytest tests/ -v --tb=short -q
             displayName: "Run tests"
-            continueOnError: true
 
           - script: |
               set -euo pipefail
@@ -75,6 +72,7 @@ stages:
                 --exclude='sample-apps/' \
                 --exclude='.python_packages/' \
                 --exclude='antenv/' \
+                --exclude='src/web/' \
                 "$(Build.SourcesDirectory)/" "$STAGE/"
             displayName: "Stage source package (no prebuilt wheels)"
 
@@ -94,7 +92,7 @@ stages:
   - stage: Deploy
     displayName: "Deploy (Oryx on App Service)"
     dependsOn: Build
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    condition: and(succeeded('Build'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - job: Deploy
         displayName: "Deploy whatsapp-ai-agent-sunny"
@@ -112,7 +110,6 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                # Keep site running — avoid long stop/start outages.
                 az webapp config appsettings set \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
@@ -121,9 +118,9 @@ stages:
                     ENABLE_ORYX_BUILD=true \
                     ORYX_DISABLE_OUTPUT_COPY_COMPRESSION=true \
                     WEBSITES_PORT=8000 \
-                    WEBSITES_CONTAINER_START_TIME_LIMIT=600 \
+                    WEBSITES_CONTAINER_START_TIME_LIMIT=1800 \
+                    SCM_COMMAND_IDLE_TIMEOUT=1800 \
                     GIT_PYTHON_REFRESH=quiet
-                # Remove host PYTHONPATH that pointed at incompatible .python_packages
                 az webapp config appsettings delete \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
@@ -136,7 +133,7 @@ stages:
                   --startup-file "bash infra/startup.sh"
 
           - task: AzureCLI@2
-            displayName: "ZIP deploy (Oryx builds antenv)"
+            displayName: "ZIP deploy async (Kudu — no site-start wait)"
             inputs:
               azureSubscription: "$(azureSubscription)"
               scriptType: bash
@@ -145,19 +142,25 @@ stages:
                 set -euo pipefail
                 ZIP="$(Pipeline.Workspace)/drop/$(Build.BuildId).zip"
                 test -f "$ZIP"
-                echo "Deploying $ZIP"
-                # Prefer async; do not block 15m on CLI "Starting the site..."
-                az webapp deploy \
+                KUDU_USER=$(az webapp deployment list-publishing-credentials \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" \
-                  --src-path "$ZIP" \
-                  --type zip \
-                  --async true \
-                  || az webapp deployment source config-zip \
-                       --resource-group "$(resourceGroup)" \
-                       --name "$(appName)" \
-                       --src "$ZIP" \
-                       --timeout 240
+                  --query publishingUserName -o tsv)
+                KUDU_PASS=$(az webapp deployment list-publishing-credentials \
+                  --resource-group "$(resourceGroup)" \
+                  --name "$(appName)" \
+                  --query publishingPassword -o tsv)
+                HTTP=$(curl -sS -w "%{http_code}" -o /tmp/kudu_deploy.json \
+                  -X POST \
+                  -u "${KUDU_USER}:${KUDU_PASS}" \
+                  "https://$(appName).scm.azurewebsites.net/api/zipdeploy?isAsync=true" \
+                  --data-binary @"$ZIP" \
+                  -H "Content-Type: application/octet-stream" \
+                  --max-time 600)
+                case "$HTTP" in
+                  200|202|204) echo "Kudu async zipdeploy accepted (HTTP $HTTP)" ;;
+                  *) echo "Kudu async zipdeploy failed (HTTP $HTTP)"; exit 1 ;;
+                esac
 
           - task: AzureCLI@2
             displayName: "Verify /health"
@@ -170,23 +173,14 @@ stages:
                 az webapp start \
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" || true
-
-                echo "Waiting for health (Oryx may take several minutes)..."
-                for i in $(seq 1 48); do
+                for i in $(seq 1 80); do
                   CODE=$(curl -sS --max-time 15 -o /tmp/health.json -w "%{http_code}" \
                     "https://$(appName).azurewebsites.net/health" || echo 000)
                   echo "attempt $i -> HTTP $CODE"
                   if [ "$CODE" = "200" ]; then
                     cat /tmp/health.json
-                    echo
                     exit 0
-                  fi
-                  if [ "$CODE" = "403" ]; then
-                    az webapp start \
-                      --resource-group "$(resourceGroup)" \
-                      --name "$(appName)" || true
                   fi
                   sleep 15
                 done
-                echo "Health check failed after deploy"
                 exit 1

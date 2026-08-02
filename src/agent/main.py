@@ -23,6 +23,8 @@ from agent.models.db import init_db
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
+
     setup_logging()
     from agent.core.logging import get_logger
 
@@ -34,29 +36,34 @@ async def lifespan(app: FastAPI):
         # Do not block app boot — session helpers will retry ensure_db_schema on demand
         log.exception("init_db failed at startup; will retry on first session use")
 
-    from agent.services.whatsapp import check_access_token
+    async def _deferred_startup() -> None:
+        from agent.services.whatsapp import check_access_token
 
-    token_status = await check_access_token()
-    if token_status.get("ok"):
-        log.info(
-            "WhatsApp token OK (%s)",
-            token_status.get("display_phone_number") or token_status.get("phone_number_id"),
-        )
-    else:
-        log.error(
-            "WhatsApp token check failed at startup: %s — replies will not be delivered until "
-            "WHATSAPP_ACCESS_TOKEN is replaced with a long-lived or System User token.",
-            token_status,
-        )
+        try:
+            token_status = await check_access_token()
+            if token_status.get("ok"):
+                log.info(
+                    "WhatsApp token OK (%s)",
+                    token_status.get("display_phone_number") or token_status.get("phone_number_id"),
+                )
+            else:
+                log.error(
+                    "WhatsApp token check failed at startup: %s — replies will not be delivered until "
+                    "WHATSAPP_ACCESS_TOKEN is replaced with a long-lived or System User token.",
+                    token_status,
+                )
+        except Exception:
+            log.exception("WhatsApp token check failed")
 
-    # AzDO self-deploy restarts this process mid-wait — resume durable pipeline watches
-    # so Sunny still gets Final evaluation (GitHub sample path does not use this).
-    try:
-        from agent.services.ci_watch import resume_pending_ci_watches
+        try:
+            from agent.services.ci_watch import resume_pending_ci_watches
 
-        await resume_pending_ci_watches()
-    except Exception:
-        log.exception("Failed resuming pending AzDO CI watches")
+            await resume_pending_ci_watches()
+        except Exception:
+            log.exception("Failed resuming pending AzDO CI watches")
+
+    # Bind /health quickly — Oryx site-start probe must not wait on Meta/AzDO/network.
+    asyncio.create_task(_deferred_startup())
 
     try:
         yield
