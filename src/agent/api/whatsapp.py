@@ -12,7 +12,22 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/webhooks", tags=["whatsapp"])
 
 # Final deployment approval phrases (optional task id)
-# Examples: Approve | APPROVE abc123 | final approval | approve deploy | deploy now
+PROCEED_PATTERN = re.compile(
+    r"(?i)^(?:"
+    r"proceed|approve\s+plan|start\s+(?:dev|development)|go\s+ahead(?:\s+with\s+plan)?"
+    r")(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
+)
+PR_AI_PATTERN = re.compile(
+    r"(?i)^(?:1|ai(?:\s+review)?|review\s+with\s+ai)(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
+)
+PR_MANUAL_PATTERN = re.compile(
+    r"(?i)^(?:2|manual(?:\s+review)?|review\s+manually)(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
+)
+PR_READY_PATTERN = re.compile(
+    r"(?i)^(?:"
+    r"pr\s+(?:ready|approved|done)|manual\s+(?:approved|done)"
+    r")(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
+)
 APPROVE_PATTERN = re.compile(
     r"(?i)^(?:"
     r"approve(?:\s+deploy(?:ment)?)?(?:\s+([A-Za-z0-9_-]+))?"
@@ -67,22 +82,117 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
     message = parsed["message"].strip()
     logger.info("Received message from %s: %s", parsed["phone"], message[:100])
 
-    approve_match = APPROVE_PATTERN.match(message)
-    reject_match = REJECT_PATTERN.match(message)
+    from agent.core.session import get_session
+    from agent.workflow.gates import GATE_DEPLOY, GATE_MANUAL_PR, GATE_PLAN, GATE_PR_MODE
+    from agent.workflow.resume_context import (
+        format_gate_hint,
+        format_no_pending_task,
+        format_resume_ack,
+        format_resume_failed,
+        has_active_gate,
+        is_resume_status_message,
+    )
 
-    if approve_match:
+    session = await get_session(parsed["phone"])
+    awaiting = session.get("awaiting")
+    session_data = session.get("data") or {}
+
+    if is_resume_status_message(message):
+        background_tasks.add_task(
+            _send_gate_hint,
+            parsed["phone"],
+            format_gate_hint(awaiting, session_data)
+            if has_active_gate(session)
+            else format_no_pending_task(),
+        )
+        return {"status": "ok"}
+
+    proceed_match = PROCEED_PATTERN.match(message)
+    reject_match = REJECT_PATTERN.match(message)
+    approve_match = APPROVE_PATTERN.match(message)
+    pr_ai_match = PR_AI_PATTERN.match(message)
+    pr_manual_match = PR_MANUAL_PATTERN.match(message)
+    pr_ready_match = PR_READY_PATTERN.match(message)
+
+    if awaiting == GATE_PLAN:
+        if reject_match:
+            background_tasks.add_task(
+                _resume_gate, GATE_PLAN, "rejected", parsed["phone"], _task_id_from_match(reject_match)
+            )
+        elif proceed_match or (
+            approve_match
+            and (message.lower().strip() in ("approve", "approved") or "plan" in message.lower())
+        ):
+            tid = _task_id_from_match(proceed_match) or _task_id_from_match(approve_match)
+            background_tasks.add_task(
+                _resume_gate, GATE_PLAN, "approved", parsed["phone"], tid
+            )
+        else:
+            background_tasks.add_task(
+                _send_gate_hint,
+                parsed["phone"],
+                format_gate_hint(GATE_PLAN, session_data),
+            )
+    elif awaiting == GATE_PR_MODE:
+        if pr_ai_match:
+            background_tasks.add_task(
+                _resume_gate,
+                GATE_PR_MODE,
+                "approved",
+                parsed["phone"],
+                _task_id_from_match(pr_ai_match),
+                pr_review_mode="ai",
+            )
+        elif pr_manual_match:
+            background_tasks.add_task(
+                _resume_gate,
+                GATE_PR_MODE,
+                "approved",
+                parsed["phone"],
+                _task_id_from_match(pr_manual_match),
+                pr_review_mode="manual",
+            )
+        else:
+            background_tasks.add_task(
+                _send_gate_hint,
+                parsed["phone"],
+                format_gate_hint(GATE_PR_MODE, session_data),
+            )
+    elif awaiting == GATE_MANUAL_PR:
+        if pr_ready_match:
+            background_tasks.add_task(
+                _resume_gate,
+                GATE_MANUAL_PR,
+                "approved",
+                parsed["phone"],
+                _task_id_from_match(pr_ready_match),
+            )
+        else:
+            background_tasks.add_task(
+                _send_gate_hint,
+                parsed["phone"],
+                format_gate_hint(GATE_MANUAL_PR, session_data),
+            )
+    elif approve_match and awaiting in (GATE_DEPLOY, "approval", None):
         background_tasks.add_task(
             _resume_with_approval,
             _task_id_from_match(approve_match),
             "approved",
             parsed["phone"],
         )
-    elif reject_match:
+    elif reject_match and awaiting in (GATE_DEPLOY, "approval", None):
         background_tasks.add_task(
             _resume_with_approval,
             _task_id_from_match(reject_match),
             "rejected",
             parsed["phone"],
+        )
+    elif has_active_gate(session):
+        # Wrong message while a gate is open — never start a parallel task.
+        background_tasks.add_task(
+            _send_gate_hint,
+            parsed["phone"],
+            format_gate_hint(awaiting, session_data),
         )
     else:
         from agent.core.background import handle_whatsapp_message
@@ -97,7 +207,7 @@ async def _resolve_task_id(phone: str, explicit_task_id: str | None) -> str | No
     from agent.core.session import get_session
 
     session = await get_session(phone)
-    if session.get("awaiting") == "approval":
+    if session.get("awaiting"):
         tid = (session.get("data") or {}).get("pending_task_id")
         if tid:
             return str(tid)
@@ -137,6 +247,61 @@ async def _pending_deploy_context(phone: str, task_id: str) -> dict[str, str]:
     except Exception:
         logger.warning("Could not load checkpoint context for task %s", task_id)
         return ctx
+
+
+async def _send_gate_hint(phone: str, text: str) -> None:
+    from agent.services.whatsapp import send_message
+
+    try:
+        await send_message(phone, text)
+    except Exception:
+        logger.exception("Failed to send gate hint to %s", phone)
+
+
+async def _resume_gate(
+    gate: str,
+    approval: str,
+    phone: str,
+    explicit_task_id: str | None,
+    *,
+    pr_review_mode: str | None = None,
+) -> None:
+    from agent.services.whatsapp import send_message
+    from agent.workflow.gates import GATE_MANUAL_PR, GATE_PLAN, GATE_PR_MODE, clear_workflow_session
+    from agent.workflow.resume_context import format_resume_ack, format_resume_failed
+
+    task_id = await _resolve_task_id(phone, explicit_task_id)
+    if not task_id:
+        from agent.workflow.resume_context import format_no_pending_task
+
+        await send_message(phone, format_no_pending_task())
+        return
+
+    try:
+        await send_message(
+            phone,
+            format_resume_ack(
+                gate, task_id, approval, pr_review_mode=pr_review_mode
+            ),
+        )
+    except Exception:
+        logger.exception("Failed gate ack for task %s", task_id)
+
+    try:
+        from agent.agents.graph import resume_graph
+
+        await resume_graph(
+            task_id,
+            approval,
+            phone,
+            gate=gate,
+            pr_review_mode=pr_review_mode,
+        )
+        if gate == GATE_PLAN and approval == "rejected":
+            await clear_workflow_session(phone)
+    except Exception:
+        logger.exception("Failed gate resume task %s gate=%s", task_id, gate)
+        await send_message(phone, format_resume_failed(task_id))
 
 
 async def _resume_with_approval(

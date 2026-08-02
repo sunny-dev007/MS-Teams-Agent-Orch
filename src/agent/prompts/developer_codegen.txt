@@ -1,6 +1,9 @@
 ## Task Description
 {task_description}
 
+## Approved implementation plan (follow this scope)
+{implementation_plan}
+
 ## Repository Structure
 {repo_tree}
 

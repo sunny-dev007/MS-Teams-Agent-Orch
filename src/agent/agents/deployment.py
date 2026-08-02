@@ -145,6 +145,22 @@ async def deploy_code(state: AgentState) -> AgentState:
     try:
         from agent.services.git_ops import open_workspace
 
+        # Multi-gate: PR already opened — merge only (no second push/PR).
+        if state.get("pr_url") and (state.get("pr_number") or state.get("pr_id")):
+            sha = state.get("commit_sha") or ""
+            if provider == "azure_devops":
+                return await _deploy_azdo(state, task_id, sha, branch_name, user_msg)
+            return await _deploy_github(
+                state,
+                task_id=task_id,
+                sha=sha,
+                branch_name=branch_name,
+                user_msg=user_msg,
+                owner=owner,
+                repo_name=repo_name,
+                workspace_path=workspace_path,
+            )
+
         repo = open_workspace(workspace_path)
         commit_msg = f"agent({task_id}): {user_msg[:80]}"
         sha = commit_and_push(repo, commit_msg, branch_name)
@@ -193,25 +209,28 @@ async def _deploy_github(
     workspace_path: str,
 ) -> AgentState:
     """GitHub-only path: PR → merge → wait for Actions → Kudu only if CI did not finish."""
-    pr = await create_pull_request(
-        owner=owner,
-        repo=repo_name,
-        title=f"[AI Agent] {user_msg[:60]}",
-        body=(
-            f"## Automated by Sunny's Personal AI Agent\n\n"
-            f"**Task ID:** {task_id}\n"
-            f"**Request:** {user_msg[:200]}\n\n"
-            f"### Changes\n"
-            + "\n".join(
-                f"- {c.get('action', 'modify')} `{c['path']}`"
-                for c in state.get("file_changes", [])
-            )
-        ),
-        head=branch_name,
-        base="main",
-    )
-    pr_url = pr.get("html_url", "")
-    pr_number = pr.get("number")
+    pr_url = state.get("pr_url") or ""
+    pr_number = state.get("pr_number")
+    if not pr_number:
+        pr = await create_pull_request(
+            owner=owner,
+            repo=repo_name,
+            title=f"[AI Agent] {user_msg[:60]}",
+            body=(
+                f"## Automated by Sunny's Personal AI Agent\n\n"
+                f"**Task ID:** {task_id}\n"
+                f"**Request:** {user_msg[:200]}\n\n"
+                f"### Changes\n"
+                + "\n".join(
+                    f"- {c.get('action', 'modify')} `{c['path']}`"
+                    for c in state.get("file_changes", [])
+                )
+            ),
+            head=branch_name,
+            base="main",
+        )
+        pr_url = pr.get("html_url", "")
+        pr_number = pr.get("number")
     pipeline_url = f"https://github.com/{owner}/{repo_name}/actions"
     pipeline_status = "skipped"
 
@@ -363,16 +382,23 @@ async def _deploy_azdo(
             ),
         }
 
-    pr = await azdo.create_pull_request(
-        project=project,
-        repo_id=repo_id,
-        title=f"[AI Agent] {user_msg[:60]}",
-        description=f"Task {task_id}: {user_msg[:300]}",
-        source_branch=branch_name,
-    )
-    pr_id = pr.get("pullRequestId")
-    org = settings.azdo_org_url.rstrip("/")
-    pr_url = f"{org}/{project}/_git/{repo_name or repo_id}/pullrequest/{pr_id}"
+    pr_id = state.get("pr_id")
+    pr_url = state.get("pr_url") or ""
+    if not pr_id:
+        pr = await azdo.create_pull_request(
+            project=project,
+            repo_id=repo_id,
+            title=f"[AI Agent] {user_msg[:60]}",
+            description=f"Task {task_id}: {user_msg[:300]}",
+            source_branch=branch_name,
+        )
+        pr_id = pr.get("pullRequestId")
+        org = settings.azdo_org_url.rstrip("/")
+        pr_url = f"{org}/{project}/_git/{repo_name or repo_id}/pullrequest/{pr_id}"
+    else:
+        org = settings.azdo_org_url.rstrip("/")
+        if not pr_url:
+            pr_url = f"{org}/{project}/_git/{repo_name or repo_id}/pullrequest/{pr_id}"
 
     # Link only the pipeline that belongs to THIS repo (never pipelines[0] / SmartDocs).
     pipeline_url = f"{org}/{project}/_build"
@@ -409,23 +435,45 @@ async def _deploy_azdo(
         if merged:
             # Merge to main starts ONLY web.Whatsapp-AI-Agent CI.
             # Never call trigger_pipeline()/pipelines[0] — that wrongly fired Linux.SmartDocs-WebApp.
-            ci_ctx = {
-                "provider": "azure_devops",
-                "project": project,
-                "repo_name": repo_name,
-                "repo_id": str(repo_id),
-            }
-            idle = await wait_for_ci_idle(ci_ctx, timeout_sec=720, poll_sec=20)
-            if idle.url:
-                pipeline_url = idle.url
-            if idle.busy or idle.detail == "no_ci_observed":
-                pipeline_status = "timeout" if idle.busy else "no_ci"
-                logger.warning(
-                    "AzDO CI %s for %s/%s — Kudu fallback",
-                    pipeline_status,
-                    project,
-                    repo_name,
+            #
+            # Important: this pipeline redeploys THIS App Service and kills the process.
+            # Persist a durable CI watch + background poller so WhatsApp still gets a
+            # Final evaluation after success / failed / canceled (GitHub path unchanged).
+            live_url = f"{settings.agent_app_url.rstrip('/')}/portal"
+            pipeline_status = "watching"
+            phone = state.get("whatsapp_phone", "")
+            try:
+                from agent.services.ci_watch import save_ci_watch, start_azdo_ci_watch
+                from agent.services.whatsapp import send_message
+
+                await save_ci_watch(
+                    task_id=task_id,
+                    phone=phone,
+                    project=project,
+                    repo_name=repo_name or "",
+                    repo_id=str(repo_id),
+                    pr_url=pr_url,
+                    pipeline_url=pipeline_url,
+                    commit_sha=sha,
+                    live_url=live_url,
                 )
+                if phone:
+                    await send_message(
+                        phone,
+                        (
+                            f"*Sunny's AI Agent* — Merged to main (`{task_id}`)\n\n"
+                            "Azure Pipeline is running now.\n"
+                            "I will send a *Final evaluation* on WhatsApp when it "
+                            "*succeeds*, *fails*, or is *canceled*.\n"
+                            f"*Pipeline:* {pipeline_url}"
+                        ),
+                    )
+                start_azdo_ci_watch(task_id)
+            except Exception:
+                logger.exception(
+                    "Failed to start durable AzDO CI watch for task %s", task_id
+                )
+                # Last-resort only if watch setup failed — avoid fighting a live pipeline.
                 try:
                     base = await deploy_agent_app_from_workspace(
                         state.get("workspace_path", "")
@@ -435,12 +483,25 @@ async def _deploy_azdo(
                 except Exception as e:
                     logger.exception("AzDO Kudu fallback failed for task %s", task_id)
                     deploy_error = f"Live deploy failed: {e}"
-            else:
-                # Azure Pipelines Deploy stage owns the live app — no second Kudu deploy.
-                pipeline_status = "succeeded"
-                live_url = f"{settings.agent_app_url.rstrip('/')}/portal"
+                    pipeline_status = "failed"
 
-    if live_url:
+    if pipeline_status == "watching":
+        detail = (
+            "*Merge complete — pipeline running*\n"
+            f"*Merged to main:* yes\n"
+            f"*Azure Pipelines:* watching\n"
+            f"*Pipeline:* {pipeline_url}\n"
+            "You will get another WhatsApp *Final evaluation* when the pipeline finishes."
+        )
+        evaluation = (
+            "1. Your WhatsApp approval authorized Azure DevOps deployment\n"
+            "2. Changes merged to `main`: yes\n"
+            "3. Azure Pipeline: *watching* (in progress)\n"
+            f"4. Pipeline: {pipeline_url}\n"
+            "5. A second *Final evaluation* will arrive when the pipeline "
+            "succeeds, fails, or is canceled"
+        )
+    elif live_url:
         detail = (
             "*Final deployment complete*\n"
             f"*Merged to main:* yes\n"
@@ -448,6 +509,13 @@ async def _deploy_azdo(
             f"*Live portal:* {live_url}\n"
             f"*Pipeline:* {pipeline_url}\n"
             "Open on your *phone browser* and refresh — no Azure DevOps visit needed."
+        )
+        evaluation = (
+            "1. Your WhatsApp approval authorized Azure DevOps deployment\n"
+            f"2. Changes merged to `main`: {'yes' if merged else 'no'}\n"
+            f"3. Live portal: {live_url}\n"
+            f"4. Pipeline: {pipeline_status} — {pipeline_url}\n"
+            "5. Done — refresh phone browser on /portal"
         )
     else:
         detail = (
@@ -459,6 +527,13 @@ async def _deploy_azdo(
             detail += f"*Live deploy error:* {deploy_error}"
         else:
             detail += "Live deploy runs via Azure Pipelines after merge to main."
+        evaluation = (
+            "1. Your WhatsApp approval authorized Azure DevOps deployment\n"
+            f"2. Changes merged to `main`: {'yes' if merged else 'no'}\n"
+            f"3. Live portal: {live_url or deploy_error or 'skipped'}\n"
+            f"4. Pipeline: {pipeline_status} — {pipeline_url}\n"
+            "5. PR created; live portal still needs a successful deploy"
+        )
 
     return {
         **state,
@@ -472,15 +547,5 @@ async def _deploy_azdo(
         "azdo_repo_id": str(repo_id),
         "repo_name": repo_name,
         "notification_text": detail,
-        "evaluation_text": (
-            "1. Your WhatsApp approval authorized Azure DevOps deployment\n"
-            f"2. Changes merged to `main`: {'yes' if merged else 'no'}\n"
-            f"3. Live portal: {live_url or deploy_error or 'skipped'}\n"
-            f"4. Pipeline: {pipeline_status} — {pipeline_url}\n"
-            + (
-                "5. Done — refresh phone browser on /portal"
-                if live_url
-                else "5. PR created; live portal still needs a successful deploy"
-            )
-        ),
+        "evaluation_text": evaluation,
     }

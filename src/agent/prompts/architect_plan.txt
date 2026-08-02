@@ -1,0 +1,13 @@
+## Task
+{task_description}
+
+## Repository
+{repo_url}
+
+## Repository tree (top levels)
+{repo_tree}
+
+## Sample file contents (for context)
+{file_contents}
+
+Produce the implementation plan JSON for Sunny's approval before development starts.

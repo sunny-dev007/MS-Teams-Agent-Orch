@@ -15,6 +15,12 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr = SecretStr("")
     azure_openai_deployment: str = "gpt-4o"
     azure_openai_api_version: str = "2024-10-21"
+    # Optional stronger models for planning / PR review (e.g. gpt-4.1); falls back to deployment above
+    azure_openai_planning_deployment: str = ""
+    azure_openai_review_deployment: str = ""
+
+    # Multi-gate coding workflow: plan approval -> dev -> PR -> review mode -> deploy approval
+    enable_multi_gate_workflow: bool = True
 
     @property
     def effective_api_key(self) -> str:

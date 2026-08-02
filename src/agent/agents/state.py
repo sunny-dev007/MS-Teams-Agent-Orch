@@ -41,6 +41,15 @@ class AgentState(TypedDict, total=False):
     dev_reasoning: str
     workspace_path: str
 
+    # Multi-gate workflow
+    implementation_plan: str
+    plan_summary: str
+    plan_approved: bool
+    pr_review_mode: str  # ai | manual
+    pr_number: int
+    pr_id: int
+    pr_review_score: int
+
     # Reviewer agent output
     review_result: str
     review_comments: str

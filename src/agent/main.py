@@ -49,6 +49,15 @@ async def lifespan(app: FastAPI):
             token_status,
         )
 
+    # AzDO self-deploy restarts this process mid-wait — resume durable pipeline watches
+    # so Sunny still gets Final evaluation (GitHub sample path does not use this).
+    try:
+        from agent.services.ci_watch import resume_pending_ci_watches
+
+        await resume_pending_ci_watches()
+    except Exception:
+        log.exception("Failed resuming pending AzDO CI watches")
+
     try:
         yield
     finally:

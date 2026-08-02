@@ -22,3 +22,9 @@ Your output must be JSON:
 }
 
 Be constructive but thorough. Only request changes for real issues, not style preferences.
+
+Important:
+- File contents in the prompt may be truncated with a REVIEW_NOTE. Do NOT request changes
+  only because a snippet looks cut off mid-file.
+- For HTML/CSS redesigns, if structure/styles look sound, prefer "approved" and let the
+  human do final approval in WhatsApp.

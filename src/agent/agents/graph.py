@@ -12,6 +12,7 @@ from agent.config import settings
 from agent.core.logging import get_logger
 from agent.planner.agent import plan
 from agent.specialists.calendar_agent import run_calendar
+from agent.specialists.coding_architect import run_architect
 from agent.specialists.coding_deployer import run_deployer
 from agent.specialists.coding_developer import run_developer
 from agent.specialists.coding_reviewer import run_reviewer
@@ -19,7 +20,16 @@ from agent.specialists.email_agent import run_email, run_send_email
 from agent.specialists.evaluator_agent import run_evaluator, run_task_status
 from agent.specialists.general_agent import run_general
 from agent.specialists.notifier_agent import run_notifier
+from agent.specialists.pr_publisher import run_pr_publisher
+from agent.specialists.pr_reviewer import run_pr_reviewer
 from agent.specialists.repo_wizard import run_repo_wizard
+from agent.workflow.gates import (
+    multi_gate_enabled,
+    persist_deploy_gate,
+    persist_manual_pr_gate,
+    persist_plan_gate,
+    persist_pr_mode_gate,
+)
 
 logger = get_logger(__name__)
 
@@ -54,6 +64,10 @@ async def close_graph_resources() -> None:
     _compiled = None
 
 
+def _coding_entry_node() -> str:
+    return "coding_architect" if multi_gate_enabled() else "coding_developer"
+
+
 def _route_after_plan(state: AgentState) -> str:
     intent = state.get("intent", "")
     if intent == "check_email":
@@ -69,7 +83,7 @@ def _route_after_plan(state: AgentState) -> str:
     if intent in ("code_change", "bug_fix"):
         if not state.get("repo_url"):
             return "repo_wizard"
-        return "coding_developer"
+        return _coding_entry_node()
     if intent in ("approval_yes", "approval_no"):
         return "handle_approval"
     return "general_agent"
@@ -77,13 +91,13 @@ def _route_after_plan(state: AgentState) -> str:
 
 def _route_after_email(state: AgentState) -> str:
     if state.get("intent") == "code_change" and state.get("repo_url"):
-        return "notify_then_develop"
+        return "notify_then_architect" if multi_gate_enabled() else "notify_then_develop"
     return "notify_result"
 
 
 def _route_after_repo_wizard(state: AgentState) -> str:
     if state.get("intent") == "code_change" and state.get("repo_url"):
-        return "notify_then_develop"
+        return "notify_then_architect" if multi_gate_enabled() else "notify_then_develop"
     return "notify_picker"
 
 
@@ -101,15 +115,29 @@ def _route_after_developer(state: AgentState) -> str:
 
 
 def _route_after_review(state: AgentState) -> str:
-    result = state.get("review_result", "")
+    result = (state.get("review_result") or "").lower().strip()
     iteration = state.get("review_iteration", 0)
     if state.get("status") == "failed" or not state.get("file_changes"):
         return "notify_result"
+    if multi_gate_enabled():
+        if result == "approved" or iteration >= 3:
+            return "publish_pr"
+        if result in ("rejected",):
+            return "notify_result"
+        return "coding_developer"
     if result == "approved":
-        return "request_approval"
+        return "notify_then_approve"
     if iteration >= 3:
+        return "notify_then_approve"
+    if result in ("rejected",):
         return "notify_result"
     return "coding_developer"
+
+
+def _route_after_pr_publish(state: AgentState) -> str:
+    if state.get("status") == "failed" or not state.get("pr_url"):
+        return "notify_result"
+    return "request_pr_review_mode"
 
 
 def _route_after_approval(state: AgentState) -> str:
@@ -144,34 +172,89 @@ def _format_change_preview(file_changes: list, max_chars: int = 2800) -> str:
     return "\n\n".join(parts)
 
 
+async def _request_plan_approval(state: AgentState) -> AgentState:
+    phone = state.get("whatsapp_phone", "")
+    if phone:
+        await persist_plan_gate(phone, state)
+    return {
+        **state,
+        "status": "awaiting_plan_approval",
+        "plan_approved": False,
+        "approval_status": "pending",
+    }
+
+
+async def _request_pr_review_mode(state: AgentState) -> AgentState:
+    phone = state.get("whatsapp_phone", "")
+    if phone:
+        await persist_pr_mode_gate(phone, state)
+    provider = (state.get("repo_provider") or "github").replace("_", " ")
+    return {
+        **state,
+        "status": "pr_created",
+        "notification_text": (
+            f"*Pull request:* {state.get('pr_url', 'N/A')}\n\n"
+            f"How should this PR be reviewed?\n"
+            f"1. *AI review* — detailed score on WhatsApp\n"
+            f"2. *Manual review* — review in {provider}\n\n"
+            "Reply *1* / *AI REVIEW* or *2* / *MANUAL REVIEW*"
+        ),
+    }
+
+
+async def _handle_plan_gate(state: AgentState) -> AgentState:
+    if state.get("approval_status") == "rejected":
+        return {
+            **state,
+            "status": "rejected",
+            "notification_text": "Plan rejected. No code was changed.",
+        }
+    return {**state, "plan_approved": True, "status": "plan_approved"}
+
+
+async def _handle_pr_review_choice(state: AgentState) -> AgentState:
+    mode = (state.get("pr_review_mode") or "").lower().strip()
+    if mode == "manual":
+        phone = state.get("whatsapp_phone", "")
+        if phone:
+            await persist_manual_pr_gate(phone, state)
+        return {
+            **state,
+            "status": "awaiting_manual_pr",
+            "notification_text": (
+                f"Open the PR and approve it in GitHub or Azure DevOps:\n"
+                f"{state.get('pr_url', 'N/A')}\n\n"
+                f"When done, reply *PR READY {state.get('task_id')}* "
+                "for final deploy approval."
+            ),
+        }
+    return {**state, "pr_review_mode": "ai"}
+
+
+async def _handle_manual_pr_ready(state: AgentState) -> AgentState:
+    return {**state, "status": "manual_pr_ready"}
 async def _request_approval(state: AgentState) -> AgentState:
     changes = state.get("file_changes", [])
     preview = _format_change_preview(changes)
     phone = state.get("whatsapp_phone", "")
     task_id = state.get("task_id", "")
+    review_result = (state.get("review_result") or "").lower().strip()
+    if review_result == "changes_requested":
+        preview = (
+            "_Automated review had remaining comments, but you can still deploy._\n"
+            f"{state.get('review_comments', '')}\n\n"
+            f"{preview}"
+        )
+    if multi_gate_enabled() and state.get("pr_url"):
+        preview = (
+            f"*Pull request:* {state.get('pr_url')}\n"
+            f"*PR review:* {state.get('pr_review_mode', 'ai')} "
+            f"(score: {state.get('pr_review_score', 'N/A')})\n\n"
+            f"{preview}"
+        )
     # Persist deploy context so bare "Approve" / checkpoint loss still works
     if phone and task_id:
-        from agent.core.session import save_session
-
-        await save_session(
-            phone,
-            awaiting="approval",
-            provider=state.get("repo_provider") or "",
-            data={
-                "pending_task_id": task_id,
-                "workspace_path": state.get("workspace_path", ""),
-                "branch_name": state.get("branch_name", ""),
-                "repo_url": state.get("repo_url", ""),
-                "repo_owner": state.get("repo_owner", ""),
-                "repo_name": state.get("repo_name", ""),
-                "repo_provider": state.get("repo_provider", ""),
-                "azdo_project": state.get("azdo_project", ""),
-                "azdo_repo_id": state.get("azdo_repo_id", ""),
-                "user_message": state.get("user_message", "") or state.get("email_body", ""),
-                "file_changes": state.get("file_changes") or [],
-            },
-            merge_data=False,
-        )
+        await persist_deploy_gate(phone, state)
     return {
         **state,
         "status": "awaiting_approval",
@@ -202,8 +285,11 @@ def build_graph() -> StateGraph:
     graph.add_node("calendar_agent", run_calendar)
     graph.add_node("repo_wizard", run_repo_wizard)
     graph.add_node("task_status_agent", run_task_status)
+    graph.add_node("coding_architect", run_architect)
     graph.add_node("coding_developer", run_developer)
     graph.add_node("coding_reviewer", run_reviewer)
+    graph.add_node("publish_pr", run_pr_publisher)
+    graph.add_node("pr_ai_reviewer", run_pr_reviewer)
     graph.add_node("coding_deployer", run_deployer)
     graph.add_node("general_agent", run_general)
     graph.add_node("evaluator", run_evaluator)
@@ -216,12 +302,23 @@ def build_graph() -> StateGraph:
     graph.add_node("notify_general", run_notifier)
     graph.add_node("notify_dev", run_notifier)
     graph.add_node("notify_then_develop", run_notifier)
+    graph.add_node("notify_then_architect", run_notifier)
+    graph.add_node("notify_plan", run_notifier)
+    graph.add_node("notify_pr_mode", run_notifier)
+    graph.add_node("notify_manual_pr", run_notifier)
+    graph.add_node("notify_pr_review", run_notifier)
     graph.add_node("notify_approval", run_notifier)
+    graph.add_node("notify_review", run_notifier)
     graph.add_node("notify_rejected", run_notifier)
     graph.add_node("notify_email_sent", run_notifier)
     graph.add_node("notify_evaluation", run_notifier)
 
+    graph.add_node("request_plan_approval", _request_plan_approval)
+    graph.add_node("request_pr_review_mode", _request_pr_review_mode)
     graph.add_node("request_approval", _request_approval)
+    graph.add_node("handle_plan_gate", _handle_plan_gate)
+    graph.add_node("handle_pr_review_choice", _handle_pr_review_choice)
+    graph.add_node("handle_manual_pr_ready", _handle_manual_pr_ready)
     graph.add_node("handle_approval", _handle_approval)
 
     graph.set_entry_point("planner")
@@ -232,6 +329,7 @@ def build_graph() -> StateGraph:
         "calendar_agent": "calendar_agent",
         "repo_wizard": "repo_wizard",
         "task_status_agent": "task_status_agent",
+        "coding_architect": "coding_architect",
         "coding_developer": "coding_developer",
         "handle_approval": "handle_approval",
         "general_agent": "general_agent",
@@ -251,14 +349,31 @@ def build_graph() -> StateGraph:
 
     graph.add_conditional_edges("repo_wizard", _route_after_repo_wizard, {
         "notify_then_develop": "notify_then_develop",
+        "notify_then_architect": "notify_then_architect",
         "notify_picker": "notify_picker",
     })
     graph.add_edge("notify_picker", END)
     graph.add_edge("notify_then_develop", "coding_developer")
+    graph.add_edge("notify_then_architect", "coding_architect")
 
     graph.add_conditional_edges("email_agent", _route_after_email, {
         "notify_then_develop": "notify_then_develop",
+        "notify_then_architect": "notify_then_architect",
         "notify_result": "notify_result",
+    })
+
+    graph.add_edge("coding_architect", "request_plan_approval")
+    graph.add_edge("request_plan_approval", "notify_plan")
+    graph.add_edge("notify_plan", END)
+
+    def _route_plan_gate(state: AgentState) -> str:
+        if state.get("approval_status") == "rejected":
+            return "notify_rejected"
+        return "coding_developer"
+
+    graph.add_conditional_edges("handle_plan_gate", _route_plan_gate, {
+        "coding_developer": "coding_developer",
+        "notify_rejected": "notify_rejected",
     })
 
     graph.add_edge("coding_developer", "notify_dev")
@@ -268,11 +383,35 @@ def build_graph() -> StateGraph:
     })
 
     graph.add_conditional_edges("coding_reviewer", _route_after_review, {
-        "request_approval": "request_approval",
+        "notify_then_approve": "notify_review",
+        "publish_pr": "publish_pr",
         "coding_developer": "coding_developer",
         "notify_result": "notify_result",
     })
 
+    graph.add_conditional_edges("publish_pr", _route_after_pr_publish, {
+        "request_pr_review_mode": "request_pr_review_mode",
+        "notify_result": "notify_result",
+    })
+    graph.add_edge("request_pr_review_mode", "notify_pr_mode")
+    graph.add_edge("notify_pr_mode", END)
+
+    def _route_pr_review_choice(state: AgentState) -> str:
+        if (state.get("pr_review_mode") or "").lower() == "manual":
+            return "notify_manual_pr"
+        return "pr_ai_reviewer"
+
+    graph.add_conditional_edges("handle_pr_review_choice", _route_pr_review_choice, {
+        "pr_ai_reviewer": "pr_ai_reviewer",
+        "notify_manual_pr": "notify_manual_pr",
+    })
+    graph.add_edge("notify_manual_pr", END)
+    graph.add_edge("pr_ai_reviewer", "notify_pr_review")
+    graph.add_edge("notify_pr_review", "request_approval")
+    graph.add_edge("handle_manual_pr_ready", "request_approval")
+
+    # Legacy path: internal review WhatsApp first, then deploy approval.
+    graph.add_edge("notify_review", "request_approval")
     graph.add_edge("request_approval", "notify_approval")
     graph.add_edge("notify_approval", END)
 
@@ -325,12 +464,28 @@ async def run_graph(
     logger.info("Task %s completed in %.2fs", task_id, time.perf_counter() - t0)
 
 
-async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) -> None:
+async def resume_graph(
+    task_id: str,
+    approval_status: str,
+    whatsapp_phone: str,
+    *,
+    gate: str = "deploy",
+    pr_review_mode: str | None = None,
+) -> None:
     from agent.core.session import clear_session, get_session
     from agent.services.git_ops import get_workspace_path
+    from agent.workflow.gates import GATE_DEPLOY, GATE_MANUAL_PR, GATE_PLAN, GATE_PR_MODE
 
     compiled = await _get_compiled()
     config = {"configurable": {"thread_id": task_id}}
+
+    session = await get_session(whatsapp_phone) if whatsapp_phone else {}
+    pending = dict(session.get("data") or {})
+    pending_id = pending.get("pending_task_id") or ""
+    if pending_id and pending_id != task_id:
+        pending = {}
+    elif not pending_id or pending_id == task_id:
+        pass
 
     state_update: AgentState = {
         "task_id": task_id,
@@ -338,32 +493,47 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
         "whatsapp_phone": whatsapp_phone,
         "source": "whatsapp",
         "intent": "approval_yes" if approval_status == "approved" else "approval_no",
-        "status": "rejected" if approval_status == "rejected" else "deploying",
     }
 
-    # Hydrate deploy context from session (bare Approve) and/or local workspace
-    session = await get_session(whatsapp_phone) if whatsapp_phone else {}
-    pending = dict(session.get("data") or {})
-    pending_id = pending.get("pending_task_id") or ""
-    if pending_id and pending_id != task_id:
-        # Prefer the explicit APPROVE <id>; only use session fields when IDs match
-        # or when session has no conflicting pending id.
-        pending = {}
-    elif not pending_id or pending_id == task_id:
-        for key in (
-            "workspace_path",
-            "branch_name",
-            "repo_url",
-            "repo_owner",
-            "repo_name",
-            "repo_provider",
-            "user_message",
-            "file_changes",
-        ):
-            if pending.get(key) and not state_update.get(key):
-                state_update[key] = pending[key]
+    hydrate_keys = (
+        "workspace_path",
+        "branch_name",
+        "repo_url",
+        "repo_owner",
+        "repo_name",
+        "repo_provider",
+        "azdo_project",
+        "azdo_repo_id",
+        "user_message",
+        "file_changes",
+        "implementation_plan",
+        "pr_url",
+        "pr_number",
+        "pr_id",
+        "commit_sha",
+        "review_comments",
+        "review_result",
+    )
+    for key in hydrate_keys:
+        if pending.get(key) is not None and pending.get(key) != "":
+            state_update[key] = pending[key]
 
-    # Checkpoint may already have values — merge after loading snapshot below
+    if pr_review_mode:
+        state_update["pr_review_mode"] = pr_review_mode
+
+    if gate == GATE_PLAN:
+        state_update["status"] = "rejected" if approval_status == "rejected" else "plan_approved"
+        goto = "handle_plan_gate"
+    elif gate == GATE_PR_MODE:
+        state_update["status"] = "pr_review_choice"
+        goto = "handle_pr_review_choice"
+    elif gate == GATE_MANUAL_PR:
+        state_update["status"] = "manual_pr_ready"
+        goto = "handle_manual_pr_ready"
+    else:
+        state_update["status"] = "rejected" if approval_status == "rejected" else "deploying"
+        goto = "handle_approval"
+
     try:
         snapshot = await compiled.aget_state(config)
         values = dict(snapshot.values or {})
@@ -376,7 +546,6 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
         elif key not in values and val is not None:
             values[key] = val
 
-    # Reconstruct workspace path if missing but files exist on disk
     if not values.get("workspace_path"):
         repo_dir = get_workspace_path(task_id) / "repo"
         if repo_dir.exists():
@@ -384,42 +553,63 @@ async def resume_graph(task_id: str, approval_status: str, whatsapp_phone: str) 
     if not values.get("branch_name"):
         values["branch_name"] = f"agent/{task_id}"
 
-    state_update = values  # type: ignore[assignment]
+    needs_repo = gate in (GATE_PLAN, GATE_PR_MODE, GATE_MANUAL_PR, GATE_DEPLOY)
+    if needs_repo and not values.get("repo_url") and not values.get("workspace_path"):
+        from agent.workflow.resume_context import format_resume_failed
+        from agent.services.whatsapp import send_message
+
+        if whatsapp_phone:
+            await send_message(
+                whatsapp_phone,
+                format_resume_failed(
+                    task_id,
+                    "Session expired or this task ran on another server instance.",
+                ),
+            )
+        return
 
     logger.info(
-        "Resuming task %s approval=%s workspace=%s branch=%s",
+        "Resuming task %s gate=%s approval=%s goto=%s",
         task_id,
+        gate,
         approval_status,
-        state_update.get("workspace_path"),
-        state_update.get("branch_name"),
+        goto,
     )
 
     try:
         from langgraph.types import Command
 
         async for event in compiled.astream(
-            Command(update=state_update, goto="handle_approval"),
+            Command(update=values, goto=goto),
             config,
         ):
             node = list(event.keys())[0] if event else "unknown"
             logger.info("Task %s (resumed): '%s'", task_id, node)
-        # Keep approval session if deploy deferred because CI was busy
+
         if whatsapp_phone:
             try:
                 snap = await compiled.aget_state(config)
                 final = dict(snap.values or {})
             except Exception:
                 final = {}
-            if final.get("error") == "ci_busy" or final.get("pipeline_status") == "busy":
-                logger.info("Keeping approval session for %s — CI still busy", task_id)
-            else:
+            keep_session = final.get("error") == "ci_busy" or final.get("pipeline_status") == "busy"
+            awaiting_after = (await get_session(whatsapp_phone)).get("awaiting")
+            if gate == GATE_PLAN and approval_status == "rejected":
+                await clear_session(whatsapp_phone)
+            elif gate == GATE_DEPLOY and not keep_session and awaiting_after != GATE_DEPLOY:
+                if awaiting_after not in (GATE_PLAN, GATE_PR_MODE, GATE_MANUAL_PR, GATE_DEPLOY):
+                    await clear_session(whatsapp_phone)
+            elif gate == GATE_DEPLOY and not keep_session and awaiting_after is None:
                 await clear_session(whatsapp_phone)
         return
     except Exception:
-        logger.warning("Command resume unavailable; manual deploy/reject path", exc_info=True)
+        logger.warning("Command resume unavailable; manual path", exc_info=True)
 
-    values = dict(state_update)
+    # Fallback manual path (deploy gate only)
+    if gate != GATE_DEPLOY:
+        return
 
+    values = dict(values)
     if approval_status == "approved":
         values = await run_deployer(values)
         values = await run_notifier(values)

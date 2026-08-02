@@ -63,7 +63,6 @@ async def plan(state: AgentState) -> AgentState:
         awaiting = session.get("awaiting")
         if awaiting == "approval":
             # Bare approve/reject should be handled in the WhatsApp webhook.
-            # If we land here, remind Sunny instead of starting a new empty deploy.
             lower = user_msg.lower().strip()
             tid = (session.get("data") or {}).get("pending_task_id") or "unknown"
             if lower.startswith("approve") or lower.startswith("reject"):
@@ -76,8 +75,36 @@ async def plan(state: AgentState) -> AgentState:
                     ),
                     "planned_by": AGENT_NAME,
                 }
+            # fall through to CI check below
+        elif awaiting == "plan_approval":
+            from agent.workflow.resume_context import format_gate_hint
 
-            # Soft CI check while waiting — do not start a new request for same repo
+            return {
+                **state,
+                "intent": "general",
+                "notification_text": format_gate_hint(awaiting, session.get("data")),
+                "planned_by": AGENT_NAME,
+            }
+        elif awaiting == "pr_review_mode":
+            from agent.workflow.resume_context import format_gate_hint
+
+            return {
+                **state,
+                "intent": "general",
+                "notification_text": format_gate_hint(awaiting, session.get("data")),
+                "planned_by": AGENT_NAME,
+            }
+        elif awaiting == "manual_pr_review":
+            from agent.workflow.resume_context import format_gate_hint
+
+            return {
+                **state,
+                "intent": "general",
+                "notification_text": format_gate_hint(awaiting, session.get("data")),
+                "planned_by": AGENT_NAME,
+            }
+
+        if awaiting == "approval":
             try:
                 from agent.services.ci_gate import (
                     check_ci_busy_for_context,
@@ -178,9 +205,25 @@ async def plan(state: AgentState) -> AgentState:
     if result.get("repo_url"):
         updates["repo_url"] = result["repo_url"]
     if intent in ("approval_yes", "approval_no"):
+        # Never start an empty deploy from phrases like "please go ahead"
+        # unless WhatsApp session actually has a pending approval.
+        pending = await get_session(phone) if phone else {"awaiting": None, "data": {}}
+        if pending.get("awaiting") != "approval":
+            return {
+                **state,
+                "intent": "general",
+                "notification_text": (
+                    "I don't have a pending coding change waiting for approval.\n\n"
+                    "Say *check my repos* to start a change, or if you already have a task id "
+                    "reply *APPROVE <task_id>*.\n"
+                    "After development+review you will get an explicit *APPROVE* prompt."
+                ),
+                "planned_by": AGENT_NAME,
+            }
         updates["approval_status"] = "approved" if intent == "approval_yes" else "rejected"
-        if result.get("task_id"):
-            updates["task_id"] = result["task_id"]
+        tid = result.get("task_id") or (pending.get("data") or {}).get("pending_task_id")
+        if tid:
+            updates["task_id"] = tid
     if intent == "send_email":
         for key in ("email_to", "email_subject", "email_body"):
             if result.get(key):

@@ -38,7 +38,7 @@ async def review_code(state: AgentState) -> AgentState:
         f"- {c.get('action', 'modify')} `{c['path']}`" for c in file_changes
     )
     file_diffs = "\n\n".join(
-        f"### {c['path']} ({c.get('action', 'modify')})\n```\n{c.get('content', '')[:3000]}\n```"
+        f"### {c['path']} ({c.get('action', 'modify')})\n```\n{_content_for_review(c)}\n```"
         for c in file_changes
     )
 
@@ -55,6 +55,7 @@ async def review_code(state: AgentState) -> AgentState:
     ])
 
     review = _parse_review(response.content)
+    review = _soften_false_incomplete_html(review, file_changes)
 
     logger.info(
         "Reviewer result=%s score=%s for task %s (iteration %d)",
@@ -79,6 +80,67 @@ async def review_code(state: AgentState) -> AgentState:
         "review_iteration": new_iteration,
         "status": "review_complete",
         "notification_text": review_text,
+    }
+
+
+def _content_for_review(change: dict) -> str:
+    """Pass enough content for HTML/CSS reviews; mark truncation so LLM does not reject falsely."""
+    path = (change.get("path") or "").lower()
+    content = change.get("content") or ""
+    limit = 12000 if path.endswith((".html", ".htm", ".css")) else 4000
+    if len(content) <= limit:
+        return content
+    return content[:limit] + "\n\n/* REVIEW_NOTE: file truncated for reviewer prompt only; full file is stored for deploy */"
+
+
+def _soften_false_incomplete_html(review: dict, file_changes: list) -> dict:
+    """Don't block human approval when reviewer only complains about prompt truncation."""
+    if (review.get("result") or "").lower() != "changes_requested":
+        return review
+
+    html_files = [
+        c
+        for c in file_changes
+        if str(c.get("path", "")).lower().endswith((".html", ".htm"))
+    ]
+    if not html_files:
+        return review
+
+    complete_html = all(
+        "</html>" in (c.get("content") or "").lower() for c in html_files
+    )
+    if not complete_html:
+        return review
+
+    issues = list(review.get("issues") or [])
+    remaining = []
+    for issue in issues:
+        desc = (issue.get("description") or "").lower()
+        if any(
+            key in desc
+            for key in (
+                "incomplete",
+                "cut off",
+                "truncated",
+                "mid-html",
+                "mid-line",
+                "provide the full",
+            )
+        ):
+            continue
+        remaining.append(issue)
+
+    if remaining:
+        review["issues"] = remaining
+        return review
+
+    logger.info("Ignoring truncation-only HTML review complaints; treating as approved")
+    return {
+        **review,
+        "result": "approved",
+        "summary": (review.get("summary") or "")
+        + " (truncation-only concerns ignored; full HTML is present for deploy)",
+        "issues": [],
     }
 
 

@@ -71,12 +71,13 @@ async def develop_code(state: AgentState) -> AgentState:
 
         prompt = CODEGEN_TEMPLATE.format(
             task_description=user_msg,
+            implementation_plan=state.get("implementation_plan") or state.get("plan_summary") or "None — use best judgment.",
             repo_tree=tree,
             file_contents=relevant_files,
             review_feedback=review_feedback,
         )
 
-        llm = get_llm(temperature=0.1)
+        llm = get_llm(temperature=0.1, role="default")
         response = await llm.ainvoke([
             SystemMessage(content=SYSTEM_PROMPT),
             HumanMessage(content=prompt),

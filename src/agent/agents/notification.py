@@ -17,6 +17,31 @@ STATUS_TEMPLATES = {
         "*Result:* {review_result}\n"
         "*Comments:*\n{detail}"
     ),
+    "awaiting_plan_approval": (
+        "*Sunny's AI Agent* — Implementation plan (`{task_id}`)\n\n"
+        "*Repo:* {repo}\n\n"
+        "{detail}\n\n"
+        "Reply *PROCEED {task_id}* to start development.\n"
+        "Reply *REJECT {task_id}* to cancel."
+    ),
+    "pr_created": (
+        "*Sunny's AI Agent* — PR opened (`{task_id}`)\n\n"
+        "*Pull request:* {pr_url}\n\n"
+        "How should this PR be reviewed?\n"
+        "1. *AI review* — detailed score + comments on WhatsApp\n"
+        "2. *Manual review* — you review in GitHub / Azure DevOps\n\n"
+        "Reply *1* or *AI REVIEW* / *2* or *MANUAL REVIEW*"
+    ),
+    "awaiting_manual_pr": (
+        "*Sunny's AI Agent* — Manual PR review (`{task_id}`)\n\n"
+        "*Pull request:* {pr_url}\n\n"
+        "Review and approve the PR in GitHub or Azure DevOps.\n"
+        "When done, reply *PR READY {task_id}* for final deploy approval."
+    ),
+    "pr_review_complete": (
+        "*Sunny's AI Agent* — AI PR review (`{task_id}`)\n\n"
+        "{detail}"
+    ),
     "awaiting_approval": (
         "*Sunny's AI Agent* — Review changes before deploy (`{task_id}`)\n\n"
         "*Repo:* {repo}\n"

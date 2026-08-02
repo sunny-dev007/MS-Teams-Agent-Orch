@@ -6,28 +6,64 @@ from agent.planner.agent import is_simple_greeting
 logger = get_logger(__name__)
 
 
+import uuid
+
+from agent.core.logging import get_logger
+from agent.planner.agent import is_simple_greeting
+
+logger = get_logger(__name__)
+
+
 async def handle_whatsapp_message(parsed: dict) -> None:
-    task_id = str(uuid.uuid4())[:8]
     phone = parsed["phone"]
     message = (parsed["message"] or "").strip()
-    logger.info("Processing task %s from %s", task_id, phone)
 
-    # Fast-path: greetings/help must not import LangGraph / Google / cryptography.
-    # Prebuilt site-packages can break native wheels; greetings should still work.
+    # Fast-path: greetings/help — always allowed even during a paused workflow.
     if is_simple_greeting(message) or message.lower() in {"help", "menu", "?", "commands"}:
         try:
             from agent.core.persona import GREETING_REPLY, HELP_MENU
+            from agent.core.session import get_session
             from agent.services.whatsapp import send_message
+            from agent.workflow.resume_context import format_gate_hint, has_active_gate
 
-            text = HELP_MENU if message.lower() in {"help", "menu", "?", "commands"} else GREETING_REPLY
+            session = await get_session(phone)
+            if has_active_gate(session) and message.lower() in {"help", "menu", "?", "commands"}:
+                text = HELP_MENU + "\n\n---\n\n" + format_gate_hint(
+                    session.get("awaiting"), session.get("data")
+                )
+            else:
+                text = (
+                    HELP_MENU
+                    if message.lower() in {"help", "menu", "?", "commands"}
+                    else GREETING_REPLY
+                )
             await send_message(phone, text)
-            logger.info("Fast-path reply sent for task %s", task_id)
             return
         except Exception:
-            logger.exception("Fast-path reply failed for task %s", task_id)
-            # Fall through to full graph as a backup
+            logger.exception("Fast-path reply failed")
+            # Fall through
 
-    # Instant ack so Sunny sees feedback within seconds (before LLM / graph work).
+    # Do not start a brand-new task while a gate is waiting — guide Sunny to resume.
+    try:
+        from agent.core.session import get_session
+        from agent.services.whatsapp import send_message
+        from agent.workflow.resume_context import format_gate_hint, has_active_gate, is_resume_status_message
+
+        session = await get_session(phone)
+        if has_active_gate(session):
+            await send_message(
+                phone,
+                format_gate_hint(session.get("awaiting"), session.get("data")),
+            )
+            return
+        if is_resume_status_message(message):
+            await send_message(phone, "*No active task.* Reply *check my repos* to start.")
+            return
+    except Exception:
+        logger.exception("Active-gate check failed — continuing with new task")
+
+    task_id = str(uuid.uuid4())[:8]
+    logger.info("Processing task %s from %s", task_id, phone)
     try:
         from agent.services.whatsapp import send_message
 

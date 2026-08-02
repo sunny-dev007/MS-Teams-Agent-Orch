@@ -46,9 +46,14 @@ WhatsApp steps (do this from phone only):
 9. Wait for evaluation: PR + merged + **Live app** URL
 10. Refresh phone browser `/` and `/docs` — DELETE should appear; empty title POST should return 400
 
-Azure DevOps path:
-1. `check my repos` → `2` → `Project-NIT` → pick a repo
-2. Same coding + `APPROVE` flow (PR on AzDO; live phone redeploy is only for personal-task-api)
+Azure DevOps path (Sunny Portal on this agent app):
+1. Open phone browser: https://whatsapp-ai-agent-sunny.azurewebsites.net/portal
+2. WhatsApp: `check my repos` → `2` → `Project-NIT` → `web.Whatsapp-AI-Agent`
+3. Ask a small UI change, e.g. `Add a feature bullet "Dark mode toggle" on the portal page and bump portal version to v0.2.0`
+4. Review the WhatsApp code preview
+5. Reply `Approve` / `final approval`
+6. Expect merge to main + live portal URL
+7. Refresh `/portal` on phone — no need to open Azure DevOps
 
 ## 6) Status
 Send `task status` or `5`
