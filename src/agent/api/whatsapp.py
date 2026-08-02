@@ -83,27 +83,45 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
     logger.info("Received message from %s: %s", parsed["phone"], message[:100])
 
     from agent.core.session import get_session
-    from agent.workflow.gates import GATE_DEPLOY, GATE_MANUAL_PR, GATE_PLAN, GATE_PR_MODE
+    from agent.workflow.gates import (
+        GATE_DEPLOY,
+        GATE_MANUAL_PR,
+        GATE_PLAN,
+        GATE_PR_MODE,
+        is_conversation_awaiting,
+        is_workflow_gate,
+    )
     from agent.workflow.resume_context import (
         format_gate_hint,
         format_no_pending_task,
-        format_resume_ack,
-        format_resume_failed,
-        has_active_gate,
+        format_session_cleared,
+        format_session_status,
+        is_cancel_session_message,
+        is_restart_session_message,
         is_resume_status_message,
     )
 
     session = await get_session(parsed["phone"])
     awaiting = session.get("awaiting")
-    session_data = session.get("data") or {}
+    session_data = dict(session.get("data") or {})
+    session_provider = session.get("provider") or ""
+
+    # Cancel / fresh start — always honored.
+    if is_cancel_session_message(message):
+        tid = session_data.get("pending_task_id") or ""
+        background_tasks.add_task(_clear_and_notify, parsed["phone"], tid, awaiting or "")
+        return {"status": "ok"}
+
+    if is_restart_session_message(message):
+        tid = session_data.get("pending_task_id") or ""
+        background_tasks.add_task(_clear_and_restart, parsed["phone"], message, tid, awaiting or "")
+        return {"status": "ok"}
 
     if is_resume_status_message(message):
         background_tasks.add_task(
             _send_gate_hint,
             parsed["phone"],
-            format_gate_hint(awaiting, session_data)
-            if has_active_gate(session)
-            else format_no_pending_task(),
+            format_session_status(session) if session.get("awaiting") else format_no_pending_task(),
         )
         return {"status": "ok"}
 
@@ -131,7 +149,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
             background_tasks.add_task(
                 _send_gate_hint,
                 parsed["phone"],
-                format_gate_hint(GATE_PLAN, session_data),
+                format_gate_hint(GATE_PLAN, session_data, session_provider),
             )
     elif awaiting == GATE_PR_MODE:
         if pr_ai_match:
@@ -156,7 +174,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
             background_tasks.add_task(
                 _send_gate_hint,
                 parsed["phone"],
-                format_gate_hint(GATE_PR_MODE, session_data),
+                format_gate_hint(GATE_PR_MODE, session_data, session_provider),
             )
     elif awaiting == GATE_MANUAL_PR:
         if pr_ready_match:
@@ -171,8 +189,12 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
             background_tasks.add_task(
                 _send_gate_hint,
                 parsed["phone"],
-                format_gate_hint(GATE_MANUAL_PR, session_data),
+                format_gate_hint(GATE_MANUAL_PR, session_data, session_provider),
             )
+    elif is_conversation_awaiting(awaiting):
+        # Repo wizard / meeting — continue multi-turn thread (e.g. "1" = GitHub).
+        from agent.core.background import handle_whatsapp_message
+        background_tasks.add_task(handle_whatsapp_message, parsed)
     elif approve_match and awaiting in (GATE_DEPLOY, "approval", None):
         background_tasks.add_task(
             _resume_with_approval,
@@ -187,12 +209,11 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
             "rejected",
             parsed["phone"],
         )
-    elif has_active_gate(session):
-        # Wrong message while a gate is open — never start a parallel task.
+    elif is_workflow_gate(awaiting):
         background_tasks.add_task(
             _send_gate_hint,
             parsed["phone"],
-            format_gate_hint(awaiting, session_data),
+            format_gate_hint(awaiting, session_data, session_provider),
         )
     else:
         from agent.core.background import handle_whatsapp_message
@@ -247,6 +268,38 @@ async def _pending_deploy_context(phone: str, task_id: str) -> dict[str, str]:
     except Exception:
         logger.warning("Could not load checkpoint context for task %s", task_id)
         return ctx
+
+
+async def _clear_and_notify(phone: str, task_id: str, awaiting: str) -> None:
+    from agent.core.session import clear_session
+    from agent.services.whatsapp import send_message
+    from agent.workflow.resume_context import format_session_cleared
+
+    await clear_session(phone)
+    try:
+        await send_message(phone, format_session_cleared(had_task_id=task_id, had_gate=awaiting))
+    except Exception:
+        logger.exception("Failed cancel notify for %s", phone)
+
+
+async def _clear_and_restart(phone: str, message: str, task_id: str, awaiting: str) -> None:
+    from agent.core.session import clear_session
+    from agent.services.whatsapp import send_message
+    from agent.workflow.resume_context import format_session_cleared
+
+    await clear_session(phone)
+    try:
+        if task_id or awaiting:
+            await send_message(
+                phone,
+                format_session_cleared(had_task_id=task_id, had_gate=awaiting) + "\n\n_Starting fresh…_",
+            )
+    except Exception:
+        logger.exception("Failed restart notify for %s", phone)
+
+    from agent.core.background import handle_whatsapp_message
+
+    await handle_whatsapp_message({"phone": phone, "message": message})
 
 
 async def _send_gate_hint(phone: str, text: str) -> None:

@@ -17,8 +17,9 @@ HELP_MENU = (
     "2. *Meetings* — \"schedule a meeting tomorrow 3pm with a@b.com\"\n"
     "3. *Repos* — \"check my repos\" (GitHub or Azure DevOps)\n"
     "4. *Code* — pick a repo, review *plan* → *PROCEED* → dev → PR review → *APPROVE* deploy\n"
-    "5. *Status* — \"task status\"\n\n"
-    "*Coding gates:* PROCEED (plan) → 1/2 (PR review) → PR READY (manual) → APPROVE (deploy)\n\n"
+    "5. *Status* — \"status\" or \"resume\" (see pending step)\n"
+    "6. *Cancel* — \"stop\", \"new task\", or \"check my repos\" (fresh start)\n\n"
+    "*Coding gates:* PROCEED → 1/2 (PR review) → PR READY (manual) → APPROVE (deploy)\n\n"
     "Reply with a number or just tell me what you need."
 )
 

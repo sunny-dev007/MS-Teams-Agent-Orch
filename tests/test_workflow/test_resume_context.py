@@ -55,3 +55,4 @@ def test_no_pending():
 def test_has_active_gate():
     assert has_active_gate({"awaiting": "plan_approval"})
     assert not has_active_gate({"awaiting": None})
+    assert not has_active_gate({"awaiting": "provider"})

@@ -10,6 +10,13 @@ from agent.workflow.gates import (
     GATE_MANUAL_PR,
     GATE_PLAN,
     GATE_PR_MODE,
+    WIZARD_CODE,
+    WIZARD_PROJECT,
+    WIZARD_PROVIDER,
+    WIZARD_REPO,
+    is_conversation_awaiting,
+    is_workflow_gate,
+    is_wizard_awaiting,
     multi_gate_enabled,
 )
 
@@ -20,6 +27,21 @@ RESUME_STATUS_PATTERN = re.compile(
     r")[\s!.?]*$"
 )
 
+CANCEL_SESSION_PATTERN = re.compile(
+    r"(?i)^(?:"
+    r"stop(?:\s+(?:my\s+)?(?:previous\s+)?task)?|cancel(?:\s+task)?|abort|"
+    r"reset(?:\s+session)?|start\s+over|forget(?:\s+(?:that|previous|last))?|"
+    r"(?:i\s+)?(?:want\s+)?new\s+task|clear(?:\s+session)?"
+    r")[\s!.?]*$"
+)
+
+RESTART_SESSION_PATTERN = re.compile(
+    r"(?i)^(?:"
+    r"check\s+(?:my\s+)?repos?|browse\s+repos?|repositories|"
+    r"(?:start\s+)?new\s+task|start\s+over"
+    r")[\s!.?]*$"
+)
+
 _GATE_LABELS = {
     GATE_PLAN: ("Gate 1 — Plan approval", "Review the implementation plan above."),
     GATE_PR_MODE: ("Gate 3 — PR review mode", "Choose how the pull request should be reviewed."),
@@ -27,18 +49,45 @@ _GATE_LABELS = {
     GATE_DEPLOY: ("Gate 4 — Final deploy approval", "Merge to main and deploy live."),
 }
 
+_WIZARD_LABELS = {
+    WIZARD_PROVIDER: (
+        "Choose provider",
+        "Reply *1* for GitHub or *2* for Azure DevOps.",
+    ),
+    WIZARD_PROJECT: (
+        "Choose Azure DevOps project",
+        "Reply with the project *number* or exact name.",
+    ),
+    WIZARD_REPO: (
+        "Choose repository",
+        "Reply with the repo *number* or exact name.",
+    ),
+    WIZARD_CODE: (
+        "Describe your change",
+        "Tell me what to build or fix in the selected repo.",
+    ),
+}
+
 
 def is_resume_status_message(message: str) -> bool:
     return bool(RESUME_STATUS_PATTERN.match((message or "").strip()))
 
 
-def _provider_label(data: dict[str, Any]) -> str:
-    p = (data.get("repo_provider") or "").lower()
+def is_cancel_session_message(message: str) -> bool:
+    return bool(CANCEL_SESSION_PATTERN.match((message or "").strip()))
+
+
+def is_restart_session_message(message: str) -> bool:
+    return bool(RESTART_SESSION_PATTERN.match((message or "").strip()))
+
+
+def _provider_label(data: dict[str, Any], session_provider: str = "") -> str:
+    p = (data.get("repo_provider") or session_provider or "").lower()
     if p in ("azure_devops", "azdo", "ado"):
         return "Azure DevOps"
     if p == "github":
         return "GitHub"
-    return p or "repository"
+    return p or "not selected"
 
 
 def _repo_label(data: dict[str, Any]) -> str:
@@ -49,17 +98,44 @@ def _repo_label(data: dict[str, Any]) -> str:
     if url:
         part = url.rstrip("/").split("/")[-1]
         return f"`{part}`" if part else url
-    return "selected repo"
+    return "not selected yet"
 
 
-def format_gate_hint(awaiting: str | None, data: dict[str, Any] | None) -> str:
-    """Rich reminder of the current step and exact replies to continue."""
+def format_wizard_hint(awaiting: str | None, data: dict[str, Any] | None, session_provider: str = "") -> str:
+    data = data or {}
+    title, desc = _WIZARD_LABELS.get(
+        awaiting or "", ("Continue setup", "Reply to continue.")
+    )
+    provider = _provider_label(data, session_provider)
+    lines = [
+        "*Sunny's AI Agent* — Continue setup",
+        "",
+        f"*Step:* {title}",
+        f"*Provider:* {provider}",
+    ]
+    if data.get("azdo_project"):
+        lines.append(f"*Project:* `{data['azdo_project']}`")
+    if data.get("repo_name"):
+        lines.append(f"*Repo:* `{data['repo_name']}`")
+    lines.extend(["", desc, "", "_Reply *stop* or *new task* to cancel and start fresh._"])
+    return "\n".join(lines)
+
+
+def format_gate_hint(
+    awaiting: str | None,
+    data: dict[str, Any] | None,
+    session_provider: str = "",
+) -> str:
+    """Rich reminder for deploy gates OR wizard steps."""
+    if is_wizard_awaiting(awaiting) or str(awaiting or "").startswith("meeting"):
+        return format_wizard_hint(awaiting, data, session_provider)
+
     data = data or {}
     tid = data.get("pending_task_id") or "?"
     gate_title, gate_desc = _GATE_LABELS.get(
         awaiting or "", ("Workflow paused", "Continue when ready.")
     )
-    provider = _provider_label(data)
+    provider = _provider_label(data, session_provider)
     repo = _repo_label(data)
     request = (data.get("user_message") or "")[:120]
     pr_url = data.get("pr_url") or ""
@@ -111,10 +187,35 @@ def format_gate_hint(awaiting: str | None, data: dict[str, Any] | None) -> str:
     else:
         lines.append("Reply *help* for the menu or *check my repos* for a new task.")
 
+    lines.append("")
+    lines.append("_Reply *stop* or *new task* to cancel this workflow._")
+
     if multi_gate_enabled() and awaiting == GATE_PLAN:
-        lines.append("")
         lines.append("_Flow: Plan → Dev → PR → Review → Deploy_")
 
+    return "\n".join(lines)
+
+
+def format_session_status(session: dict[str, Any]) -> str:
+    awaiting = session.get("awaiting")
+    data = session.get("data") or {}
+    if not awaiting:
+        return format_no_pending_task()
+    return format_gate_hint(awaiting, data, session.get("provider") or "")
+
+
+def format_session_cleared(*, had_task_id: str = "", had_gate: str = "") -> str:
+    lines = ["*Session cleared.*", ""]
+    if had_task_id and is_workflow_gate(had_gate):
+        lines.append(
+            f"Abandoned coding task `{had_task_id}` (nothing new was merged)."
+        )
+        lines.append("")
+    lines.extend([
+        "You can start fresh:",
+        "• *check my repos* — browse GitHub / Azure DevOps",
+        "• *help* — full menu",
+    ])
     return "\n".join(lines)
 
 
@@ -125,7 +226,6 @@ def format_resume_ack(
     *,
     pr_review_mode: str | None = None,
 ) -> str:
-    """Short ack when Sunny sends the correct resume command."""
     if gate == GATE_PLAN and approval == "rejected":
         return format_plan_rejected(task_id)
     if gate == GATE_PLAN:
@@ -170,8 +270,8 @@ def format_resume_failed(task_id: str, reason: str = "") -> str:
         f"{detail}\n\n"
         "*What you can do:*\n"
         "• Reply *status* to see pending steps\n"
-        "• Start fresh with *check my repos*\n"
-        "• If a PR was already opened, finish review in GitHub / Azure DevOps"
+        "• *stop* or *new task* to clear session\n"
+        "• *check my repos* to start fresh"
     )
 
 
@@ -184,4 +284,9 @@ def format_no_pending_task() -> str:
 
 
 def has_active_gate(session: dict[str, Any]) -> bool:
-    return bool(session.get("awaiting"))
+    """Deploy gate only — repo wizard steps are NOT gates."""
+    return is_workflow_gate(session.get("awaiting"))
+
+
+def should_continue_conversation(session: dict[str, Any]) -> bool:
+    return is_conversation_awaiting(session.get("awaiting"))

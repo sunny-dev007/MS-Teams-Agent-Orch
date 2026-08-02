@@ -15,9 +15,40 @@ GATE_PR_MODE = "pr_review_mode"
 GATE_MANUAL_PR = "manual_pr_review"
 GATE_DEPLOY = "approval"
 
+# Multi-turn repo / meeting picker — NOT deploy gates (must not block "1", "2", repo names).
+WIZARD_PROVIDER = "provider"
+WIZARD_PROJECT = "project"
+WIZARD_REPO = "repo"
+WIZARD_CODE = "code_instruction"
+WIZARD_AWAITING = frozenset({WIZARD_PROVIDER, WIZARD_PROJECT, WIZARD_REPO, WIZARD_CODE})
+
+WORKFLOW_GATES = frozenset({GATE_PLAN, GATE_PR_MODE, GATE_MANUAL_PR, GATE_DEPLOY, "approval"})
+
 
 def multi_gate_enabled() -> bool:
     return bool(settings.enable_multi_gate_workflow)
+
+
+def is_workflow_gate(awaiting: str | None) -> bool:
+    """True only for coding deploy gates — blocks parallel tasks."""
+    return (awaiting or "") in WORKFLOW_GATES
+
+
+def is_wizard_awaiting(awaiting: str | None) -> bool:
+    return (awaiting or "") in WIZARD_AWAITING
+
+
+def is_meeting_awaiting(awaiting: str | None) -> bool:
+    return str(awaiting or "").startswith("meeting")
+
+
+def is_conversation_awaiting(awaiting: str | None) -> bool:
+    """Repo wizard or calendar slot-filling — continue same WhatsApp thread."""
+    return is_wizard_awaiting(awaiting) or is_meeting_awaiting(awaiting)
+
+
+def should_block_new_task(session: dict) -> bool:
+    return is_workflow_gate(session.get("awaiting"))
 
 
 async def persist_plan_gate(phone: str, state: dict[str, Any]) -> None:

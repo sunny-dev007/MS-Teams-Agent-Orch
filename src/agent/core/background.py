@@ -6,31 +6,24 @@ from agent.planner.agent import is_simple_greeting
 logger = get_logger(__name__)
 
 
-import uuid
-
-from agent.core.logging import get_logger
-from agent.planner.agent import is_simple_greeting
-
-logger = get_logger(__name__)
-
-
 async def handle_whatsapp_message(parsed: dict) -> None:
     phone = parsed["phone"]
     message = (parsed["message"] or "").strip()
 
-    # Fast-path: greetings/help — always allowed even during a paused workflow.
+    # Fast-path: greetings/help — always allowed.
     if is_simple_greeting(message) or message.lower() in {"help", "menu", "?", "commands"}:
         try:
             from agent.core.persona import GREETING_REPLY, HELP_MENU
             from agent.core.session import get_session
             from agent.services.whatsapp import send_message
-            from agent.workflow.resume_context import format_gate_hint, has_active_gate
+            from agent.workflow.gates import should_block_new_task
+            from agent.workflow.resume_context import format_session_status
 
             session = await get_session(phone)
-            if has_active_gate(session) and message.lower() in {"help", "menu", "?", "commands"}:
-                text = HELP_MENU + "\n\n---\n\n" + format_gate_hint(
-                    session.get("awaiting"), session.get("data")
-                )
+            if should_block_new_task(session) and message.lower() in {"help", "menu", "?", "commands"}:
+                text = HELP_MENU + "\n\n---\n\n" + format_session_status(session)
+            elif session.get("awaiting") and message.lower() in {"help", "menu", "?", "commands"}:
+                text = HELP_MENU + "\n\n---\n\n" + format_session_status(session)
             else:
                 text = (
                     HELP_MENU
@@ -41,38 +34,38 @@ async def handle_whatsapp_message(parsed: dict) -> None:
             return
         except Exception:
             logger.exception("Fast-path reply failed")
-            # Fall through
 
-    # Do not start a brand-new task while a gate is waiting — guide Sunny to resume.
+    # Block only deploy gates — repo wizard replies (1, 2, repo names) must reach the graph.
     try:
         from agent.core.session import get_session
         from agent.services.whatsapp import send_message
-        from agent.workflow.resume_context import format_gate_hint, has_active_gate, is_resume_status_message
+        from agent.workflow.gates import should_block_new_task
+        from agent.workflow.resume_context import format_session_status, is_resume_status_message
 
         session = await get_session(phone)
-        if has_active_gate(session):
-            await send_message(
-                phone,
-                format_gate_hint(session.get("awaiting"), session.get("data")),
-            )
+        if should_block_new_task(session):
+            await send_message(phone, format_session_status(session))
             return
         if is_resume_status_message(message):
-            await send_message(phone, "*No active task.* Reply *check my repos* to start.")
+            await send_message(
+                phone,
+                format_session_status(session)
+                if session.get("awaiting")
+                else "*No active task.* Reply *check my repos* to start.",
+            )
             return
     except Exception:
-        logger.exception("Active-gate check failed — continuing with new task")
+        logger.exception("Session guard failed — continuing with graph")
 
     task_id = str(uuid.uuid4())[:8]
-    logger.info("Processing task %s from %s", task_id, phone)
+    logger.info("Processing task %s from %s (msg=%s)", task_id, phone, message[:80])
+
     try:
         from agent.services.whatsapp import send_message
 
-        await send_message(
-            phone,
-            "Got it, Sunny — working on it…",
-        )
+        await send_message(phone, "Got it, Sunny — working on it…")
     except Exception:
-        logger.exception("Failed to send instant ack for task %s", task_id)
+        logger.exception("Failed instant ack for task %s", task_id)
 
     try:
         from agent.agents.graph import run_graph
@@ -93,11 +86,7 @@ async def handle_whatsapp_message(parsed: dict) -> None:
                 f"Something went wrong with task {task_id}. Please try again.",
             )
         except Exception:
-            logger.exception(
-                "Also failed to send error reply for task %s to %s",
-                task_id,
-                phone,
-            )
+            logger.exception("Failed error reply for task %s", task_id)
 
 
 async def handle_gmail_notification(history_id: str) -> None:
