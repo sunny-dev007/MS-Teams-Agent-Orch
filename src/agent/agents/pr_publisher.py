@@ -155,6 +155,33 @@ async def _publish_azdo_pr(
     org = settings.azdo_org_url.rstrip("/")
     pr_url = f"{org}/{project}/_git/{repo_name or repo_id}/pullrequest/{pr_id}"
     logger.info("Opened AzDO PR #%s for task %s", pr_id, task_id)
+
+    # Watch PR-branch CI so test failures can offer the test_fixer agent early.
+    phone = state.get("whatsapp_phone") or ""
+    pipeline_url = ""
+    try:
+        from agent.services.ci_watch import save_ci_watch, start_azdo_ci_watch
+
+        pipeline = await azdo.find_pipeline_for_repo(project, repo_name or "")
+        if pipeline:
+            pipeline_url = f"{org}/{project}/_build?definitionId={pipeline.get('id')}"
+        if phone:
+            await save_ci_watch(
+                task_id=task_id,
+                phone=phone,
+                project=project,
+                repo_name=repo_name or "",
+                repo_id=str(repo_id),
+                pr_url=pr_url,
+                pipeline_url=pipeline_url,
+                commit_sha=sha,
+                live_url=f"{settings.agent_app_url.rstrip('/')}/portal",
+                notes="pr_validation",
+            )
+            start_azdo_ci_watch(task_id)
+    except Exception:
+        logger.exception("Failed starting PR CI watch for task %s", task_id)
+
     return {
         **state,
         "status": "pr_created",
@@ -164,5 +191,7 @@ async def _publish_azdo_pr(
         "azdo_project": project,
         "azdo_repo_id": str(repo_id),
         "repo_name": repo_name,
+        "pipeline_url": pipeline_url,
+        "pipeline_status": "watching" if pipeline_url else state.get("pipeline_status"),
         "notification_text": f"PR opened: {pr_url}",
     }

@@ -113,7 +113,9 @@ def merge_session_with_gate(session: dict[str, Any]) -> dict[str, Any]:
         "plan_approval": 1,
         "pr_review_mode": 2,
         "manual_pr_review": 3,
-        "approval": 4,
+        "pipeline_watching": 4,
+        "approval": 5,
+        "ci_fix_approval": 6,
     }
     if rank.get(file_awaiting, 0) >= rank.get(sql_awaiting, 0):
         out["awaiting"] = file_awaiting

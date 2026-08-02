@@ -6,8 +6,10 @@ import re
 from typing import Any
 
 from agent.workflow.gates import (
+    GATE_CI_FIX,
     GATE_DEPLOY,
     GATE_MANUAL_PR,
+    GATE_PIPELINE_WATCH,
     GATE_PLAN,
     GATE_PR_MODE,
     WIZARD_CODE,
@@ -47,6 +49,14 @@ _GATE_LABELS = {
     GATE_PR_MODE: ("Gate 3 — PR review mode", "Choose how the pull request should be reviewed."),
     GATE_MANUAL_PR: ("Gate 3b — Manual PR review", "Approve the PR in GitHub or Azure DevOps."),
     GATE_DEPLOY: ("Gate 4 — Final deploy approval", "Merge to main and deploy live."),
+    GATE_PIPELINE_WATCH: (
+        "CI running",
+        "Azure Pipelines is still running. I'll message you when tests finish.",
+    ),
+    GATE_CI_FIX: (
+        "CI / tests failed",
+        "Reply FIX TESTS to let the test_fixer agent repair, or SKIP / STOP.",
+    ),
 }
 
 _WIZARD_LABELS = {
@@ -184,6 +194,25 @@ def format_gate_hint(
             "",
             "_You will get a Final evaluation when the pipeline finishes._",
         ])
+    elif awaiting == GATE_PIPELINE_WATCH:
+        lines.extend([
+            "Azure Pipelines is still running for this task.",
+            "I'll message you when *Run tests* finishes.",
+            "",
+            "_Your conversation context is kept until you reply *STOP* or *check my repos*._",
+        ])
+        if data.get("pipeline_url"):
+            lines.append(f"\n*Pipeline:* {data.get('pipeline_url')}")
+    elif awaiting == GATE_CI_FIX:
+        lines.extend([
+            "Build / tests failed. The *test_fixer* agent can repair them.",
+            "",
+            f"• *FIX TESTS {tid}* — AI identifies failing tests and pushes a fix",
+            f"• *SKIP {tid}* — leave the failure as-is (keeps context)",
+            "• *STOP* — clear the whole session",
+        ])
+        if data.get("pipeline_url"):
+            lines.append(f"\n*Pipeline:* {data.get('pipeline_url')}")
     else:
         lines.append("Reply *help* for the menu or *check my repos* for a new task.")
 

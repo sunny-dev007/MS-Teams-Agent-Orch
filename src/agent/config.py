@@ -45,6 +45,8 @@ class Settings(BaseSettings):
 
     # Multi-gate coding workflow: plan approval -> dev -> PR -> review mode -> deploy approval
     enable_multi_gate_workflow: bool = True
+    # After CI/test failure, ask on WhatsApp and let the test_fixer agent repair
+    enable_ci_test_fix_agent: bool = True
 
     @property
     def effective_api_key(self) -> str:

@@ -464,12 +464,58 @@ async def _send_whatsapp(phone: str, text: str) -> None:
 
 
 async def notify_watch_finished(watch: dict[str, Any], result: CiTerminalResult) -> None:
-    """Send deployment status + Final evaluation, then clear the durable watch."""
+    """Send CI status. On test/build failure, ask Sunny whether test_fixer should repair.
+
+    Session context is preserved (ci_fix_approval / pipeline gate) until STOP or
+    check my repos — we do not wipe the WhatsApp conversation here.
+    """
     task_id = watch.get("task_id") or ""
     phone = watch.get("phone") or ""
+    notes = (watch.get("notes") or "").lower()
+    is_pr_validation = "pr_validation" in notes or "ci_fix_validation" in notes
     try:
-        await _send_whatsapp(phone, format_ci_status_notification(watch, result))
-        await _send_whatsapp(phone, format_ci_final_evaluation(watch, result))
+        if result.outcome == "failed" and settings.enable_ci_test_fix_agent and phone:
+            await _offer_ci_test_fix(watch, result)
+        elif is_pr_validation:
+            await _send_whatsapp(
+                phone, format_pr_validation_notification(watch, result)
+            )
+            # Do not clear PR review / deploy gates — only record CI outcome.
+            if phone and result.ok:
+                try:
+                    from agent.core.session import save_session
+
+                    await save_session(
+                        phone,
+                        data={
+                            "last_ci_outcome": result.outcome,
+                            "pipeline_url": result.url or watch.get("pipeline_url") or "",
+                        },
+                        merge_data=True,
+                    )
+                except Exception:
+                    logger.exception("Failed saving PR CI outcome for %s", phone)
+        else:
+            await _send_whatsapp(phone, format_ci_status_notification(watch, result))
+            await _send_whatsapp(phone, format_ci_final_evaluation(watch, result))
+            # Post-merge success: clear blocking gate but keep task memory
+            if phone and result.ok:
+                try:
+                    from agent.core.session import save_session
+
+                    await save_session(
+                        phone,
+                        awaiting=None,
+                        clear_awaiting=True,
+                        merge_data=True,
+                        data={
+                            "last_completed_task_id": task_id,
+                            "last_pr_url": watch.get("pr_url") or "",
+                            "pending_task_id": task_id,
+                        },
+                    )
+                except Exception:
+                    logger.exception("Failed saving post-CI session memory for %s", phone)
         await mark_ci_watch_notified(task_id)
         await clear_ci_watch(task_id)
         logger.info(
@@ -479,6 +525,100 @@ async def notify_watch_finished(watch: dict[str, Any], result: CiTerminalResult)
         )
     except Exception:
         logger.exception("Failed notifying AzDO CI watch for task %s", task_id)
+
+
+def format_pr_validation_notification(
+    watch: dict[str, Any], result: CiTerminalResult
+) -> str:
+    task_id = watch.get("task_id") or ""
+    if result.ok:
+        return (
+            f"*Sunny's AI Agent* — PR checks passed (`{task_id}`)\n\n"
+            f"*Azure Pipelines:* {result.outcome}\n"
+            f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
+            f"*PR:* {watch.get('pr_url') or 'N/A'}\n\n"
+            "You can continue with *AI review* / *APPROVE* when ready. "
+            "Context is kept until *STOP* or *check my repos*."
+        )
+    return (
+        f"*Sunny's AI Agent* — PR checks update (`{task_id}`)\n\n"
+        f"*Azure Pipelines:* {result.outcome}\n"
+        f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
+        f"{result.detail}"
+    )
+
+
+async def _offer_ci_test_fix(watch: dict[str, Any], result: CiTerminalResult) -> None:
+    """Persist ci_fix_approval gate and ask Sunny to approve AI test repair."""
+    from agent.workflow.gates import persist_ci_fix_gate
+
+    task_id = watch.get("task_id") or ""
+    phone = watch.get("phone") or ""
+    project = watch.get("project") or ""
+    summary = ""
+    if result.build_id and project:
+        try:
+            from agent.services.azure_devops import get_build_failure_summary
+
+            summary = await get_build_failure_summary(project, result.build_id)
+        except Exception:
+            logger.exception("Could not load failure summary for build %s", result.build_id)
+
+    phase = "pr_validation"
+    notes = (watch.get("notes") or "").lower()
+    if "post_merge" in notes or "deploy" in notes:
+        phase = "post_merge"
+    elif "ci_fix" in notes:
+        phase = "ci_fix_validation"
+
+    excerpt = summary.strip()
+    if len(excerpt) > 900:
+        excerpt = excerpt[-900:]
+
+    state = {
+        "task_id": task_id,
+        "pending_task_id": task_id,
+        "repo_provider": "azure_devops",
+        "azdo_project": project,
+        "azdo_repo_id": watch.get("repo_id") or "",
+        "repo_name": watch.get("repo_name") or "",
+        "repo_url": _repo_url_from_watch(watch),
+        "pr_url": watch.get("pr_url") or "",
+        "pipeline_url": result.url or watch.get("pipeline_url") or "",
+        "commit_sha": watch.get("commit_sha") or "",
+        "ci_build_id": result.build_id,
+        "ci_failure_summary": summary,
+        "ci_watch_phase": phase,
+        "pipeline_status": "failed",
+        "user_message": f"Fix CI test failures for task {task_id}",
+    }
+    await persist_ci_fix_gate(phone, state)
+
+    msg = (
+        f"*Sunny's AI Agent* — Build / tests failed (`{task_id}`)\n\n"
+        f"*Azure Pipelines:* failed\n"
+        f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
+        f"{result.detail}\n\n"
+    )
+    if excerpt:
+        msg += f"*Failure excerpt:*\n```\n{excerpt}\n```\n\n"
+    msg += (
+        "I can run the *test_fixer* agent to identify and repair the failing tests "
+        "(and related code) without losing this task's context.\n\n"
+        f"Reply *FIX TESTS {task_id}* (or just *FIX TESTS*) to let AI fix it.\n"
+        f"Reply *SKIP {task_id}* to leave the failure as-is.\n"
+        "Reply *STOP* only when you want to clear the whole session."
+    )
+    await _send_whatsapp(phone, msg)
+
+
+def _repo_url_from_watch(watch: dict[str, Any]) -> str:
+    project = watch.get("project") or ""
+    repo = watch.get("repo_name") or ""
+    org = settings.azdo_org_url.rstrip("/")
+    if project and repo and org:
+        return f"{org}/{project}/_git/{repo}"
+    return ""
 
 
 async def watch_azdo_pipeline_and_notify(task_id: str) -> None:

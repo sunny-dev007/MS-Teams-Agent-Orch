@@ -14,6 +14,8 @@ GATE_PLAN = "plan_approval"
 GATE_PR_MODE = "pr_review_mode"
 GATE_MANUAL_PR = "manual_pr_review"
 GATE_DEPLOY = "approval"
+GATE_CI_FIX = "ci_fix_approval"
+GATE_PIPELINE_WATCH = "pipeline_watching"
 
 # Multi-turn repo / meeting picker — NOT deploy gates (must not block "1", "2", repo names).
 WIZARD_PROVIDER = "provider"
@@ -22,7 +24,17 @@ WIZARD_REPO = "repo"
 WIZARD_CODE = "code_instruction"
 WIZARD_AWAITING = frozenset({WIZARD_PROVIDER, WIZARD_PROJECT, WIZARD_REPO, WIZARD_CODE})
 
-WORKFLOW_GATES = frozenset({GATE_PLAN, GATE_PR_MODE, GATE_MANUAL_PR, GATE_DEPLOY, "approval"})
+WORKFLOW_GATES = frozenset(
+    {
+        GATE_PLAN,
+        GATE_PR_MODE,
+        GATE_MANUAL_PR,
+        GATE_DEPLOY,
+        GATE_CI_FIX,
+        GATE_PIPELINE_WATCH,
+        "approval",
+    }
+)
 
 
 def multi_gate_enabled() -> bool:
@@ -120,6 +132,34 @@ async def persist_deploy_gate(phone: str, state: dict[str, Any]) -> None:
     )
 
 
+async def persist_pipeline_watching_gate(phone: str, state: dict[str, Any]) -> None:
+    """Keep task context while Azure Pipelines runs (do not clear until STOP)."""
+    await save_session(
+        phone,
+        awaiting=GATE_PIPELINE_WATCH,
+        provider=state.get("repo_provider") or "",
+        data=_gate_payload(state),
+        merge_data=False,
+    )
+
+
+async def persist_ci_fix_gate(phone: str, state: dict[str, Any]) -> None:
+    """Ask Sunny whether the test_fixer agent should repair a failed CI run."""
+    await save_session(
+        phone,
+        awaiting=GATE_CI_FIX,
+        provider=state.get("repo_provider") or "",
+        data=_gate_payload(state),
+        merge_data=False,
+    )
+    logger.info(
+        "Persisted CI fix gate phone=%s task=%s build=%s",
+        phone,
+        state.get("task_id") or state.get("pending_task_id"),
+        state.get("ci_build_id"),
+    )
+
+
 def _gate_payload(state: dict[str, Any]) -> dict[str, Any]:
     keys = (
         "pending_task_id",
@@ -140,6 +180,12 @@ def _gate_payload(state: dict[str, Any]) -> dict[str, Any]:
         "pr_review_mode",
         "review_comments",
         "review_result",
+        "ci_build_id",
+        "ci_failure_summary",
+        "pipeline_url",
+        "pipeline_status",
+        "commit_sha",
+        "ci_watch_phase",
     )
     data = {k: state[k] for k in keys if state.get(k) is not None}
     data["pending_task_id"] = state.get("task_id") or data.get("pending_task_id")

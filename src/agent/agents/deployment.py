@@ -513,6 +513,29 @@ async def _deploy_azdo(
                     live_url=live_url,
                     notes="post_merge",
                 )
+                try:
+                    from agent.workflow.gates import persist_pipeline_watching_gate
+
+                    await persist_pipeline_watching_gate(
+                        phone,
+                        {
+                            **state,
+                            "task_id": task_id,
+                            "pr_url": pr_url,
+                            "pipeline_url": pipeline_url,
+                            "commit_sha": sha,
+                            "pipeline_status": "watching",
+                            "ci_watch_phase": "post_merge",
+                            "azdo_project": project,
+                            "azdo_repo_id": str(repo_id),
+                            "repo_name": repo_name or "",
+                            "repo_provider": "azure_devops",
+                        },
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed persisting pipeline_watching session for %s", task_id
+                    )
                 await send_deploy_progress(
                     phone,
                     format_pipeline_watching(task_id, pipeline_url),

@@ -77,6 +77,8 @@ _WORKFLOW_GATE_NAMES = frozenset(
         "pr_review_mode",
         "manual_pr_review",
         "approval",
+        "ci_fix_approval",
+        "pipeline_watching",
     }
 )
 

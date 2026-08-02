@@ -664,15 +664,28 @@ async def resume_graph(
                     logger.exception(
                         "Failed post-plan PR-mode persist for task %s", task_id
                     )
-            keep_session = final.get("error") == "ci_busy" or final.get("pipeline_status") == "busy"
+            # Keep WhatsApp / gate memory until user says STOP or check my repos.
+            # Only plan *reject* clears automatically; deploy/CI must not wipe context.
             awaiting_after = (await get_session(whatsapp_phone)).get("awaiting")
             if gate == GATE_PLAN and approval_status == "rejected":
                 await clear_session(whatsapp_phone)
-            elif gate == GATE_DEPLOY and not keep_session and awaiting_after != GATE_DEPLOY:
-                if awaiting_after not in (GATE_PLAN, GATE_PR_MODE, GATE_MANUAL_PR, GATE_DEPLOY):
-                    await clear_session(whatsapp_phone)
-            elif gate == GATE_DEPLOY and not keep_session and awaiting_after is None:
-                await clear_session(whatsapp_phone)
+            elif gate == GATE_DEPLOY and final.get("pipeline_status") == "watching":
+                try:
+                    from agent.workflow.gates import persist_pipeline_watching_gate
+
+                    await persist_pipeline_watching_gate(
+                        whatsapp_phone, {**final, "whatsapp_phone": whatsapp_phone}
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed persisting pipeline_watching gate for task %s", task_id
+                    )
+            elif gate == GATE_DEPLOY and awaiting_after:
+                logger.info(
+                    "Keeping session after deploy gate task=%s awaiting=%s",
+                    task_id,
+                    awaiting_after,
+                )
             await _ensure_deploy_feedback(whatsapp_phone, task_id, final, gate=gate)
         return
     except Exception:
@@ -709,10 +722,18 @@ async def resume_graph(
         values = await run_evaluator(values)
         await run_notifier(values)
 
-    if whatsapp_phone and values.get("error") != "ci_busy" and values.get(
-        "pipeline_status"
-    ) not in ("busy", "watching"):
-        await clear_session(whatsapp_phone)
+    # Keep session memory until STOP / check my repos (even after deploy path).
+    if whatsapp_phone and values.get("pipeline_status") == "watching":
+        try:
+            from agent.workflow.gates import persist_pipeline_watching_gate
+
+            await persist_pipeline_watching_gate(
+                whatsapp_phone, {**values, "whatsapp_phone": whatsapp_phone}
+            )
+        except Exception:
+            logger.exception(
+                "Failed persisting pipeline_watching (fallback) for task %s", task_id
+            )
 
     if whatsapp_phone:
         await _ensure_deploy_feedback(whatsapp_phone, task_id, values, gate=gate)

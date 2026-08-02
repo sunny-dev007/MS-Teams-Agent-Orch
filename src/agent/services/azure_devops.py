@@ -262,6 +262,89 @@ async def find_active_pr_for_branch(
         return items[0] if items else None
 
 
+async def get_build_timeline(project: str, build_id: str | int) -> list[dict]:
+    url = _project_api(
+        project,
+        f"build/builds/{build_id}/timeline?api-version=7.1",
+    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers=_headers(), timeout=30)
+        if resp.status_code >= 400:
+            logger.warning(
+                "AzDO timeline failed build=%s: %s", build_id, resp.status_code
+            )
+            return []
+        return resp.json().get("records") or []
+
+
+async def get_build_log_content(
+    project: str, build_id: str | int, log_id: str | int, *, max_chars: int = 12000
+) -> str:
+    url = _project_api(
+        project,
+        f"build/builds/{build_id}/logs/{log_id}?api-version=7.1",
+    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers=_headers(), timeout=60)
+        if resp.status_code >= 400:
+            return ""
+        text = resp.text or ""
+        if len(text) > max_chars:
+            return text[-max_chars:]
+        return text
+
+
+async def get_build_failure_summary(
+    project: str, build_id: str | int, *, max_chars: int = 14000
+) -> str:
+    """Extract failed-step logs (prefer pytest / Run tests) for the test_fixer agent."""
+    records = await get_build_timeline(project, build_id)
+    failed = [
+        r
+        for r in records
+        if (r.get("result") or "").lower() == "failed"
+        and (r.get("type") or "").lower() in ("task", "job", "")
+    ]
+    if not failed:
+        failed = [r for r in records if (r.get("result") or "").lower() == "failed"]
+
+    def _score(rec: dict) -> int:
+        name = (rec.get("name") or "").lower()
+        score = 0
+        if "test" in name:
+            score += 10
+        if "pytest" in name or "run tests" in name:
+            score += 20
+        return score
+
+    failed.sort(key=_score, reverse=True)
+    chunks: list[str] = []
+    for rec in failed[:4]:
+        name = rec.get("name") or "step"
+        log_id = rec.get("log", {}).get("id") if isinstance(rec.get("log"), dict) else None
+        header = f"=== FAILED: {name} ==="
+        if not log_id:
+            chunks.append(f"{header}\n(no log id)")
+            continue
+        body = await get_build_log_content(project, build_id, log_id, max_chars=8000)
+        # Prefer the pytest summary tail when present
+        lower = body.lower()
+        if "failed" in lower and ("pytest" in lower or "====" in body):
+            idx = lower.rfind("short test summary")
+            if idx < 0:
+                idx = lower.rfind("failed ")
+            if idx > 0:
+                body = body[idx:]
+        chunks.append(f"{header}\n{body}")
+        if sum(len(c) for c in chunks) >= max_chars:
+            break
+
+    summary = "\n\n".join(chunks).strip()
+    if len(summary) > max_chars:
+        summary = summary[-max_chars:]
+    return summary or f"Build {build_id} failed (no timeline logs available)."
+
+
 async def merge_pull_request(
     project: str,
     repo_id: str,

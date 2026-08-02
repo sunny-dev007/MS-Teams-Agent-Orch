@@ -65,6 +65,11 @@ class AgentState(TypedDict, total=False):
     pipeline_url: str
     pipeline_status: str
 
+    # CI test-fixer agent
+    ci_build_id: str
+    ci_failure_summary: str
+    ci_watch_phase: str  # pr_validation | post_merge | ci_fix_validation
+
     # Evaluation
     evaluation_text: str
 

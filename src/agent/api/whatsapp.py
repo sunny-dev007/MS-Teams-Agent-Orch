@@ -36,6 +36,16 @@ APPROVE_PATTERN = re.compile(
     r")[\s!.]*$"
 )
 REJECT_PATTERN = re.compile(r"(?i)^reject(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$")
+FIX_TESTS_PATTERN = re.compile(
+    r"(?i)^(?:"
+    r"fix\s+tests?|fix\s+ci|repair\s+tests?|yes\s+fix|resolve(?:\s+it)?"
+    r")(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
+)
+SKIP_CI_FIX_PATTERN = re.compile(
+    r"(?i)^(?:"
+    r"skip(?:\s+fix)?|ignore(?:\s+failure)?|no\s+fix|leave\s+it"
+    r")(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
+)
 
 
 def _task_id_from_match(match: re.Match | None) -> str | None:
@@ -84,8 +94,10 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
 
     from agent.core.session import get_session
     from agent.workflow.gates import (
+        GATE_CI_FIX,
         GATE_DEPLOY,
         GATE_MANUAL_PR,
+        GATE_PIPELINE_WATCH,
         GATE_PLAN,
         GATE_PR_MODE,
         effective_awaiting,
@@ -111,6 +123,8 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
     pr_ai_match = PR_AI_PATTERN.match(message)
     pr_manual_match = PR_MANUAL_PATTERN.match(message)
     pr_ready_match = PR_READY_PATTERN.match(message)
+    fix_tests_match = FIX_TESTS_PATTERN.match(message)
+    skip_ci_fix_match = SKIP_CI_FIX_PATTERN.match(message)
 
     # After App Service recycle, SQLite may still show plan_approval without pr_url.
     # Recover from durable gate / checkpoint / Task / AzDO before routing.
@@ -118,7 +132,13 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
         pr_ai_match
         or pr_manual_match
         or proceed_match
-        or (session.get("awaiting") in (GATE_PLAN, GATE_PR_MODE) and session.get("data"))
+        or fix_tests_match
+        or skip_ci_fix_match
+        or (
+            session.get("awaiting")
+            in (GATE_PLAN, GATE_PR_MODE, GATE_CI_FIX, GATE_PIPELINE_WATCH)
+            and session.get("data")
+        )
     )
     if needs_recover:
         try:
@@ -143,7 +163,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
         session_data.get("pending_task_id"),
     )
 
-    # Cancel / fresh start — always honored.
+    # Cancel / fresh start — always honored (only these clear full session memory).
     if is_cancel_session_message(message):
         tid = session_data.get("pending_task_id") or ""
         background_tasks.add_task(_clear_and_notify, parsed["phone"], tid, awaiting or "")
@@ -160,6 +180,37 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
             _send_gate_hint,
             parsed["phone"],
             format_session_status(status_session) if gate else format_no_pending_task(),
+        )
+        return {"status": "ok"}
+
+    # CI test-fixer gate — ask Sunny before repairing failed Run tests.
+    if gate == GATE_CI_FIX or (fix_tests_match and session_data.get("ci_build_id")):
+        if fix_tests_match or (
+            message.lower().strip() in ("yes", "y", "ok", "okay", "fix") and gate == GATE_CI_FIX
+        ):
+            tid = _task_id_from_match(fix_tests_match) or session_data.get("pending_task_id")
+            background_tasks.add_task(
+                _run_ci_test_fixer, parsed["phone"], session_data, session_provider, tid
+            )
+            return {"status": "ok"}
+        if skip_ci_fix_match or reject_match:
+            background_tasks.add_task(
+                _skip_ci_test_fix, parsed["phone"], session_data, session_provider
+            )
+            return {"status": "ok"}
+        if gate == GATE_CI_FIX:
+            background_tasks.add_task(
+                _send_gate_hint,
+                parsed["phone"],
+                format_gate_hint(GATE_CI_FIX, session_data, session_provider),
+            )
+            return {"status": "ok"}
+
+    if gate == GATE_PIPELINE_WATCH:
+        background_tasks.add_task(
+            _send_gate_hint,
+            parsed["phone"],
+            format_gate_hint(GATE_PIPELINE_WATCH, session_data, session_provider),
         )
         return {"status": "ok"}
 
@@ -382,6 +433,118 @@ async def _send_gate_hint(phone: str, text: str) -> None:
         await send_message(phone, text)
     except Exception:
         logger.exception("Failed to send gate hint to %s", phone)
+
+
+async def _run_ci_test_fixer(
+    phone: str,
+    session_data: dict,
+    session_provider: str,
+    explicit_task_id: str | None,
+) -> None:
+    """Sunny approved AI repair of failed CI tests — run test_fixer, keep context."""
+    from agent.services.whatsapp import send_message
+    from agent.specialists.notifier_agent import run_notifier
+    from agent.specialists.test_fixer import run_test_fixer
+
+    task_id = (
+        (explicit_task_id or "").strip()
+        or str(session_data.get("pending_task_id") or "")
+    )
+    if not task_id:
+        await send_message(phone, "No task id for CI fix. Reply *STOP* or *check my repos*.")
+        return
+
+    try:
+        await send_message(
+            phone,
+            f"*Sunny's AI Agent* — Test fixer started (`{task_id}`)\n\n"
+            "I'm reading the pipeline failure logs and preparing a focused fix. "
+            "Your conversation context stays until you say *STOP* or *check my repos*.",
+        )
+    except Exception:
+        logger.exception("Failed CI-fix ack for %s", phone)
+
+    state = {
+        "task_id": task_id,
+        "whatsapp_phone": phone,
+        "repo_provider": session_provider or session_data.get("repo_provider") or "azure_devops",
+        **session_data,
+        "pending_task_id": task_id,
+    }
+    try:
+        result = await run_test_fixer(state)
+        result = await run_notifier(result)
+        text = result.get("notification_text") or "Test fixer finished."
+        await send_message(phone, text)
+    except Exception:
+        logger.exception("CI test fixer failed for task %s", task_id)
+        try:
+            await send_message(
+                phone,
+                f"Test fixer hit an unexpected error for `{task_id}`.\n"
+                "Reply *FIX TESTS* to retry, *SKIP*, or *STOP*.",
+            )
+        except Exception:
+            logger.exception("Failed test-fixer error notify")
+
+
+async def _skip_ci_test_fix(
+    phone: str,
+    session_data: dict,
+    session_provider: str,
+) -> None:
+    """Leave CI failure as-is but keep task memory until STOP."""
+    from agent.services.whatsapp import send_message
+    from agent.workflow.gates import persist_deploy_gate, persist_pr_mode_gate, session_has_pr
+    from agent.workflow.resume_context import format_gate_hint
+
+    tid = session_data.get("pending_task_id") or ""
+    provider = session_provider or session_data.get("repo_provider") or ""
+    data = {**session_data, "ci_fix_skipped": True, "pending_task_id": tid}
+    try:
+        if session_has_pr(data):
+            await persist_pr_mode_gate(
+                phone,
+                {
+                    "task_id": tid,
+                    "repo_provider": provider,
+                    **data,
+                },
+            )
+            await send_message(
+                phone,
+                f"OK — skipped AI test repair for `{tid}`.\n\n"
+                + format_gate_hint("pr_review_mode", data, provider),
+            )
+        elif data.get("pr_url") or data.get("file_changes"):
+            await persist_deploy_gate(
+                phone,
+                {"task_id": tid, "repo_provider": provider, **data},
+            )
+            await send_message(
+                phone,
+                f"OK — skipped AI test repair for `{tid}`.\n\n"
+                "You can still *APPROVE* / *REJECT* deploy, or *STOP* to clear.",
+            )
+        else:
+            from agent.core.session import save_session
+
+            await save_session(
+                phone,
+                awaiting=None,
+                clear_awaiting=True,
+                provider=provider,
+                data=data,
+                merge_data=False,
+            )
+            await send_message(
+                phone,
+                f"OK — left the CI failure as-is for `{tid}`.\n\n"
+                "Task context is still remembered. Reply *STOP* to clear, "
+                "or *check my repos* to start a new coding task.",
+            )
+    except Exception:
+        logger.exception("Failed skipping CI fix for %s", phone)
 
 
 async def _heal_pr_mode_and_resume(
