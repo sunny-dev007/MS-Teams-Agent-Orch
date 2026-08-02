@@ -5,7 +5,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.agents.state import AgentState
 from agent.core.logging import get_logger
-from agent.services.llm import get_llm
+from agent.services.llm import invoke_llm
 
 logger = get_logger(__name__)
 
@@ -48,11 +48,14 @@ async def review_code(state: AgentState) -> AgentState:
         file_diffs=file_diffs,
     )
 
-    llm = get_llm(temperature=0)
-    response = await llm.ainvoke([
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=prompt),
-    ])
+    response = await invoke_llm(
+        [
+            SystemMessage(content=SYSTEM_PROMPT),
+            HumanMessage(content=prompt),
+        ],
+        temperature=0,
+        role="review",
+    )
 
     review = _parse_review(response.content)
     review = _soften_false_incomplete_html(review, file_changes)

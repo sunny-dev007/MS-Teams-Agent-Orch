@@ -101,6 +101,12 @@ def _route_after_repo_wizard(state: AgentState) -> str:
     return "notify_picker"
 
 
+def _route_after_architect(state: AgentState) -> str:
+    if state.get("status") == "failed":
+        return "notify_result"
+    return "request_plan_approval"
+
+
 def _route_after_calendar(state: AgentState) -> str:
     if state.get("evaluation_text") or state.get("status") == "failed":
         return "notify_meeting"
@@ -356,15 +362,18 @@ def build_graph() -> StateGraph:
     graph.add_edge("notify_then_develop", "coding_developer")
     graph.add_edge("notify_then_architect", "coding_architect")
 
+    graph.add_conditional_edges("coding_architect", _route_after_architect, {
+        "request_plan_approval": "request_plan_approval",
+        "notify_result": "notify_result",
+    })
+    graph.add_edge("request_plan_approval", "notify_plan")
+    graph.add_edge("notify_plan", END)
+
     graph.add_conditional_edges("email_agent", _route_after_email, {
         "notify_then_develop": "notify_then_develop",
         "notify_then_architect": "notify_then_architect",
         "notify_result": "notify_result",
     })
-
-    graph.add_edge("coding_architect", "request_plan_approval")
-    graph.add_edge("request_plan_approval", "notify_plan")
-    graph.add_edge("notify_plan", END)
 
     def _route_plan_gate(state: AgentState) -> str:
         if state.get("approval_status") == "rejected":

@@ -18,6 +18,12 @@ class Settings(BaseSettings):
     # Optional stronger models for planning / PR review (e.g. gpt-4.1); falls back to deployment above
     azure_openai_planning_deployment: str = ""
     azure_openai_review_deployment: str = ""
+    # Comma-separated fallback deployments when primary hits rate limits (see Azure AI Foundry)
+    azure_openai_fallback_deployments: str = ""
+    azure_openai_planning_fallbacks: str = ""
+    azure_openai_review_fallbacks: str = ""
+    llm_max_retries_per_deployment: int = 2
+    llm_retry_base_delay_sec: float = 1.5
 
     # Multi-gate coding workflow: plan approval -> dev -> PR -> review mode -> deploy approval
     enable_multi_gate_workflow: bool = True

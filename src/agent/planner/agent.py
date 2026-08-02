@@ -13,7 +13,7 @@ from agent.agents.state import AgentState
 from agent.core.logging import get_logger
 from agent.core.persona import GREETING_REPLY, HELP_MENU
 from agent.core.session import get_session
-from agent.services.llm import get_llm
+from agent.services.llm import invoke_llm
 
 logger = get_logger(__name__)
 
@@ -180,12 +180,20 @@ async def plan(state: AgentState) -> AgentState:
     if user_msg.strip() == "5" or _STATUS_RE.match(user_msg):
         return {**state, "intent": "task_status", "planned_by": AGENT_NAME}
 
-    llm = get_llm(temperature=0)
     t0 = time.perf_counter()
-    response = await llm.ainvoke([
-        SystemMessage(content=SYSTEM_PROMPT),
-        HumanMessage(content=user_msg),
-    ])
+    try:
+        response = await invoke_llm(
+            [
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=user_msg),
+            ],
+            temperature=0,
+            role="default",
+        )
+    except Exception:
+        logger.exception("%s LLM classify failed task=%s — using keyword fallback", AGENT_NAME, state.get("task_id"))
+        return {**state, "intent": "general", "planned_by": AGENT_NAME}
+
     logger.info("%s LLM classify %.2fs task=%s", AGENT_NAME, time.perf_counter() - t0, state.get("task_id"))
 
     try:

@@ -6,7 +6,7 @@ from agent.agents.state import AgentState
 from agent.core.logging import get_logger
 from agent.core.persona import get_persona_prompt
 from agent.services.gmail import get_message, list_recent_messages, send_email
-from agent.services.llm import get_llm
+from agent.services.llm import invoke_llm
 
 logger = get_logger(__name__)
 
@@ -122,7 +122,6 @@ async def read_gmail(state: AgentState) -> AgentState:
 
 
 async def _build_digest(emails: list[dict]) -> str:
-    llm = get_llm(temperature=0.2)
     payload = []
     for e in emails[:12]:
         payload.append(
@@ -132,27 +131,43 @@ async def _build_digest(emails: list[dict]) -> str:
                 "snippet": (e.get("snippet") or e.get("body", "")[:400]),
             }
         )
-    response = await llm.ainvoke([
-        SystemMessage(content=get_persona_prompt() + "\n\n" + DIGEST_PROMPT),
-        HumanMessage(content=json.dumps(payload, indent=2)),
-    ])
-    text = (response.content or "").strip()
+    try:
+        response = await invoke_llm(
+            [
+                SystemMessage(content=get_persona_prompt() + "\n\n" + DIGEST_PROMPT),
+                HumanMessage(content=json.dumps(payload, indent=2)),
+            ],
+            temperature=0.2,
+            role="default",
+        )
+        text = (response.content or "").strip()
+    except Exception:
+        logger.exception("Digest LLM unavailable — using plain list")
+        lines = [f"• *{e.get('subject', '(no subject)')}* — {e.get('from', '')}" for e in emails[:12]]
+        text = "\n".join(lines)
     if len(text) > 3900:
         text = text[:3900] + "\n…(truncated)"
     return text
 
 
 async def _classify_email(email: dict) -> dict:
-    llm = get_llm(temperature=0)
     content = (
         f"Subject: {email.get('subject', '')}\n"
         f"From: {email.get('from', '')}\n\n"
         f"{email.get('body', '')[:2000]}"
     )
-    response = await llm.ainvoke([
-        SystemMessage(content=CLASSIFY_PROMPT),
-        HumanMessage(content=content),
-    ])
+    try:
+        response = await invoke_llm(
+            [
+                SystemMessage(content=CLASSIFY_PROMPT),
+                HumanMessage(content=content),
+            ],
+            temperature=0,
+            role="default",
+        )
+    except Exception:
+        logger.exception("Email classify LLM unavailable")
+        return {"is_repo_related": False, "is_actionable": False, "action_type": "info_only"}
     try:
         start = response.content.find("{")
         end = response.content.rfind("}") + 1
@@ -181,22 +196,25 @@ async def compose_and_send_email(state: AgentState) -> AgentState:
         }
 
     if not subject or not body:
-        llm = get_llm(temperature=0.3)
-        response = await llm.ainvoke([
-            SystemMessage(
-                content=(
-                    get_persona_prompt()
-                    + "\n\nCompose email JSON: {\"subject\": \"...\", \"body\": \"...\"}"
-                )
-            ),
-            HumanMessage(
-                content=(
-                    f"User request: {user_msg}\nRecipient: {to}\n"
-                    f"Subject hint: {subject or 'none'}\nBody hint: {body or 'none'}"
-                )
-            ),
-        ])
         try:
+            response = await invoke_llm(
+                [
+                    SystemMessage(
+                        content=(
+                            get_persona_prompt()
+                            + "\n\nCompose email JSON: {\"subject\": \"...\", \"body\": \"...\"}"
+                        )
+                    ),
+                    HumanMessage(
+                        content=(
+                            f"User request: {user_msg}\nRecipient: {to}\n"
+                            f"Subject hint: {subject or 'none'}\nBody hint: {body or 'none'}"
+                        )
+                    ),
+                ],
+                temperature=0.3,
+                role="default",
+            )
             parsed = json.loads(
                 response.content[response.content.find("{") : response.content.rfind("}") + 1]
             )

@@ -12,7 +12,7 @@ from agent.services.git_ops import (
     get_repo_tree,
 )
 from agent.services.github import parse_repo_url
-from agent.services.llm import get_llm
+from agent.services.llm import invoke_llm, user_facing_llm_error
 
 logger = get_logger(__name__)
 
@@ -77,11 +77,14 @@ async def develop_code(state: AgentState) -> AgentState:
             review_feedback=review_feedback,
         )
 
-        llm = get_llm(temperature=0.1, role="default")
-        response = await llm.ainvoke([
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=prompt),
-        ])
+        response = await invoke_llm(
+            [
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=prompt),
+            ],
+            temperature=0.1,
+            role="default",
+        )
 
         file_changes = _parse_changes(response.content)
 
@@ -133,7 +136,7 @@ async def develop_code(state: AgentState) -> AgentState:
             **state,
             "status": "failed",
             "error": str(e),
-            "notification_text": f"Development failed: {e}",
+            "notification_text": user_facing_llm_error("code development"),
         }
 
 

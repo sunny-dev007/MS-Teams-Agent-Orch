@@ -9,11 +9,10 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.agents.developer import _read_relevant_files
 from agent.agents.state import AgentState
-from agent.config import settings
 from agent.core.logging import get_logger
 from agent.services.git_ops import clone_repo, get_repo_tree
 from agent.services.github import parse_repo_url
-from agent.services.llm import get_llm
+from agent.services.llm import invoke_llm, user_facing_llm_error
 
 logger = get_logger(__name__)
 
@@ -52,6 +51,8 @@ async def plan_implementation(state: AgentState) -> AgentState:
     else:
         owner, repo_name = parse_repo_url(repo_url)
 
+    repo_dir = None
+    tree = ""
     try:
         _, repo_dir = clone_repo(repo_url, task_id)
         tree = get_repo_tree(repo_dir)
@@ -64,44 +65,123 @@ async def plan_implementation(state: AgentState) -> AgentState:
             file_contents=relevant,
         )
 
-        llm = get_llm(temperature=0.2, role="planning")
-        response = await llm.ainvoke([
-            SystemMessage(content=SYSTEM_PROMPT),
-            HumanMessage(content=prompt),
-        ])
+        response = await invoke_llm(
+            [
+                SystemMessage(content=SYSTEM_PROMPT),
+                HumanMessage(content=prompt),
+            ],
+            temperature=0.2,
+            role="planning",
+        )
         plan = _parse_plan(response.content)
-        detail = plan.get("whatsapp_detail") or _format_plan_fallback(plan)
-
-        logger.info("Architect plan ready for task %s complexity=%s", task_id, plan.get("estimated_complexity"))
-
-        meta: dict = {
-            "repo_owner": owner,
-            "repo_name": repo_name,
-            "repo_provider": provider,
-            "workspace_path": str(repo_dir),
-            "branch_name": f"agent/{task_id}",
-        }
-        if provider == "azure_devops":
-            meta["azdo_project"] = state.get("azdo_project") or owner
-            if state.get("azdo_repo_id"):
-                meta["azdo_repo_id"] = state.get("azdo_repo_id")
-
-        return {
-            **state,
-            "status": "awaiting_plan_approval",
-            "implementation_plan": json.dumps(plan, ensure_ascii=False),
-            "plan_summary": plan.get("summary", ""),
-            "notification_text": detail,
-            **meta,
-        }
     except Exception as e:
-        logger.exception("Architect planning failed for task %s", task_id)
-        return {
-            **state,
-            "status": "failed",
-            "error": str(e),
-            "notification_text": f"Planning failed: {e}",
-        }
+        logger.exception("Architect LLM unavailable for task %s — using heuristic plan", task_id)
+        plan = _heuristic_plan(user_msg, tree, repo_url)
+        if not plan.get("summary"):
+            return {
+                **state,
+                "status": "failed",
+                "error": str(e),
+                "notification_text": user_facing_llm_error("implementation plan"),
+            }
+
+    detail = plan.get("whatsapp_detail") or _format_plan_fallback(plan)
+
+    logger.info(
+        "Architect plan ready for task %s complexity=%s heuristic=%s",
+        task_id,
+        plan.get("estimated_complexity"),
+        plan.get("_heuristic", False),
+    )
+
+    meta: dict = {
+        "repo_owner": owner,
+        "repo_name": repo_name,
+        "repo_provider": provider,
+        "workspace_path": str(repo_dir) if repo_dir else "",
+        "branch_name": f"agent/{task_id}",
+    }
+    if provider == "azure_devops":
+        meta["azdo_project"] = state.get("azdo_project") or owner
+        if state.get("azdo_repo_id"):
+            meta["azdo_repo_id"] = state.get("azdo_repo_id")
+
+    return {
+        **state,
+        "status": "awaiting_plan_approval",
+        "implementation_plan": json.dumps(plan, ensure_ascii=False),
+        "plan_summary": plan.get("summary", ""),
+        "notification_text": detail,
+        **meta,
+    }
+
+
+def _heuristic_plan(user_msg: str, repo_tree: str, repo_url: str) -> dict:
+    """Structured draft plan when all LLM deployments are temporarily unavailable."""
+    msg = user_msg.lower()
+    files = _guess_target_files(msg, repo_tree)
+
+    approach_parts = [f"Address Sunny's request: {user_msg.strip()}"]
+    if any(k in msg for k in ("dark", "dark mode", "dark layout", "dark theme")):
+        approach_parts.append(
+            "Apply a dark theme (dark background, light text, accessible contrast, modern spacing)."
+        )
+    if "portal" in msg or "page" in msg:
+        approach_parts.append("Update the portal / landing page layout and styling.")
+    if "version" in msg or "deployed" in msg:
+        approach_parts.append(
+            "Show the deployed app version on the page (from env, package metadata, or build stamp)."
+        )
+    if "redesign" in msg or "ui" in msg or "layout" in msg:
+        approach_parts.append("Refresh UI structure while keeping existing functionality intact.")
+
+    plan = {
+        "summary": user_msg.strip()[:240] or "Implement requested change",
+        "approach": " ".join(approach_parts),
+        "files_to_modify": files,
+        "files_to_create": [],
+        "dependencies": [],
+        "estimated_complexity": "medium",
+        "testing_plan": "Verify the updated page in a browser after deploy; confirm version label if requested.",
+        "risks": [
+            {
+                "severity": "low",
+                "description": "Draft plan — review steps before development proceeds.",
+            }
+        ],
+        "_heuristic": True,
+    }
+    plan["whatsapp_detail"] = _format_plan_fallback(plan)
+    return plan
+
+
+def _guess_target_files(user_msg: str, repo_tree: str) -> list[str]:
+    msg = user_msg.lower()
+    tree_lower = (repo_tree or "").lower()
+    candidates: list[str] = []
+
+    for line in (repo_tree or "").splitlines():
+        path = line.strip().lstrip("- ").strip()
+        if not path:
+            continue
+        lower = path.lower()
+        if "portal" in msg and "portal" in lower and lower.endswith((".html", ".htm", ".css", ".tsx", ".jsx")):
+            candidates.append(path)
+        elif lower.endswith(("portal.html", "index.html")) and "portal" in msg:
+            candidates.append(path)
+
+    if not candidates and "portal" in msg:
+        for hint in ("portal.html", "static/portal.html", "src/agent/static/portal.html"):
+            if hint in tree_lower:
+                candidates.append(hint)
+                break
+        if not candidates:
+            candidates.append("portal page (main UI template)")
+
+    if not candidates:
+        candidates.append("relevant UI / template files for this repo")
+
+    return candidates[:8]
 
 
 def _parse_plan(content: str) -> dict:

@@ -58,7 +58,7 @@ STATUS_TEMPLATES = {
         "*Sunny's AI Agent* — Deployment completed (`{task_id}`)\n\n{detail}"
     ),
     "failed": (
-        "*Sunny's AI Agent* — Failed (`{task_id}`)\n\n*Error:* {detail}"
+        "*Sunny's AI Agent* — Could not complete (`{task_id}`)\n\n{detail}"
     ),
     "rejected": (
         "*Sunny's AI Agent* — Rejected (`{task_id}`). Changes were not pushed."
