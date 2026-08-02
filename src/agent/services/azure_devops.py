@@ -160,11 +160,14 @@ async def list_builds(
     status_filter: str = "1,32",
     top: int = 10,
     repository_id: str | None = None,
+    definition_ids: str | None = None,
 ) -> list[dict]:
-    """List AzDO builds. statusFilter: 1=inProgress, 32=notStarted."""
+    """List AzDO builds. statusFilter: 1=inProgress, 2=completed, 32=notStarted."""
     qs = f"build/builds?statusFilter={status_filter}&$top={top}&api-version=7.1"
     if repository_id:
         qs += f"&repositoryId={repository_id}&repositoryType=TfsGit"
+    if definition_ids:
+        qs += f"&definitions={definition_ids}"
     url = _project_api(project, qs)
     async with httpx.AsyncClient() as client:
         resp = await client.get(url, headers=_headers(), timeout=30)

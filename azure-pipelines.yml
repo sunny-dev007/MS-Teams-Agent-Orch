@@ -46,10 +46,21 @@ stages:
               pip install "pydantic-settings>=2.5"
               pip install pytest pytest-asyncio httpx
               pip install .
+              python -c "from pydantic_settings import BaseSettings; print('pydantic-settings OK')"
             displayName: "Install deps for tests"
 
           - script: |
               set -euo pipefail
+              # Hard fail before pytest if agent/codegen reintroduced pydantic v1 BaseSettings.
+              if grep -Rn --include='*.py' 'from pydantic import BaseSettings' src/; then
+                echo "##vso[task.logissue type=error]Forbidden: BaseSettings must be imported from pydantic-settings (Pydantic v2)."
+                exit 1
+              fi
+              if ! grep -q 'from pydantic_settings import BaseSettings' src/agent/config.py; then
+                echo "##vso[task.logissue type=error]src/agent/config.py must import BaseSettings from pydantic-settings."
+                exit 1
+              fi
+              PYTHONPATH=src python -c "from agent.config import settings; print('config OK', settings.azure_openai_deployment)"
               PYTHONPATH=src python -m pytest tests/ -v --tb=short -q
             displayName: "Run tests"
 
@@ -123,7 +134,9 @@ stages:
                     WEBSITES_PORT=8000 \
                     WEBSITES_CONTAINER_START_TIME_LIMIT=1800 \
                     SCM_COMMAND_IDLE_TIMEOUT=1800 \
-                    GIT_PYTHON_REFRESH=quiet
+                    GIT_PYTHON_REFRESH=quiet \
+                    DATABASE_URL=sqlite+aiosqlite:////home/site/data/agent.db \
+                    WORKSPACE_DIR=/home/site/data/workspaces
                 # Remove host PYTHONPATH that pointed at incompatible .python_packages
                 az webapp config appsettings delete \
                   --resource-group "$(resourceGroup)" \

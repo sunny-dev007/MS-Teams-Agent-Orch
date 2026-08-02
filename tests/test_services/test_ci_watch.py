@@ -54,6 +54,71 @@ def test_github_path_untouched_by_import():
 
 
 @pytest.mark.asyncio
+async def test_resolve_build_falls_back_to_definition_id(monkeypatch):
+    """When branch SHA != merge commit, match pipeline by definitionId + time."""
+    from agent.services import ci_watch
+
+    watch_started = 1_700_000_000.0
+
+    async def fake_list_builds(*_a, **kwargs):
+        assert kwargs.get("definition_ids") == "15"
+        return [
+            {
+                "id": 202608029,
+                "result": "failed",
+                "finishTime": "2023-11-15T12:00:05Z",
+                "sourceVersion": "merge_commit_on_main",
+                "repository": {"name": "web.Whatsapp-AI-Agent", "id": "r1"},
+                "definition": {"id": 15, "name": "web.Whatsapp-AI-Agent"},
+            },
+        ]
+
+    monkeypatch.setattr("agent.services.azure_devops.list_builds", fake_list_builds)
+
+    watch = {
+        "task_id": "08eadaef",
+        "pipeline_url": "https://dev.azure.com/x/Project-NIT/_build?definitionId=15",
+        "project": "Project-NIT",
+        "repo_name": "web.Whatsapp-AI-Agent",
+        "repo_id": "r1",
+        "commit_sha": "branch_tip_sha",
+        "created_at": watch_started,
+    }
+    matched = await ci_watch.resolve_build_for_watch(watch)
+    assert matched is not None
+    assert matched.outcome == "failed"
+    assert matched.build_id == "202608029"
+    assert "Run tests" in matched.detail
+
+
+@pytest.mark.asyncio
+async def test_poll_watch_detects_fast_fail(monkeypatch):
+    from agent.services import ci_watch
+
+    calls = {"n": 0}
+
+    async def fake_resolve(watch):
+        calls["n"] += 1
+        if calls["n"] >= 1:
+            return ci_watch.CiTerminalResult(
+                outcome="failed",
+                build_id="9",
+                url="https://dev.azure.com/x/_build/results?buildId=9",
+                detail="Build failed. Check Run tests.",
+            )
+        return None
+
+    monkeypatch.setattr(ci_watch, "resolve_build_for_watch", fake_resolve)
+
+    watch = {"task_id": "t1", "project": "P", "pipeline_url": "https://p"}
+    result = await ci_watch.poll_watch_until_terminal(
+        watch, timeout_sec=5, poll_sec=1
+    )
+    assert result.outcome == "failed"
+    assert calls["n"] >= 1
+
+
+@pytest.mark.asyncio
 async def test_get_latest_skips_old_build_before_watch(monkeypatch):
     """Do not treat a previous completed build as the merge result."""
     from agent.services import ci_watch

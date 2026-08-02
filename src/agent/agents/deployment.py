@@ -582,7 +582,9 @@ async def _deploy_azdo(
         )
 
     final_status = "failed"
-    if merged or pipeline_status == "watching":
+    if pipeline_status == "watching":
+        final_status = "pipeline_watching"
+    elif merged or pipeline_status in ("succeeded", "kudu_fallback"):
         final_status = "completed"
     elif deploy_error:
         final_status = "failed"

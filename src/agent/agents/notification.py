@@ -54,6 +54,9 @@ STATUS_TEMPLATES = {
         "*Sunny's AI Agent* — Final approval received (`{task_id}`)\n"
         "Merging to main and deploying live…"
     ),
+    "pipeline_watching": (
+        "*Sunny's AI Agent* — Merge complete (`{task_id}`)\n\n{detail}"
+    ),
     "completed": (
         "*Sunny's AI Agent* — Deployment completed (`{task_id}`)\n\n{detail}"
     ),
@@ -79,6 +82,10 @@ async def notify(state: AgentState) -> AgentState:
         return state
 
     status = state.get("status", "general_response")
+    if status == "pipeline_watching":
+        # deploy_notify already sent merge + pipeline-watching progress.
+        return state
+
     template = STATUS_TEMPLATES.get(status, STATUS_TEMPLATES["general_response"])
 
     text = template.format(

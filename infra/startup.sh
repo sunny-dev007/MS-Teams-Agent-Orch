@@ -23,6 +23,13 @@ elif [ -d /home/site/wwwroot/src ]; then
   export PYTHONPATH="${PYTHONPATH:-}:$(pwd)/src"
 fi
 
+# Persistent storage survives Oryx zip deploy (wwwroot is replaced each release).
+if [ -n "${WEBSITE_SITE_NAME:-}" ]; then
+  mkdir -p /home/site/data/workspaces
+  export DATABASE_URL="${DATABASE_URL:-sqlite+aiosqlite:////home/site/data/agent.db}"
+  export WORKSPACE_DIR="${WORKSPACE_DIR:-/home/site/data/workspaces}"
+fi
+
 PORT="${PORT:-${WEBSITES_PORT:-8000}}"
 
 echo "Starting WhatsApp AI Agent on port ${PORT}"

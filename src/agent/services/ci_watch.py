@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import datetime
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -19,12 +20,15 @@ from sqlalchemy.orm import Mapped, mapped_column
 from agent.config import settings
 from agent.core.logging import get_logger
 from agent.models.db import Base, async_session, ensure_db_schema
-from agent.services.ci_gate import check_ci_busy_for_context, wait_for_ci_idle
 
 logger = get_logger(__name__)
 
 # Avoid duplicate background watchers for the same task in one process.
 _running_watches: set[str] = set()
+
+TERMINAL_OUTCOMES = frozenset({"succeeded", "failed", "canceled", "partiallySucceeded"})
+
+_PIPELINE_DEF_RE = re.compile(r"[?&]definitionId=(\d+)", re.I)
 
 
 class PendingCiWatch(Base):
@@ -62,6 +66,33 @@ class CiTerminalResult:
     @property
     def ok(self) -> bool:
         return self.outcome in ("succeeded", "partiallySucceeded")
+
+
+def _pipeline_definition_id(pipeline_url: str) -> str:
+    match = _PIPELINE_DEF_RE.search(pipeline_url or "")
+    return match.group(1) if match else ""
+
+
+def _build_from_api(build: dict, *, project: str, repo_name: str, org: str) -> CiTerminalResult:
+    build_id = str(build.get("id") or "")
+    outcome = _normalize_outcome(build.get("result"))
+    defn = (build.get("definition") or {}).get("name") or "pipeline"
+    url = (
+        f"{org}/{project}/_build/results?buildId={build_id}"
+        if build_id
+        else f"{org}/{project}/_build"
+    )
+    detail = f"Build *{defn}* #{build_id} finished with `{outcome}`."
+    if outcome == "failed":
+        detail += " Check the *Run tests* step in Azure Pipelines."
+    return CiTerminalResult(
+        outcome=outcome or "unknown",
+        provider="Azure Pipelines",
+        label=f"{project}/{repo_name}" if repo_name else project,
+        url=url,
+        detail=detail,
+        build_id=build_id,
+    )
 
 
 def _normalize_outcome(raw: str | None) -> str:
@@ -177,8 +208,9 @@ async def get_latest_azdo_build_result(
     commit_sha: str = "",
     min_created_at: float | None = None,
     require_sha_match: bool = False,
+    pipeline_definition_id: str = "",
 ) -> CiTerminalResult | None:
-    """Return the newest completed AzDO build for this repo (optional SHA match)."""
+    """Return the newest completed AzDO build for this repo (optional SHA / definition match)."""
     from agent.services import azure_devops as azdo
 
     if not project:
@@ -187,8 +219,9 @@ async def get_latest_azdo_build_result(
         builds = await azdo.list_builds(
             project,
             status_filter="2",  # completed
-            top=15,
+            top=20,
             repository_id=repo_id or None,
+            definition_ids=pipeline_definition_id or None,
         )
     except Exception:
         logger.exception("Failed listing completed AzDO builds for %s", project)
@@ -196,6 +229,7 @@ async def get_latest_azdo_build_result(
 
     wanted_repo = (repo_name or "").strip().lower()
     wanted_sha = (commit_sha or "").strip().lower()
+    wanted_def = str(pipeline_definition_id or "").strip()
     org = settings.azdo_org_url.rstrip("/")
 
     def _build_finished_at(build: dict) -> float | None:
@@ -220,9 +254,12 @@ async def get_latest_azdo_build_result(
     for b in builds:
         repo_ref = ((b.get("repository") or {}).get("name") or "").lower()
         rid = str(((b.get("repository") or {}).get("id") or ""))
+        defn_id = str((b.get("definition") or {}).get("id") or "")
         if wanted_repo and repo_ref and repo_ref != wanted_repo:
             continue
         if repo_id and rid and rid != str(repo_id):
+            continue
+        if wanted_def and defn_id and defn_id != wanted_def:
             continue
         if min_created_at is not None:
             finished = _build_finished_at(b)
@@ -246,23 +283,88 @@ async def get_latest_azdo_build_result(
         exact = [c for c in candidates if not c.get("_sha_mismatch")]
         build = (exact or candidates)[0]
 
-    build_id = str(build.get("id") or "")
     outcome = _normalize_outcome(build.get("result"))
     if not outcome or outcome == "unknown":
         return None
-    defn = (build.get("definition") or {}).get("name") or "pipeline"
-    url = (
-        f"{org}/{project}/_build/results?buildId={build_id}"
-        if build_id
-        else f"{org}/{project}/_build"
+    return _build_from_api(build, project=project, repo_name=repo_name, org=org)
+
+
+async def resolve_build_for_watch(watch: dict[str, Any]) -> CiTerminalResult | None:
+    """Match merge pipeline by SHA first, then definitionId + finish time."""
+    project = watch.get("project") or ""
+    repo_id = watch.get("repo_id") or ""
+    repo_name = watch.get("repo_name") or ""
+    created_at = float(watch.get("created_at") or 0)
+    commit_sha = (watch.get("commit_sha") or "").strip()
+    def_id = _pipeline_definition_id(watch.get("pipeline_url") or "")
+
+    common = dict(
+        project=project,
+        repo_id=repo_id,
+        repo_name=repo_name,
+        min_created_at=created_at,
+        pipeline_definition_id=def_id,
     )
+
+    if commit_sha:
+        matched = await get_latest_azdo_build_result(
+            **common,
+            commit_sha=commit_sha,
+            require_sha_match=True,
+        )
+        if matched:
+            return matched
+
+    return await get_latest_azdo_build_result(
+        **common,
+        commit_sha="",
+        require_sha_match=False,
+    )
+
+
+async def poll_watch_until_terminal(
+    watch: dict[str, Any],
+    *,
+    timeout_sec: int = 1500,
+    poll_sec: int = 15,
+) -> CiTerminalResult:
+    """Poll completed builds until terminal outcome (handles fast-failing pipelines)."""
+    deadline = time.time() + timeout_sec
+    pipeline_url = watch.get("pipeline_url") or ""
+    org = settings.azdo_org_url.rstrip("/")
+    project = watch.get("project") or ""
+
+    while time.time() < deadline:
+        result = await resolve_build_for_watch(watch)
+        if result and result.outcome in TERMINAL_OUTCOMES:
+            logger.info(
+                "CI watch task=%s matched build %s outcome=%s",
+                watch.get("task_id"),
+                result.build_id,
+                result.outcome,
+            )
+            return result
+
+        from agent.services.ci_gate import check_ci_busy_for_context
+
+        ctx = {
+            "provider": "azure_devops",
+            "project": project,
+            "repo_name": watch.get("repo_name") or "",
+            "repo_id": watch.get("repo_id") or "",
+        }
+        busy = await check_ci_busy_for_context(ctx)
+        if not busy.busy and result and result.outcome in TERMINAL_OUTCOMES:
+            return result
+
+        await asyncio.sleep(poll_sec)
+
     return CiTerminalResult(
-        outcome=outcome,
+        outcome="timeout",
         provider="Azure Pipelines",
-        label=f"{project}/{repo_name}" if repo_name else project,
-        url=url,
-        detail=f"Build *{defn}* #{build_id} finished with `{outcome}`.",
-        build_id=build_id,
+        label=f"{project}/{watch.get('repo_name') or ''}",
+        url=pipeline_url or f"{org}/{project}/_build",
+        detail="Pipeline still running or result not visible yet — open the pipeline link.",
     )
 
 
@@ -275,51 +377,17 @@ async def wait_for_azdo_terminal(
     poll_sec: int = 20,
 ) -> CiTerminalResult:
     """Wait until AzDO CI finishes and return the real terminal outcome."""
-    idle = await wait_for_ci_idle(ctx, timeout_sec=timeout_sec, poll_sec=poll_sec)
-    if idle.busy:
-        return CiTerminalResult(
-            outcome="timeout",
-            provider="Azure Pipelines",
-            label=idle.label,
-            url=idle.url or "",
-            detail=idle.detail or "Timed out while pipeline was still running.",
-        )
-    if idle.detail == "no_ci_observed":
-        # One more look for a completed build that finished quickly
-        latest = await get_latest_azdo_build_result(
-            ctx.get("project") or "",
-            repo_id=ctx.get("repo_id") or "",
-            repo_name=ctx.get("repo_name") or "",
-            commit_sha=commit_sha,
-            min_created_at=created_at,
-            require_sha_match=bool(commit_sha),
-        )
-        if latest:
-            return latest
-        return CiTerminalResult(
-            outcome="no_ci",
-            provider="Azure Pipelines",
-            label=idle.label,
-            url=idle.url or "",
-            detail="No Azure Pipeline run was observed after merge.",
-        )
-
-    latest = await get_latest_azdo_build_result(
-        ctx.get("project") or "",
-        repo_id=ctx.get("repo_id") or "",
-        repo_name=ctx.get("repo_name") or "",
-        commit_sha=commit_sha,
-        min_created_at=created_at,
-        require_sha_match=bool(commit_sha),
-    )
-    if latest:
-        return latest
-    return CiTerminalResult(
-        outcome="unknown",
-        provider="Azure Pipelines",
-        label=idle.label,
-        url=idle.url or "",
-        detail="Pipeline became idle but no matching completed build was found.",
+    watch = {
+        "project": ctx.get("project") or "",
+        "repo_name": ctx.get("repo_name") or "",
+        "repo_id": ctx.get("repo_id") or "",
+        "commit_sha": commit_sha,
+        "created_at": created_at or time.time(),
+        "pipeline_url": ctx.get("pipeline_url") or "",
+        "task_id": ctx.get("task_id") or "",
+    }
+    return await poll_watch_until_terminal(
+        watch, timeout_sec=timeout_sec, poll_sec=poll_sec
     )
 
 
@@ -418,58 +486,47 @@ async def watch_azdo_pipeline_and_notify(task_id: str) -> None:
     if not task_id or task_id in _running_watches:
         return
     _running_watches.add(task_id)
+    watch: dict[str, Any] | None = None
     try:
         watches = await list_open_ci_watches()
         watch = next((w for w in watches if w["task_id"] == task_id), None)
         if not watch:
             return
 
-        ctx = {
-            "provider": "azure_devops",
-            "project": watch.get("project") or "",
-            "repo_name": watch.get("repo_name") or "",
-            "repo_id": watch.get("repo_id") or "",
-        }
-        created_at = float(watch.get("created_at") or time.time())
-        commit_sha = watch.get("commit_sha") or ""
-
-        busy = await check_ci_busy_for_context(ctx)
-        if busy.busy:
-            result = await wait_for_azdo_terminal(
-                ctx,
-                commit_sha=commit_sha,
-                created_at=created_at,
-                timeout_sec=1500,
-                poll_sec=20,
-            )
-            await notify_watch_finished(watch, result)
-            return
-
-        # Pipeline idle — only notify if a completed build matches THIS merge commit.
-        existing = await get_latest_azdo_build_result(
-            ctx["project"],
-            repo_id=ctx["repo_id"],
-            repo_name=ctx["repo_name"],
-            commit_sha=commit_sha,
-            min_created_at=created_at,
-            require_sha_match=bool(commit_sha),
-        )
-        if existing:
-            await notify_watch_finished(watch, existing)
-            return
-
-        result = await wait_for_azdo_terminal(
-            ctx,
-            commit_sha=commit_sha,
-            created_at=created_at,
-            timeout_sec=1500,
-            poll_sec=20,
+        result = await poll_watch_until_terminal(
+            watch, timeout_sec=1500, poll_sec=15
         )
         await notify_watch_finished(watch, result)
-    except Exception:
+    except Exception as exc:
         logger.exception("AzDO CI watch failed for task %s", task_id)
+        if watch and watch.get("phone"):
+            try:
+                await notify_watch_finished(
+                    watch,
+                    CiTerminalResult(
+                        outcome="unknown",
+                        url=watch.get("pipeline_url") or "",
+                        detail=(
+                            "Could not confirm the Azure Pipeline result after merge. "
+                            f"Open the pipeline link to check *Run tests*. ({exc})"
+                        ),
+                    ),
+                )
+            except Exception:
+                logger.exception("Failed error notify for CI watch %s", task_id)
     finally:
         _running_watches.discard(task_id)
+
+
+async def tick_open_ci_watches() -> None:
+    """Safety net — restart watchers for durable rows still open (survives app recycle)."""
+    try:
+        watches = await list_open_ci_watches()
+    except Exception:
+        logger.exception("CI watch ticker failed listing watches")
+        return
+    for w in watches:
+        start_azdo_ci_watch(w["task_id"])
 
 
 def start_azdo_ci_watch(task_id: str) -> None:

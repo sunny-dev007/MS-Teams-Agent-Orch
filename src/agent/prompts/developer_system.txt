@@ -28,3 +28,7 @@ Rules:
 - Add appropriate error handling
 - Do not introduce security vulnerabilities
 - Keep changes minimal and focused
+- NEVER write `from pydantic import BaseSettings` — Pydantic v2 requires:
+  `from pydantic_settings import BaseSettings, SettingsConfigDict`
+- Do NOT rewrite or stub `src/agent/config.py` unless the task explicitly requires a settings change; keep all existing fields
+- Do NOT rewrite `src/agent/api/portal.py` to use Jinja2 or `from src.agent.config import ...`; keep FileResponse serving `src/agent/web/portal.html`

@@ -96,6 +96,19 @@ async def develop_code(state: AgentState) -> AgentState:
                 "notification_text": "Could not generate any code changes for this task.",
             }
 
+        from agent.services.code_guards import sanitize_file_changes
+
+        file_changes = sanitize_file_changes(repo_dir, file_changes)
+        if not file_changes:
+            return {
+                **state,
+                "status": "failed",
+                "error": "Developer changes were rejected by safety guards",
+                "notification_text": (
+                    "Generated changes were unsafe (e.g. broken config.py) and were blocked."
+                ),
+            }
+
         apply_changes(repo_dir, file_changes)
 
         changes_summary = "\n".join(

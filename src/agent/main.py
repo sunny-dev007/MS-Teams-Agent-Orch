@@ -56,9 +56,16 @@ async def lifespan(app: FastAPI):
             log.exception("WhatsApp token check failed")
 
         try:
-            from agent.services.ci_watch import resume_pending_ci_watches
+            from agent.services.ci_watch import resume_pending_ci_watches, tick_open_ci_watches
 
             await resume_pending_ci_watches()
+
+            async def _ci_watch_ticker() -> None:
+                while True:
+                    await asyncio.sleep(45)
+                    await tick_open_ci_watches()
+
+            asyncio.create_task(_ci_watch_ticker(), name="ci-watch-ticker")
         except Exception:
             log.exception("Failed resuming pending AzDO CI watches")
 
