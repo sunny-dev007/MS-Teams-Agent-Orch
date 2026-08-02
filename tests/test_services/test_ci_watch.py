@@ -1,3 +1,5 @@
+import pytest
+
 from agent.services.ci_watch import (
     CiTerminalResult,
     _normalize_outcome,
@@ -49,3 +51,56 @@ def test_github_path_untouched_by_import():
     """Smoke: GitHub deploy helpers still import independently of AzDO watch."""
     from agent.agents.deployment import _deploy_github  # noqa: F401
     from agent.services.ci_gate import wait_for_ci_idle  # noqa: F401
+
+
+@pytest.mark.asyncio
+async def test_get_latest_skips_old_build_before_watch(monkeypatch):
+    """Do not treat a previous completed build as the merge result."""
+    from agent.services import ci_watch
+
+    watch_started = 1_700_000_000.0
+
+    async def fake_list_builds(*_a, **_k):
+        return [
+            {
+                "id": 99,
+                "result": "succeeded",
+                "finishTime": "2023-11-14T10:00:00Z",
+                "sourceVersion": "abc123deadbeef",
+                "repository": {"name": "web.Whatsapp-AI-Agent", "id": "r1"},
+                "definition": {"name": "web.Whatsapp-AI-Agent"},
+            },
+            {
+                "id": 100,
+                "result": "failed",
+                "finishTime": "2023-11-15T12:00:00Z",
+                "sourceVersion": "dd0139fa9999",
+                "repository": {"name": "web.Whatsapp-AI-Agent", "id": "r1"},
+                "definition": {"name": "web.Whatsapp-AI-Agent"},
+            },
+        ]
+
+    monkeypatch.setattr("agent.services.azure_devops.list_builds", fake_list_builds)
+
+    matched = await ci_watch.get_latest_azdo_build_result(
+        "Project-NIT",
+        repo_name="web.Whatsapp-AI-Agent",
+        repo_id="r1",
+        commit_sha="dd0139fa9999",
+        min_created_at=watch_started,
+        require_sha_match=True,
+    )
+    assert matched is not None
+    assert matched.build_id == "100"
+    assert matched.outcome == "failed"
+
+    stale = await ci_watch.get_latest_azdo_build_result(
+        "Project-NIT",
+        repo_name="web.Whatsapp-AI-Agent",
+        repo_id="r1",
+        commit_sha="abc123deadbeef",
+        min_created_at=watch_started + 86400,
+        require_sha_match=True,
+    )
+    assert stale is None
+

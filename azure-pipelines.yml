@@ -43,15 +43,15 @@ stages:
               set -euo pipefail
               python -m pip install --upgrade pip
               pip install -r requirements.txt
+              pip install "pydantic-settings>=2.5"
+              pip install pytest pytest-asyncio httpx
               pip install .
             displayName: "Install deps for tests"
 
           - script: |
               set -euo pipefail
-              pip install pytest pytest-asyncio httpx
-              PYTHONPATH=src python -m pytest tests/ -v --tb=short
+              PYTHONPATH=src python -m pytest tests/ -v --tb=short -q
             displayName: "Run tests"
-            continueOnError: true
 
           - script: |
               set -euo pipefail
@@ -93,7 +93,7 @@ stages:
   - stage: Deploy
     displayName: "Deploy (Oryx on App Service)"
     dependsOn: Build
-    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    condition: and(succeeded('Build'), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
     jobs:
       - job: Deploy
         displayName: "Deploy whatsapp-ai-agent-sunny"

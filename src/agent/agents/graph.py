@@ -107,6 +107,13 @@ def _route_after_architect(state: AgentState) -> str:
     return "request_plan_approval"
 
 
+def _route_after_notify_result(state: AgentState) -> str:
+    """AzDO merge deploy: defer Final evaluation until CI watch completes."""
+    if state.get("pipeline_status") == "watching":
+        return END
+    return "evaluator"
+
+
 def _route_after_calendar(state: AgentState) -> str:
     if state.get("evaluation_text") or state.get("status") == "failed":
         return "notify_meeting"
@@ -431,7 +438,10 @@ def build_graph() -> StateGraph:
     graph.add_edge("notify_rejected", "evaluator")
     graph.add_edge("coding_deployer", "notify_result")
 
-    graph.add_edge("notify_result", "evaluator")
+    graph.add_conditional_edges("notify_result", _route_after_notify_result, {
+        END: END,
+        "evaluator": "evaluator",
+    })
     graph.add_edge("evaluator", "notify_evaluation")
     graph.add_edge("notify_evaluation", END)
 
@@ -622,7 +632,10 @@ async def resume_graph(
     if approval_status == "approved":
         values = await run_deployer(values)
         values = await run_notifier(values)
-        if values.get("error") != "ci_busy" and values.get("pipeline_status") != "busy":
+        if values.get("error") != "ci_busy" and values.get("pipeline_status") not in (
+            "busy",
+            "watching",
+        ):
             values = await run_evaluator(values)
             await run_notifier(values)
     else:
@@ -632,7 +645,9 @@ async def resume_graph(
         values = await run_evaluator(values)
         await run_notifier(values)
 
-    if whatsapp_phone and values.get("error") != "ci_busy" and values.get("pipeline_status") != "busy":
+    if whatsapp_phone and values.get("error") != "ci_busy" and values.get(
+        "pipeline_status"
+    ) not in ("busy", "watching"):
         await clear_session(whatsapp_phone)
 
 

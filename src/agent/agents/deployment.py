@@ -491,16 +491,10 @@ async def _deploy_azdo(
             f"*Merged to main:* yes\n"
             f"*Azure Pipelines:* watching\n"
             f"*Pipeline:* {pipeline_url}\n"
-            "You will get another WhatsApp *Final evaluation* when the pipeline finishes."
+            "You will get a WhatsApp *Final evaluation* when the pipeline finishes."
         )
-        evaluation = (
-            "1. Your WhatsApp approval authorized Azure DevOps deployment\n"
-            "2. Changes merged to `main`: yes\n"
-            "3. Azure Pipeline: *watching* (in progress)\n"
-            f"4. Pipeline: {pipeline_url}\n"
-            "5. A second *Final evaluation* will arrive when the pipeline "
-            "succeeds, fails, or is canceled"
-        )
+        # Final evaluation is sent by durable ci_watch after real CI outcome — not here.
+        evaluation = ""
     elif live_url:
         detail = (
             "*Final deployment complete*\n"

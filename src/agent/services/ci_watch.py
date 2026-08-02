@@ -176,6 +176,7 @@ async def get_latest_azdo_build_result(
     repo_name: str = "",
     commit_sha: str = "",
     min_created_at: float | None = None,
+    require_sha_match: bool = False,
 ) -> CiTerminalResult | None:
     """Return the newest completed AzDO build for this repo (optional SHA match)."""
     from agent.services import azure_devops as azdo
@@ -197,6 +198,24 @@ async def get_latest_azdo_build_result(
     wanted_sha = (commit_sha or "").strip().lower()
     org = settings.azdo_org_url.rstrip("/")
 
+    def _build_finished_at(build: dict) -> float | None:
+        ts = build.get("finishTime") or build.get("startTime") or build.get("queueTime")
+        if not ts:
+            return None
+        try:
+            parsed = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+            return parsed.timestamp()
+        except Exception:
+            return None
+
+    def _sha_matches(build: dict) -> bool:
+        if not wanted_sha:
+            return True
+        src = (build.get("sourceVersion") or "").lower()
+        if not src:
+            return False
+        return src.startswith(wanted_sha) or wanted_sha.startswith(src[:12])
+
     candidates: list[dict] = []
     for b in builds:
         repo_ref = ((b.get("repository") or {}).get("name") or "").lower()
@@ -205,31 +224,32 @@ async def get_latest_azdo_build_result(
             continue
         if repo_id and rid and rid != str(repo_id):
             continue
-        if min_created_at:
-            # finishTime / startTime are ISO; queueTime fallback
-            ts = b.get("finishTime") or b.get("startTime") or b.get("queueTime")
-            if ts:
-                try:
-                    # AzDO often returns ...Z
-                    parsed = datetime.datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
-                    if parsed.timestamp() + 5 < min_created_at:
-                        continue
-                except Exception:
-                    pass
-        if wanted_sha:
-            src = (b.get("sourceVersion") or "").lower()
-            if src and not (src.startswith(wanted_sha) or wanted_sha.startswith(src[:12])):
-                # Keep as fallback candidate if nothing matches SHA later
-                b = {**b, "_sha_mismatch": True}
+        if min_created_at is not None:
+            finished = _build_finished_at(b)
+            if finished is not None and finished + 2 < min_created_at:
+                continue
+        if wanted_sha and not _sha_matches(b):
+            if require_sha_match:
+                continue
+            b = {**b, "_sha_mismatch": True}
         candidates.append(b)
 
     if not candidates:
         return None
 
-    exact = [c for c in candidates if not c.get("_sha_mismatch")]
-    build = (exact or candidates)[0]
+    if require_sha_match and wanted_sha:
+        exact = [c for c in candidates if not c.get("_sha_mismatch")]
+        if not exact:
+            return None
+        build = exact[0]
+    else:
+        exact = [c for c in candidates if not c.get("_sha_mismatch")]
+        build = (exact or candidates)[0]
+
     build_id = str(build.get("id") or "")
     outcome = _normalize_outcome(build.get("result"))
+    if not outcome or outcome == "unknown":
+        return None
     defn = (build.get("definition") or {}).get("name") or "pipeline"
     url = (
         f"{org}/{project}/_build/results?buildId={build_id}"
@@ -237,7 +257,7 @@ async def get_latest_azdo_build_result(
         else f"{org}/{project}/_build"
     )
     return CiTerminalResult(
-        outcome=outcome or "unknown",
+        outcome=outcome,
         provider="Azure Pipelines",
         label=f"{project}/{repo_name}" if repo_name else project,
         url=url,
@@ -272,6 +292,7 @@ async def wait_for_azdo_terminal(
             repo_name=ctx.get("repo_name") or "",
             commit_sha=commit_sha,
             min_created_at=created_at,
+            require_sha_match=bool(commit_sha),
         )
         if latest:
             return latest
@@ -289,15 +310,16 @@ async def wait_for_azdo_terminal(
         repo_name=ctx.get("repo_name") or "",
         commit_sha=commit_sha,
         min_created_at=created_at,
+        require_sha_match=bool(commit_sha),
     )
     if latest:
         return latest
     return CiTerminalResult(
-        outcome="succeeded",
+        outcome="unknown",
         provider="Azure Pipelines",
         label=idle.label,
         url=idle.url or "",
-        detail="Pipeline became idle (result unavailable; treating as finished).",
+        detail="Pipeline became idle but no matching completed build was found.",
     )
 
 
@@ -408,23 +430,38 @@ async def watch_azdo_pipeline_and_notify(task_id: str) -> None:
             "repo_name": watch.get("repo_name") or "",
             "repo_id": watch.get("repo_id") or "",
         }
-        # Prefer a completed build that already finished during restart gap.
+        created_at = float(watch.get("created_at") or time.time())
+        commit_sha = watch.get("commit_sha") or ""
+
+        busy = await check_ci_busy_for_context(ctx)
+        if busy.busy:
+            result = await wait_for_azdo_terminal(
+                ctx,
+                commit_sha=commit_sha,
+                created_at=created_at,
+                timeout_sec=1500,
+                poll_sec=20,
+            )
+            await notify_watch_finished(watch, result)
+            return
+
+        # Pipeline idle — only notify if a completed build matches THIS merge commit.
         existing = await get_latest_azdo_build_result(
             ctx["project"],
             repo_id=ctx["repo_id"],
             repo_name=ctx["repo_name"],
-            commit_sha=watch.get("commit_sha") or "",
-            min_created_at=float(watch.get("created_at") or 0) - 30,
+            commit_sha=commit_sha,
+            min_created_at=created_at,
+            require_sha_match=bool(commit_sha),
         )
-        busy = await check_ci_busy_for_context(ctx)
-        if existing and not busy.busy:
+        if existing:
             await notify_watch_finished(watch, existing)
             return
 
         result = await wait_for_azdo_terminal(
             ctx,
-            commit_sha=watch.get("commit_sha") or "",
-            created_at=float(watch.get("created_at") or time.time()),
+            commit_sha=commit_sha,
+            created_at=created_at,
             timeout_sec=1500,
             poll_sec=20,
         )
