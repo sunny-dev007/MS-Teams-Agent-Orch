@@ -88,8 +88,10 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
         GATE_MANUAL_PR,
         GATE_PLAN,
         GATE_PR_MODE,
+        effective_awaiting,
         is_conversation_awaiting,
         is_workflow_gate,
+        session_has_pr,
     )
     from agent.workflow.resume_context import (
         format_gate_hint,
@@ -105,6 +107,8 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
     awaiting = session.get("awaiting")
     session_data = dict(session.get("data") or {})
     session_provider = session.get("provider") or ""
+    gate = effective_awaiting(session)
+    has_pr = session_has_pr(session_data)
 
     # Cancel / fresh start — always honored.
     if is_cancel_session_message(message):
@@ -118,10 +122,11 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
         return {"status": "ok"}
 
     if is_resume_status_message(message):
+        status_session = {**session, "awaiting": gate}
         background_tasks.add_task(
             _send_gate_hint,
             parsed["phone"],
-            format_session_status(session) if session.get("awaiting") else format_no_pending_task(),
+            format_session_status(status_session) if gate else format_no_pending_task(),
         )
         return {"status": "ok"}
 
@@ -132,10 +137,43 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
     pr_manual_match = PR_MANUAL_PATTERN.match(message)
     pr_ready_match = PR_READY_PATTERN.match(message)
 
-    # Plan PROCEED must work even if session was lost after deploy (task id in message).
-    if proceed_match and awaiting in (GATE_PLAN, None, ""):
+    # PR review choice (1 / 2 / AI REVIEW) once a PR exists — even if gate stuck on plan.
+    if (pr_ai_match or pr_manual_match) and (gate == GATE_PR_MODE or has_pr):
+        mode = "ai" if pr_ai_match else "manual"
+        tid = _task_id_from_match(pr_ai_match or pr_manual_match)
+        if gate != GATE_PR_MODE and has_pr:
+            background_tasks.add_task(
+                _heal_pr_mode_and_resume,
+                parsed["phone"],
+                session_data,
+                session_provider,
+                mode,
+                tid,
+            )
+        else:
+            background_tasks.add_task(
+                _resume_gate,
+                GATE_PR_MODE,
+                "approved",
+                parsed["phone"],
+                tid,
+                pr_review_mode=mode,
+            )
+        return {"status": "ok"}
+
+    # Stale Proceed/Approve while PR is waiting for review mode choice
+    if (proceed_match or approve_match) and gate == GATE_PR_MODE:
+        background_tasks.add_task(
+            _send_gate_hint,
+            parsed["phone"],
+            format_gate_hint(GATE_PR_MODE, session_data, session_provider),
+        )
+        return {"status": "ok"}
+
+    # Plan PROCEED — only when still on plan (no PR yet).
+    if proceed_match and gate in (GATE_PLAN, None, ""):
         tid = _task_id_from_match(proceed_match) or session_data.get("pending_task_id")
-        if awaiting == GATE_PLAN or tid:
+        if gate == GATE_PLAN or tid:
             background_tasks.add_task(
                 _resume_gate, GATE_PLAN, "approved", parsed["phone"], tid
             )
@@ -149,7 +187,7 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
         )
         return {"status": "ok"}
 
-    if awaiting == GATE_PLAN:
+    if gate == GATE_PLAN:
         if reject_match:
             background_tasks.add_task(
                 _resume_gate, GATE_PLAN, "rejected", parsed["phone"], _task_id_from_match(reject_match)
@@ -167,32 +205,13 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                 parsed["phone"],
                 format_gate_hint(GATE_PLAN, session_data, session_provider),
             )
-    elif awaiting == GATE_PR_MODE:
-        if pr_ai_match:
-            background_tasks.add_task(
-                _resume_gate,
-                GATE_PR_MODE,
-                "approved",
-                parsed["phone"],
-                _task_id_from_match(pr_ai_match),
-                pr_review_mode="ai",
-            )
-        elif pr_manual_match:
-            background_tasks.add_task(
-                _resume_gate,
-                GATE_PR_MODE,
-                "approved",
-                parsed["phone"],
-                _task_id_from_match(pr_manual_match),
-                pr_review_mode="manual",
-            )
-        else:
-            background_tasks.add_task(
-                _send_gate_hint,
-                parsed["phone"],
-                format_gate_hint(GATE_PR_MODE, session_data, session_provider),
-            )
-    elif awaiting == GATE_MANUAL_PR:
+    elif gate == GATE_PR_MODE:
+        background_tasks.add_task(
+            _send_gate_hint,
+            parsed["phone"],
+            format_gate_hint(GATE_PR_MODE, session_data, session_provider),
+        )
+    elif gate == GATE_MANUAL_PR:
         if pr_ready_match:
             background_tasks.add_task(
                 _resume_gate,
@@ -208,28 +227,27 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                 format_gate_hint(GATE_MANUAL_PR, session_data, session_provider),
             )
     elif is_conversation_awaiting(awaiting):
-        # Repo wizard / meeting — continue multi-turn thread (e.g. "1" = GitHub).
         from agent.core.background import handle_whatsapp_message
         background_tasks.add_task(handle_whatsapp_message, parsed)
-    elif approve_match and awaiting in (GATE_DEPLOY, "approval", None):
+    elif approve_match and gate in (GATE_DEPLOY, "approval", None):
         background_tasks.add_task(
             _resume_with_approval,
             _task_id_from_match(approve_match),
             "approved",
             parsed["phone"],
         )
-    elif reject_match and awaiting in (GATE_DEPLOY, "approval", None):
+    elif reject_match and gate in (GATE_DEPLOY, "approval", None):
         background_tasks.add_task(
             _resume_with_approval,
             _task_id_from_match(reject_match),
             "rejected",
             parsed["phone"],
         )
-    elif is_workflow_gate(awaiting):
+    elif is_workflow_gate(gate):
         background_tasks.add_task(
             _send_gate_hint,
             parsed["phone"],
-            format_gate_hint(awaiting, session_data, session_provider),
+            format_gate_hint(gate, session_data, session_provider),
         )
     else:
         from agent.core.background import handle_whatsapp_message
@@ -325,6 +343,34 @@ async def _send_gate_hint(phone: str, text: str) -> None:
         await send_message(phone, text)
     except Exception:
         logger.exception("Failed to send gate hint to %s", phone)
+
+
+async def _heal_pr_mode_and_resume(
+    phone: str,
+    session_data: dict,
+    session_provider: str,
+    pr_review_mode: str,
+    explicit_task_id: str | None,
+) -> None:
+    """Fix stale plan_approval session after PR was already opened, then run AI/manual review."""
+    from agent.workflow.gates import GATE_PR_MODE, persist_pr_mode_gate
+
+    state = {
+        "task_id": explicit_task_id or session_data.get("pending_task_id") or "",
+        "repo_provider": session_provider or session_data.get("repo_provider") or "",
+        **session_data,
+    }
+    try:
+        await persist_pr_mode_gate(phone, state)
+    except Exception:
+        logger.exception("Failed healing PR-mode session for %s", phone)
+    await _resume_gate(
+        GATE_PR_MODE,
+        "approved",
+        phone,
+        explicit_task_id or state.get("task_id"),
+        pr_review_mode=pr_review_mode,
+    )
 
 
 async def _resume_gate(

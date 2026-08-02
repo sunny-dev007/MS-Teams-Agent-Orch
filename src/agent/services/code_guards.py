@@ -90,6 +90,12 @@ def is_portal_api_path(path: str) -> bool:
     return normalized.endswith("agent/api/portal.py") or normalized == "src/agent/api/portal.py"
 
 
+def is_legacy_web_portal_path(path: str) -> bool:
+    """Agent often invents src/web/portal.html — real portal is src/agent/web/."""
+    normalized = path.replace("\\", "/").lstrip("./")
+    return normalized.startswith("src/web/") or normalized.startswith("web/portal")
+
+
 def config_change_is_safe(content: str) -> bool:
     if _FORBIDDEN_IMPORT in content:
         return False
@@ -130,6 +136,14 @@ def sanitize_file_changes(
                 logger.warning("Auto-fixed BaseSettings import in %s", path)
                 change = {**change, "content": fixed}
                 content = fixed
+
+        if is_legacy_web_portal_path(path) and action in ("modify", "create"):
+            remapped = path.replace("\\", "/").replace("src/web/", "src/agent/web/", 1)
+            if remapped.startswith("web/"):
+                remapped = "src/agent/" + remapped
+            logger.warning("Remapping agent portal path %s → %s", path, remapped)
+            change = {**change, "path": remapped}
+            path = remapped
 
         if is_config_path(path) and action in ("modify", "create"):
             if not isinstance(content, str) or not config_change_is_safe(content):

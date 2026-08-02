@@ -650,6 +650,20 @@ async def resume_graph(
                 final = dict(snap.values or {})
             except Exception:
                 final = {}
+            # Safety net: after plan→dev→PR, always land session on pr_review_mode.
+            if (
+                gate == GATE_PLAN
+                and approval_status == "approved"
+                and final.get("pr_url")
+            ):
+                try:
+                    from agent.workflow.gates import persist_pr_mode_gate
+
+                    await persist_pr_mode_gate(whatsapp_phone, {**final, "whatsapp_phone": whatsapp_phone})
+                except Exception:
+                    logger.exception(
+                        "Failed post-plan PR-mode persist for task %s", task_id
+                    )
             keep_session = final.get("error") == "ci_busy" or final.get("pipeline_status") == "busy"
             awaiting_after = (await get_session(whatsapp_phone)).get("awaiting")
             if gate == GATE_PLAN and approval_status == "rejected":

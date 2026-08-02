@@ -29,6 +29,29 @@ def multi_gate_enabled() -> bool:
     return bool(settings.enable_multi_gate_workflow)
 
 
+def session_has_pr(data: dict[str, Any] | None) -> bool:
+    data = data or {}
+    return bool(data.get("pr_url") or data.get("pr_id") or data.get("pr_number"))
+
+
+def effective_awaiting(session: dict[str, Any] | None) -> str | None:
+    """Resolve the gate the user should act on.
+
+    After PR publish, session must be pr_review_mode. If a deploy/restart left
+    awaiting stuck on plan_approval but pr_url is already saved, advance the gate.
+    """
+    session = session or {}
+    awaiting = session.get("awaiting")
+    data = session.get("data") or {}
+    if awaiting == GATE_PLAN and session_has_pr(data):
+        logger.warning(
+            "Stale gate plan_approval with PR present (task=%s) — treating as pr_review_mode",
+            data.get("pending_task_id"),
+        )
+        return GATE_PR_MODE
+    return awaiting
+
+
 def is_workflow_gate(awaiting: str | None) -> bool:
     """True only for coding deploy gates — blocks parallel tasks."""
     return (awaiting or "") in WORKFLOW_GATES
@@ -68,6 +91,12 @@ async def persist_pr_mode_gate(phone: str, state: dict[str, Any]) -> None:
         provider=state.get("repo_provider") or "",
         data=_gate_payload(state),
         merge_data=False,
+    )
+    logger.info(
+        "Persisted PR review-mode gate phone=%s task=%s pr=%s",
+        phone,
+        state.get("task_id"),
+        state.get("pr_url"),
     )
 
 
