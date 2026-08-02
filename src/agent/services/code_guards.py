@@ -34,8 +34,11 @@ _PORTAL_REQUIRED = (
 )
 
 
+_FORBIDDEN_IMPORT = "from " + "pydantic" + " import " + "BaseSettings"
+
+
 def fix_basesettings_import(content: str) -> str:
-    """Rewrite `from pydantic import BaseSettings` → pydantic-settings (Pydantic v2)."""
+    """Rewrite pydantic v1 BaseSettings import to pydantic-settings (Pydantic v2)."""
     if "BaseSettings" not in content:
         return content
 
@@ -88,7 +91,7 @@ def is_portal_api_path(path: str) -> bool:
 
 
 def config_change_is_safe(content: str) -> bool:
-    if "from pydantic import BaseSettings" in content:
+    if _FORBIDDEN_IMPORT in content:
         return False
     if "from pydantic_settings import" not in content or "BaseSettings" not in content:
         return False

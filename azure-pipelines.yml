@@ -51,15 +51,28 @@ stages:
 
           - script: |
               set -euo pipefail
-              # Hard fail before pytest if agent/codegen reintroduced pydantic v1 BaseSettings.
-              if grep -Rn --include='*.py' 'from pydantic import BaseSettings' src/; then
-                echo "##vso[task.logissue type=error]Forbidden: BaseSettings must be imported from pydantic-settings (Pydantic v2)."
-                exit 1
-              fi
-              if ! grep -q 'from pydantic_settings import BaseSettings' src/agent/config.py; then
-                echo "##vso[task.logissue type=error]src/agent/config.py must import BaseSettings from pydantic-settings."
-                exit 1
-              fi
+              # Fail only on real import lines (not detector strings in code_guards/tests).
+              PYTHONPATH=src python - <<'PY'
+              import re
+              import sys
+              from pathlib import Path
+
+              pat = re.compile(r"^\s*from\s+pydantic\s+import\s+.*\bBaseSettings\b")
+              bad = []
+              for path in Path("src").rglob("*.py"):
+                  for i, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                      if pat.search(line):
+                          bad.append(f"{path}:{i}: {line.strip()}")
+              if bad:
+                  print("##vso[task.logissue type=error]Forbidden: BaseSettings must be imported from pydantic-settings (Pydantic v2).")
+                  print("\n".join(bad))
+                  sys.exit(1)
+              cfg = Path("src/agent/config.py").read_text(encoding="utf-8")
+              if "from pydantic_settings import BaseSettings" not in cfg:
+                  print("##vso[task.logissue type=error]src/agent/config.py must import BaseSettings from pydantic-settings.")
+                  sys.exit(1)
+              print("BaseSettings import guard OK")
+              PY
               PYTHONPATH=src python -c "from agent.config import settings; print('config OK', settings.azure_openai_deployment)"
               PYTHONPATH=src python -m pytest tests/ -v --tb=short -q
             displayName: "Run tests"
