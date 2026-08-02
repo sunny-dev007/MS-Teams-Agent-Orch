@@ -54,11 +54,31 @@ async def get_session(phone: str) -> dict[str, Any]:
             }
 
     try:
-        return await _with_schema_retry("get_session", _read)
+        session = await _with_schema_retry("get_session", _read)
     except Exception:
         # Never break WhatsApp hello / planner on transient DB issues
         logger.exception("get_session failed for %s — returning empty session", phone)
-        return _empty_session(phone)
+        session = _empty_session(phone)
+
+    # App Service recycles mid-request; durable JSON on /home/site/data survives
+    # SQLite visibility races between overlapping containers.
+    try:
+        from agent.core.gate_store import merge_session_with_gate
+
+        return merge_session_with_gate(session)
+    except Exception:
+        logger.exception("gate_store merge failed for %s", phone)
+        return session
+
+
+_WORKFLOW_GATE_NAMES = frozenset(
+    {
+        "plan_approval",
+        "pr_review_mode",
+        "manual_pr_review",
+        "approval",
+    }
+)
 
 
 async def save_session(
@@ -70,6 +90,23 @@ async def save_session(
     merge_data: bool = True,
     clear_awaiting: bool = False,
 ) -> None:
+    # Write durable gate BEFORE SQLite so App Service recycle mid-commit still
+    # leaves a recoverable PR/plan gate for the next container.
+    try:
+        from agent.core.gate_store import clear_gate, write_gate
+
+        if clear_awaiting:
+            clear_gate(phone)
+        elif awaiting in _WORKFLOW_GATE_NAMES:
+            write_gate(
+                phone,
+                awaiting=awaiting or "",
+                provider=provider or "",
+                data=data or {},
+            )
+    except Exception:
+        logger.exception("Durable gate pre-write failed for %s", phone)
+
     async def _write() -> None:
         async with async_session() as db:
             row = await db.get(ConversationSession, phone)
@@ -100,6 +137,21 @@ async def save_session(
                 row.awaiting,
                 (row.data_json or {}).get("pending_task_id"),
             )
+            # Re-mirror after merge so durable file has full session data.
+            try:
+                from agent.core.gate_store import clear_gate, write_gate
+
+                if clear_awaiting or row.awaiting is None:
+                    clear_gate(phone)
+                elif row.awaiting in _WORKFLOW_GATE_NAMES:
+                    write_gate(
+                        phone,
+                        awaiting=row.awaiting,
+                        provider=row.provider or "",
+                        data=row.data_json or {},
+                    )
+            except Exception:
+                logger.exception("Durable gate mirror failed for %s", phone)
 
     try:
         await _with_schema_retry("save_session", _write)
@@ -122,6 +174,12 @@ async def clear_session(phone: str) -> None:
         await _with_schema_retry("clear_session", _clear)
     except Exception:
         logger.exception("clear_session failed for %s", phone)
+    try:
+        from agent.core.gate_store import clear_gate
+
+        clear_gate(phone)
+    except Exception:
+        logger.exception("Durable gate clear failed for %s", phone)
 
 
 async def list_recent_task_summaries(limit: int = 5) -> list[dict]:

@@ -56,6 +56,14 @@ async def test_webhook_one_after_stale_plan_triggers_pr_ai_resume():
         patch("agent.core.security.is_phone_allowed", return_value=True),
         patch("agent.core.security.verify_whatsapp_signature", return_value=True),
         patch("agent.core.session.get_session", new_callable=AsyncMock, return_value=session),
+        patch(
+            "agent.workflow.gate_recover.recover_session_for_gates",
+            new_callable=AsyncMock,
+            return_value={
+                **session,
+                "awaiting": GATE_PR_MODE,
+            },
+        ),
         patch("agent.api.whatsapp._heal_pr_mode_and_resume", heal),
         patch("agent.api.whatsapp._resume_gate", new_callable=AsyncMock) as resume,
         patch("agent.api.whatsapp._send_gate_hint", new_callable=AsyncMock) as hint,
@@ -89,6 +97,107 @@ async def test_webhook_one_after_stale_plan_triggers_pr_ai_resume():
 
 
 @pytest.mark.asyncio
+async def test_webhook_one_recovers_pr_without_session_pr_url():
+    """Recycle case: SQL still plan_approval, no pr_url — recover then AI review."""
+    phone = "919643877357"
+    session = {
+        "phone": phone,
+        "awaiting": GATE_PLAN,
+        "provider": "azure_devops",
+        "data": {
+            "pending_task_id": "c2e298e6",
+            "repo_provider": "azure_devops",
+            "azdo_project": "Project-NIT",
+            "azdo_repo_id": "abc",
+        },
+    }
+    recovered = {
+        **session,
+        "awaiting": GATE_PR_MODE,
+        "data": {
+            **session["data"],
+            "pr_url": "https://dev.azure.com/x/_git/r/pullrequest/37",
+            "pr_id": 37,
+        },
+    }
+
+    heal = AsyncMock()
+    with (
+        patch("agent.core.security.is_phone_allowed", return_value=True),
+        patch("agent.core.security.verify_whatsapp_signature", return_value=True),
+        patch("agent.core.session.get_session", new_callable=AsyncMock, return_value=session),
+        patch(
+            "agent.workflow.gate_recover.recover_session_for_gates",
+            new_callable=AsyncMock,
+            return_value=recovered,
+        ),
+        patch("agent.api.whatsapp._heal_pr_mode_and_resume", heal),
+        patch("agent.api.whatsapp._resume_gate", new_callable=AsyncMock) as resume,
+        patch("agent.api.whatsapp._send_gate_hint", new_callable=AsyncMock) as hint,
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/webhooks/whatsapp",
+                json=_whatsapp_text_payload(phone, "1"),
+                headers={"X-Hub-Signature-256": "sha256=test"},
+            )
+        assert resp.status_code == 200
+
+    import asyncio
+
+    await asyncio.sleep(0.05)
+
+    assert heal.await_count + resume.await_count >= 1
+    assert hint.await_count == 0
+
+
+@pytest.mark.asyncio
+async def test_webhook_one_on_plan_without_pr_does_not_reshow_plan():
+    """Bare '1' on plan_approval must never re-prompt Gate 1 plan approval."""
+    phone = "919643877357"
+    session = {
+        "phone": phone,
+        "awaiting": GATE_PLAN,
+        "provider": "azure_devops",
+        "data": {"pending_task_id": "c2e298e6"},
+    }
+
+    with (
+        patch("agent.core.security.is_phone_allowed", return_value=True),
+        patch("agent.core.security.verify_whatsapp_signature", return_value=True),
+        patch("agent.core.session.get_session", new_callable=AsyncMock, return_value=session),
+        patch(
+            "agent.workflow.gate_recover.recover_session_for_gates",
+            new_callable=AsyncMock,
+            return_value=session,
+        ),
+        patch("agent.api.whatsapp._heal_pr_mode_and_resume", new_callable=AsyncMock) as heal,
+        patch("agent.api.whatsapp._resume_gate", new_callable=AsyncMock) as resume,
+        patch("agent.api.whatsapp._send_gate_hint", new_callable=AsyncMock) as hint,
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/webhooks/whatsapp",
+                json=_whatsapp_text_payload(phone, "1"),
+                headers={"X-Hub-Signature-256": "sha256=test"},
+            )
+        assert resp.status_code == 200
+
+    import asyncio
+
+    await asyncio.sleep(0.05)
+    assert heal.await_count == 0
+    assert resume.await_count == 0
+    assert hint.await_count >= 1
+    text = hint.await_args.args[1]
+    assert "plan approval" not in text.lower()
+    assert "Gate 1" not in text
+    assert "pull request" in text.lower() or "PR" in text
+
+
+@pytest.mark.asyncio
 async def test_webhook_one_during_provider_wizard_not_forced_to_pr():
     """Bare '1' while choosing GitHub/AzDO must still go to repo wizard, not PR review."""
     phone = "919643877357"
@@ -103,6 +212,11 @@ async def test_webhook_one_during_provider_wizard_not_forced_to_pr():
         patch("agent.core.security.is_phone_allowed", return_value=True),
         patch("agent.core.security.verify_whatsapp_signature", return_value=True),
         patch("agent.core.session.get_session", new_callable=AsyncMock, return_value=session),
+        patch(
+            "agent.workflow.gate_recover.recover_session_for_gates",
+            new_callable=AsyncMock,
+            return_value=session,
+        ),
         patch("agent.api.whatsapp._heal_pr_mode_and_resume", new_callable=AsyncMock) as heal,
         patch("agent.api.whatsapp._resume_gate", new_callable=AsyncMock) as resume,
         patch(

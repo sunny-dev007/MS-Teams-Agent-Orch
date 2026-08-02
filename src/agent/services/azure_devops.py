@@ -235,6 +235,33 @@ async def get_pull_request(project: str, repo_id: str, pr_id: int) -> dict:
         return resp.json()
 
 
+async def find_active_pr_for_branch(
+    project: str,
+    repo_id: str,
+    branch: str,
+) -> dict | None:
+    """Find an active (not abandoned/completed) PR whose source is this branch."""
+    src = branch if branch.startswith("refs/") else f"refs/heads/{branch}"
+    url = _project_api(
+        project,
+        f"git/repositories/{repo_id}/pullrequests"
+        f"?searchCriteria.status=active"
+        f"&searchCriteria.sourceRefName={src}"
+        f"&api-version=7.1",
+    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers=_headers(), timeout=30)
+        if resp.status_code >= 400:
+            logger.error(
+                "AzDO find_active_pr_for_branch failed: %s %s",
+                resp.status_code,
+                resp.text[:300],
+            )
+            resp.raise_for_status()
+        items = resp.json().get("value") or []
+        return items[0] if items else None
+
+
 async def merge_pull_request(
     project: str,
     repo_id: str,

@@ -104,11 +104,44 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
     )
 
     session = await get_session(parsed["phone"])
+
+    proceed_match = PROCEED_PATTERN.match(message)
+    reject_match = REJECT_PATTERN.match(message)
+    approve_match = APPROVE_PATTERN.match(message)
+    pr_ai_match = PR_AI_PATTERN.match(message)
+    pr_manual_match = PR_MANUAL_PATTERN.match(message)
+    pr_ready_match = PR_READY_PATTERN.match(message)
+
+    # After App Service recycle, SQLite may still show plan_approval without pr_url.
+    # Recover from durable gate / checkpoint / Task / AzDO before routing.
+    needs_recover = bool(
+        pr_ai_match
+        or pr_manual_match
+        or proceed_match
+        or (session.get("awaiting") in (GATE_PLAN, GATE_PR_MODE) and session.get("data"))
+    )
+    if needs_recover:
+        try:
+            from agent.workflow.gate_recover import recover_session_for_gates
+
+            session = await recover_session_for_gates(session)
+        except Exception:
+            logger.exception("Gate recovery failed for %s", parsed["phone"])
+
     awaiting = session.get("awaiting")
     session_data = dict(session.get("data") or {})
     session_provider = session.get("provider") or ""
     gate = effective_awaiting(session)
     has_pr = session_has_pr(session_data)
+    logger.info(
+        "Gate route phone=%s msg=%r awaiting=%s gate=%s has_pr=%s task=%s",
+        parsed["phone"],
+        message[:40],
+        awaiting,
+        gate,
+        has_pr,
+        session_data.get("pending_task_id"),
+    )
 
     # Cancel / fresh start — always honored.
     if is_cancel_session_message(message):
@@ -130,18 +163,11 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
         )
         return {"status": "ok"}
 
-    proceed_match = PROCEED_PATTERN.match(message)
-    reject_match = REJECT_PATTERN.match(message)
-    approve_match = APPROVE_PATTERN.match(message)
-    pr_ai_match = PR_AI_PATTERN.match(message)
-    pr_manual_match = PR_MANUAL_PATTERN.match(message)
-    pr_ready_match = PR_READY_PATTERN.match(message)
-
     # PR review choice (1 / 2 / AI REVIEW) once a PR exists — even if gate stuck on plan.
     if (pr_ai_match or pr_manual_match) and (gate == GATE_PR_MODE or has_pr):
         mode = "ai" if pr_ai_match else "manual"
         tid = _task_id_from_match(pr_ai_match or pr_manual_match)
-        if gate != GATE_PR_MODE and has_pr:
+        if gate != GATE_PR_MODE or not has_pr:
             background_tasks.add_task(
                 _heal_pr_mode_and_resume,
                 parsed["phone"],
@@ -159,6 +185,19 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
                 tid,
                 pr_review_mode=mode,
             )
+        return {"status": "ok"}
+
+    # Bare 1/2 while still on plan with a coding task — never re-prompt plan approval.
+    if (pr_ai_match or pr_manual_match) and gate == GATE_PLAN and session_data.get("pending_task_id"):
+        background_tasks.add_task(
+            _send_gate_hint,
+            parsed["phone"],
+            "No pull request is ready for review yet for task "
+            f"`{session_data.get('pending_task_id')}`.\n\n"
+            "If development is still running, wait for the *PR opened* message, "
+            "then reply *1* for AI review.\n"
+            "Or reply *stop* to cancel.",
+        )
         return {"status": "ok"}
 
     # Stale Proceed/Approve while PR is waiting for review mode choice

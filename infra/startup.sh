@@ -26,7 +26,7 @@ fi
 # Persistent storage survives Oryx zip deploy (wwwroot is replaced each release).
 # NEVER truncate agent.db — that wipes WhatsApp sessions and LangGraph checkpoints.
 if [ -n "${WEBSITE_SITE_NAME:-}" ]; then
-  mkdir -p /home/site/data/workspaces
+  mkdir -p /home/site/data/workspaces /home/site/data/workflow_gates
   if [ ! -f /home/site/data/agent.db ]; then
     touch /home/site/data/agent.db
   fi
