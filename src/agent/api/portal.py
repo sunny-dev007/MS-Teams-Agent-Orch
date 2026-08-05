@@ -1,25 +1,16 @@
-"""Phone-friendly portal page for Azure DevOps E2E edits."""
-
-from pathlib import Path
-
 from fastapi import APIRouter
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+import os
 
-router = APIRouter(tags=["portal"])
+router = APIRouter()
 
-PORTAL_FILE = Path(__file__).resolve().parent.parent / "web" / "portal.html"
+# Serve static files from the 'src/agent/web' directory
+static_dir = os.path.join(os.path.dirname(__file__), '..', 'web')
 
+# Mount the static files directory
+router.mount('/web', StaticFiles(directory=static_dir), name='web')
 
-@router.get("/")
-async def root() -> RedirectResponse:
-    return RedirectResponse(url="/portal", status_code=307)
-
-
-@router.get("/portal", response_class=HTMLResponse)
-async def portal_page():
-    if not PORTAL_FILE.exists():
-        return HTMLResponse(
-            "<h1>Sunny Portal</h1><p>portal.html missing from deploy package.</p>",
-            status_code=500,
-        )
-    return FileResponse(PORTAL_FILE, media_type="text/html; charset=utf-8")
+@router.get('/portal')
+async def get_portal():
+    return FileResponse(os.path.join(static_dir, 'portal.html'))
