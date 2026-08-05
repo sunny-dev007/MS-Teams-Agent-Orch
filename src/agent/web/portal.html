@@ -4,94 +4,47 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp AI Agent Portal</title>
-    <style>
-        body {
-            margin: 0;
-            font-family: Arial, sans-serif;
-            background-color: #121212;
-            color: #e0e0e0;
-        }
-        header {
-            background-color: #1f1f1f;
-            padding: 10px 20px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        header h1 {
-            margin: 0;
-            font-size: 1.5em;
-        }
-        nav {
-            display: flex;
-            gap: 15px;
-        }
-        nav a {
-            color: #e0e0e0;
-            text-decoration: none;
-            font-weight: bold;
-        }
-        nav a:hover {
-            color: #bb86fc;
-        }
-        main {
-            padding: 20px;
-        }
-        section {
-            margin-bottom: 20px;
-        }
-        h2 {
-            color: #bb86fc;
-        }
-        .card {
-            background-color: #1f1f1f;
-            padding: 15px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pico.css/1.5.7/pico.min.css">
+    <link rel="stylesheet" href="portal.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
 </head>
 <body>
-    <header>
-        <h1>WhatsApp AI Agent</h1>
+    <header class="container-fluid">
         <nav>
-            <a href="#overview">Overview</a>
-            <a href="#capabilities">Capabilities</a>
-            <a href="#tasks">Tasks</a>
-            <a href="#api-reference">API Reference</a>
+            <ul>
+                <li><a href="#status">Status</a></li>
+                <li><a href="#capabilities">Capabilities</a></li>
+                <li><a href="#tasks">Recent Tasks</a></li>
+                <li><a href="#guidance">User Guidance</a></li>
+            </ul>
         </nav>
     </header>
-    <main>
-        <section id="overview">
-            <h2>Overview</h2>
-            <div class="card">
-                <p>Welcome to the WhatsApp AI Agent portal. This platform allows you to manage and interact with AI agents that automate various tasks through WhatsApp.</p>
-            </div>
+    <main class="container">
+        <section id="status">
+            <h1>Agent Status</h1>
+            <p>All systems operational.</p>
         </section>
         <section id="capabilities">
             <h2>Capabilities</h2>
-            <div class="card">
-                <ul>
-                    <li>Read and summarize emails</li>
-                    <li>Schedule meetings with Google Calendar</li>
-                    <li>Browse and manage repositories</li>
-                    <li>Automate code development and review</li>
-                    <li>Deploy code to production environments</li>
-                </ul>
-            </div>
+            <ul>
+                <li>Read and summarize emails</li>
+                <li>Compose and send emails</li>
+                <li>Schedule meetings with Google Calendar</li>
+                <li>Manage GitHub and Azure DevOps repositories</li>
+                <li>Automate code changes and reviews</li>
+            </ul>
         </section>
         <section id="tasks">
-            <h2>Tasks</h2>
-            <div class="card">
-                <p>View and manage your recent tasks here.</p>
-            </div>
+            <h2>Recent Tasks</h2>
+            <p>No recent tasks available.</p>
         </section>
-        <section id="api-reference">
-            <h2>API Reference</h2>
-            <div class="card">
-                <p>Access the API documentation to integrate with the WhatsApp AI Agent.</p>
-            </div>
+        <section id="guidance">
+            <h2>User Guidance</h2>
+            <p>Interact with the AI agent via WhatsApp for various automation tasks.</p>
         </section>
     </main>
+    <footer class="container-fluid">
+        <p>&copy; 2023 WhatsApp AI Agent</p>
+    </footer>
 </body>
 </html>
