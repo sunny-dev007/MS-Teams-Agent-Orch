@@ -1,0 +1,1165 @@
+<title>WhatsApp AI Agent — Complete Codebase Reference</title>
+<style>
+@font-face {
+  font-family: 'JB Mono';
+  src: url(data:font/woff2;base64,) format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+:root {
+  --bg: #fafaf8;
+  --bg-card: #ffffff;
+  --bg-code: #f0efe8;
+  --bg-nav: #1a1e24;
+  --text: #1c1f26;
+  --text-secondary: #5a5e68;
+  --text-muted: #8b8f9a;
+  --text-nav: #c5c9d4;
+  --text-nav-active: #ffffff;
+  --accent: #2563eb;
+  --accent-light: #dbeafe;
+  --accent-dark: #1d4ed8;
+  --border: #e2e1d9;
+  --border-strong: #c8c7bf;
+  --green: #16a34a;
+  --green-bg: #dcfce7;
+  --amber: #d97706;
+  --amber-bg: #fef3c7;
+  --red: #dc2626;
+  --red-bg: #fee2e2;
+  --purple: #7c3aed;
+  --purple-bg: #ede9fe;
+  --teal: #0d9488;
+  --teal-bg: #ccfbf1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #13161c;
+    --bg-card: #1a1e26;
+    --bg-code: #1e222b;
+    --bg-nav: #0d0f14;
+    --text: #e4e6ec;
+    --text-secondary: #9ca0ad;
+    --text-muted: #6b7080;
+    --text-nav: #8b90a0;
+    --text-nav-active: #ffffff;
+    --accent: #60a5fa;
+    --accent-light: #1e3a5f;
+    --accent-dark: #93c5fd;
+    --border: #2a2e38;
+    --border-strong: #3a3e48;
+    --green: #4ade80;
+    --green-bg: #14332a;
+    --amber: #fbbf24;
+    --amber-bg: #332a14;
+    --red: #f87171;
+    --red-bg: #331414;
+    --purple: #a78bfa;
+    --purple-bg: #1e1433;
+    --teal: #2dd4bf;
+    --teal-bg: #0d2626;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #13161c;
+  --bg-card: #1a1e26;
+  --bg-code: #1e222b;
+  --bg-nav: #0d0f14;
+  --text: #e4e6ec;
+  --text-secondary: #9ca0ad;
+  --text-muted: #6b7080;
+  --text-nav: #8b90a0;
+  --text-nav-active: #ffffff;
+  --accent: #60a5fa;
+  --accent-light: #1e3a5f;
+  --accent-dark: #93c5fd;
+  --border: #2a2e38;
+  --border-strong: #3a3e48;
+  --green: #4ade80;
+  --green-bg: #14332a;
+  --amber: #fbbf24;
+  --amber-bg: #332a14;
+  --red: #f87171;
+  --red-bg: #331414;
+  --purple: #a78bfa;
+  --purple-bg: #1e1433;
+  --teal: #2dd4bf;
+  --teal-bg: #0d2626;
+}
+:root[data-theme="light"] {
+  --bg: #fafaf8;
+  --bg-card: #ffffff;
+  --bg-code: #f0efe8;
+  --bg-nav: #1a1e24;
+  --text: #1c1f26;
+  --text-secondary: #5a5e68;
+  --text-muted: #8b8f9a;
+  --text-nav: #c5c9d4;
+  --text-nav-active: #ffffff;
+  --accent: #2563eb;
+  --accent-light: #dbeafe;
+  --accent-dark: #1d4ed8;
+  --border: #e2e1d9;
+  --border-strong: #c8c7bf;
+  --green: #16a34a;
+  --green-bg: #dcfce7;
+  --amber: #d97706;
+  --amber-bg: #fef3c7;
+  --red: #dc2626;
+  --red-bg: #fee2e2;
+  --purple: #7c3aed;
+  --purple-bg: #ede9fe;
+  --teal: #0d9488;
+  --teal-bg: #ccfbf1;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+  display: flex;
+  min-height: 100vh;
+}
+
+nav {
+  width: 280px;
+  background: var(--bg-nav);
+  color: var(--text-nav);
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  overflow-y: auto;
+  padding: 24px 0;
+  flex-shrink: 0;
+  z-index: 100;
+  font-size: 13px;
+  transition: transform .3s;
+}
+nav .logo {
+  padding: 0 20px 20px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-nav-active);
+  letter-spacing: -0.02em;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+  margin-bottom: 16px;
+}
+nav .logo span { color: var(--accent); }
+nav .section-label {
+  padding: 12px 20px 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+nav a {
+  display: block;
+  padding: 6px 20px 6px 28px;
+  color: var(--text-nav);
+  text-decoration: none;
+  transition: all .15s;
+  border-left: 2px solid transparent;
+}
+nav a:hover, nav a.active {
+  color: var(--text-nav-active);
+  background: rgba(255,255,255,0.05);
+  border-left-color: var(--accent);
+}
+
+main {
+  margin-left: 280px;
+  flex: 1;
+  padding: 40px 48px 80px;
+  max-width: 960px;
+}
+
+.mobile-toggle {
+  display: none;
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 200;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+@media (max-width: 800px) {
+  nav { transform: translateX(-100%); }
+  nav.open { transform: translateX(0); }
+  main { margin-left: 0; padding: 60px 20px 80px; }
+  .mobile-toggle { display: block; }
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 8px;
+  color: var(--text);
+}
+h1 + .subtitle {
+  color: var(--text-secondary);
+  font-size: 15px;
+  margin-bottom: 32px;
+}
+
+h2 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 48px 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+h2:first-of-type { margin-top: 32px; }
+
+h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 28px 0 10px;
+  color: var(--text);
+}
+
+h4 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 20px 0 8px;
+  color: var(--text-secondary);
+}
+
+p { margin-bottom: 12px; color: var(--text-secondary); font-size: 14px; }
+
+section { scroll-margin-top: 24px; }
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+.badge-blue { background: var(--accent-light); color: var(--accent); }
+.badge-green { background: var(--green-bg); color: var(--green); }
+.badge-amber { background: var(--amber-bg); color: var(--amber); }
+.badge-red { background: var(--red-bg); color: var(--red); }
+.badge-purple { background: var(--purple-bg); color: var(--purple); }
+.badge-teal { background: var(--teal-bg); color: var(--teal); }
+
+code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  font-size: 12.5px;
+  background: var(--bg-code);
+  padding: 2px 5px;
+  border-radius: 3px;
+}
+
+pre {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  overflow-x: auto;
+  margin: 12px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+.fn-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0 16px; }
+.fn-table th { text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--border-strong); font-weight: 600; color: var(--text); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+.fn-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.fn-table td:first-child { font-family: 'SF Mono', monospace; font-size: 12px; color: var(--accent); white-space: nowrap; }
+.fn-table tr:last-child td { border-bottom: none; }
+
+.flow-diagram {
+  background: var(--bg-code);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 20px;
+  overflow-x: auto;
+  margin: 16px 0;
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre;
+  color: var(--text-secondary);
+}
+
+.alert {
+  padding: 14px 16px;
+  border-radius: 6px;
+  margin: 16px 0;
+  font-size: 13px;
+  border-left: 3px solid;
+}
+.alert-blue { background: var(--accent-light); border-color: var(--accent); color: var(--text); }
+.alert-amber { background: var(--amber-bg); border-color: var(--amber); color: var(--text); }
+.alert-red { background: var(--red-bg); border-color: var(--red); color: var(--text); }
+.alert strong { font-weight: 600; }
+
+.prompt-box {
+  background: var(--bg-card);
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  padding: 20px;
+  margin: 16px 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 700px) { .cols { grid-template-columns: 1fr; } }
+
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+.step { display: flex; align-items: flex-start; margin-bottom: 12px; }
+.step p { margin: 0; }
+</style>
+
+<button class="mobile-toggle" onclick="document.querySelector('nav').classList.toggle('open')">&#9776;</button>
+
+<nav>
+  <div class="logo"><span>WA</span> AI Agent Docs</div>
+
+  <div class="section-label">Overview</div>
+  <a href="#deployment">Deployment Process</a>
+  <a href="#deployment-troubleshoot">Why Pipeline Didn't Run</a>
+  <a href="#architecture">Architecture</a>
+
+  <div class="section-label">API Layer</div>
+  <a href="#api-whatsapp">api/whatsapp.py</a>
+  <a href="#api-gmail">api/gmail.py</a>
+  <a href="#api-health">api/health.py</a>
+  <a href="#api-tasks">api/tasks.py</a>
+  <a href="#api-portal">api/portal.py</a>
+
+  <div class="section-label">Agent Logic</div>
+  <a href="#agents-graph">agents/graph.py</a>
+  <a href="#agents-state">agents/state.py</a>
+  <a href="#agents-developer">agents/developer.py</a>
+  <a href="#agents-reviewer">agents/reviewer.py</a>
+  <a href="#agents-architect">agents/architect.py</a>
+  <a href="#agents-deployment">agents/deployment.py</a>
+  <a href="#agents-notification">agents/notification.py</a>
+  <a href="#agents-gmail">agents/gmail_agent.py</a>
+  <a href="#agents-meeting">agents/meeting.py</a>
+  <a href="#agents-evaluator">agents/evaluator.py</a>
+  <a href="#agents-pr-publisher">agents/pr_publisher.py</a>
+  <a href="#agents-pr-reviewer">agents/pr_reviewer.py</a>
+  <a href="#agents-test-fixer">agents/test_fixer.py</a>
+
+  <div class="section-label">Planner</div>
+  <a href="#planner">planner/agent.py</a>
+
+  <div class="section-label">Services</div>
+  <a href="#svc-whatsapp">services/whatsapp.py</a>
+  <a href="#svc-gmail">services/gmail.py</a>
+  <a href="#svc-github">services/github.py</a>
+  <a href="#svc-azdo">services/azure_devops.py</a>
+  <a href="#svc-llm">services/llm.py</a>
+  <a href="#svc-gitops">services/git_ops.py</a>
+  <a href="#svc-cigate">services/ci_gate.py</a>
+  <a href="#svc-ciwatch">services/ci_watch.py</a>
+  <a href="#svc-calendar">services/calendar.py</a>
+  <a href="#svc-codeguards">services/code_guards.py</a>
+
+  <div class="section-label">Core</div>
+  <a href="#core-security">core/security.py</a>
+  <a href="#core-session">core/session.py</a>
+  <a href="#core-background">core/background.py</a>
+  <a href="#core-oauth">core/oauth.py</a>
+  <a href="#core-gatestore">core/gate_store.py</a>
+
+  <div class="section-label">Workflow</div>
+  <a href="#wf-gates">workflow/gates.py</a>
+  <a href="#wf-resume">workflow/resume_context.py</a>
+
+  <div class="section-label">Plugin System</div>
+  <a href="#registry">registry.py</a>
+  <a href="#discovery">discovery.py</a>
+
+  <div class="section-label">LLM Prompt</div>
+  <a href="#llm-prompt">Codebase Context Prompt</a>
+</nav>
+
+<main>
+
+<h1>WhatsApp AI Agent</h1>
+<p class="subtitle">Complete codebase reference, deployment guide, and LLM context prompt</p>
+
+<!-- ============ DEPLOYMENT ============ -->
+<section id="deployment">
+<h2>Deployment Process</h2>
+
+<p>Your project deploys to <strong>Azure App Service</strong> via <strong>Azure DevOps Pipelines</strong> (not GitHub Actions). The git remote points to Azure DevOps:</p>
+<pre>origin  https://Az-FullStack@dev.azure.com/Az-FullStack/Project-NIT/_git/web.Whatsapp-AI-Agent</pre>
+
+<h3>How Deployment Works (Step by Step)</h3>
+
+<div class="step"><span class="step-num">1</span><p><strong>Push code to Azure DevOps</strong> &mdash; <code>git push origin main</code> to the <code>web.Whatsapp-AI-Agent</code> repo</p></div>
+<div class="step"><span class="step-num">2</span><p><strong>Pipeline triggers automatically</strong> &mdash; <code>azure-pipelines.yml</code> is configured to trigger on pushes to the <code>main</code> branch only</p></div>
+<div class="step"><span class="step-num">3</span><p><strong>Build &amp; Test stage</strong> &mdash; Installs Python 3.12, runs BaseSettings import guard, route mount guard, and all 89 pytest tests</p></div>
+<div class="step"><span class="step-num">4</span><p><strong>Stage source package</strong> &mdash; rsync source files (excluding .git, .venv, .env, agent.db, workspaces, __pycache__) into a zip artifact</p></div>
+<div class="step"><span class="step-num">5</span><p><strong>Deploy stage</strong> &mdash; Only runs when source branch is <code>refs/heads/main</code> AND build reason is not PullRequest</p></div>
+<div class="step"><span class="step-num">6</span><p><strong>Oryx remote build</strong> &mdash; Uploads zip to Kudu async zipdeploy. App Service builds the Python virtualenv (<code>antenv</code>) on the server itself, avoiding GLIBC mismatch</p></div>
+<div class="step"><span class="step-num">7</span><p><strong>Health check verification</strong> &mdash; Polls <code>/health</code> endpoint up to 80 times (15s apart = 20 minutes) until HTTP 200</p></div>
+
+<div class="alert alert-blue">
+<strong>Key detail:</strong> The pipeline uses the Azure service connection named <code>"AI Copilot"</code>. If this service connection doesn't exist in your Azure DevOps project, the pipeline will fail at the Deploy stage.
+</div>
+</section>
+
+<!-- ============ WHY PIPELINE DIDN'T RUN ============ -->
+<section id="deployment-troubleshoot">
+<h2>Why Your Pipeline Didn't Run</h2>
+
+<p>There are several possible reasons:</p>
+
+<div class="card">
+<h4>1. No pipeline created in Azure DevOps</h4>
+<p>Having <code>azure-pipelines.yml</code> in the repo is <strong>not enough</strong>. You must also create a pipeline in Azure DevOps that references it:</p>
+<p><strong>Azure DevOps</strong> &rarr; Project <code>Project-NIT</code> &rarr; <strong>Pipelines</strong> &rarr; <strong>New Pipeline</strong> &rarr; <strong>Azure Repos Git</strong> &rarr; select <code>web.Whatsapp-AI-Agent</code> &rarr; <strong>Existing Azure Pipelines YAML file</strong> &rarr; select <code>/azure-pipelines.yml</code></p>
+</div>
+
+<div class="card">
+<h4>2. Pushed to wrong branch</h4>
+<p>The pipeline only triggers on the <code>main</code> branch. If you pushed to a feature branch (e.g., <code>agent/xxx</code>), only PR validation runs (tests only, no deploy). The Deploy stage condition is:</p>
+<pre>condition: and(
+  succeeded('Build'),
+  eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+  ne(variables['Build.Reason'], 'PullRequest')
+)</pre>
+</div>
+
+<div class="card">
+<h4>3. Pushed to GitHub instead of Azure DevOps</h4>
+<p>There are <strong>no GitHub Actions workflows</strong> in this project (no <code>.github/workflows/</code> directory). Pushing to GitHub won't trigger any pipeline. Your deploy remote must be Azure DevOps.</p>
+</div>
+
+<div class="card">
+<h4>4. Service connection missing</h4>
+<p>The pipeline uses service connection <code>"AI Copilot"</code>. Go to <strong>Project Settings</strong> &rarr; <strong>Service connections</strong> and verify it exists and is authorized for the pipeline.</p>
+</div>
+
+<h3>Manual Deploy (Bypass Pipeline)</h3>
+<pre>
+# Create zip
+zip -r deploy.zip . \
+  -x ".env" "*.db*" ".venv/*" "__pycache__/*" ".git/*" \
+     "tmp/*" "workspaces/*" "*.egg-info/*" "sample-apps/*"
+
+# Deploy directly to App Service
+az webapp deploy \
+  --name whatsapp-ai-agent-sunny \
+  --resource-group ai-agent-rg \
+  --type zip --src-path deploy.zip
+
+# Verify
+curl https://whatsapp-ai-agent-sunny.azurewebsites.net/health
+</pre>
+</section>
+
+<!-- ============ ARCHITECTURE ============ -->
+<section id="architecture">
+<h2>Architecture Overview</h2>
+
+<div class="flow-diagram">WhatsApp Message
+    │
+    ▼
+FastAPI POST /webhooks/whatsapp
+    │
+    ├── HMAC-SHA256 signature verification
+    ├── Phone allowlist check
+    ├── Gate routing (APPROVE/REJECT/PROCEED/AI REVIEW/FIX TESTS...)
+    │
+    ▼
+BackgroundTasks → handle_whatsapp_message()
+    │
+    ├── Fast-path: greeting/help → direct WhatsApp reply (skip graph)
+    │
+    ▼
+LangGraph StateGraph (38 nodes, 7+ conditional edges)
+    │
+    ├── planner → intent classification (regex fast-path → LLM fallback)
+    │
+    ├── LEAF AGENTS (plugin registry):
+    │   ├── email_agent      → Gmail read
+    │   ├── send_email_agent → Gmail compose+send
+    │   ├── calendar_agent   → Google Calendar events
+    │   ├── repo_wizard      → multi-turn repo picker
+    │   ├── task_status_agent→ recent task list
+    │   └── general_agent    → LLM persona conversation
+    │
+    ├── CODING PIPELINE (static subgraph):
+    │   ├── coding_architect → implementation plan
+    │   ├── [plan approval gate] → WhatsApp PROCEED/REJECT
+    │   ├── coding_developer → LLM codegen + apply changes
+    │   ├── coding_reviewer  → LLM code review (max 3 loops)
+    │   ├── publish_pr       → commit + push + create PR
+    │   ├── [PR review mode] → AI review or manual
+    │   ├── pr_ai_reviewer   → detailed AI PR review
+    │   ├── [deploy approval gate] → WhatsApp APPROVE/REJECT
+    │   ├── coding_deployer  → merge PR + trigger CI
+    │   └── CI watch         → durable pipeline monitoring
+    │
+    ├── INFRASTRUCTURE:
+    │   ├── evaluator        → final step-by-step report
+    │   ├── notifier (×17)   → WhatsApp send at each stage
+    │   └── test_fixer       → auto-fix CI failures
+    │
+    ▼
+SQLite (AsyncSqliteSaver) — checkpointing + sessions + tasks</div>
+
+<h3>Two-Layer Agent Architecture</h3>
+<div class="cols">
+<div class="card">
+<h4>Specialists (Graph Layer)</h4>
+<p>Thin wrappers in <code>specialists/*.py</code>. They implement the <code>Specialist</code> Protocol, call the agent function, and <code>tag()</code> the result with <code>handled_by</code>. They are LangGraph nodes.</p>
+</div>
+<div class="card">
+<h4>Agents (Business Logic)</h4>
+<p>Pure async functions in <code>agents/*.py</code>. They take <code>AgentState</code> and return <code>AgentState</code>. No graph awareness — testable independently. They call services directly.</p>
+</div>
+</div>
+
+<h3>Plugin Agent Registry (New)</h3>
+<p>Leaf agents self-register via <code>@register_agent</code> decorator. Adding a new agent = one file with the decorator. The graph and planner discover agents automatically at startup via <code>discover_agents()</code>.</p>
+</section>
+
+<!-- ============ API LAYER ============ -->
+<section id="api-whatsapp">
+<h2>api/whatsapp.py <span class="badge badge-red">714 lines</span></h2>
+<p>The main WhatsApp webhook handler — the most complex file in the API layer. Handles signature verification, gate routing for all workflow states, and message dispatch.</p>
+
+<h4>Regex Patterns (Gate Routing)</h4>
+<table class="fn-table">
+<tr><th>Pattern</th><th>Matches</th><th>Purpose</th></tr>
+<tr><td>PROCEED_PATTERN</td><td>"PROCEED abc123", "Proceed"</td><td>Plan approval gate</td></tr>
+<tr><td>PR_AI_PATTERN</td><td>"1", "AI review", "AI REVIEW"</td><td>PR review mode: AI</td></tr>
+<tr><td>PR_MANUAL_PATTERN</td><td>"2", "manual review"</td><td>PR review mode: manual</td></tr>
+<tr><td>PR_READY_PATTERN</td><td>"PR READY abc123"</td><td>Manual PR review done</td></tr>
+<tr><td>APPROVE_PATTERN</td><td>"APPROVE abc123", "Approve"</td><td>Deploy approval</td></tr>
+<tr><td>REJECT_PATTERN</td><td>"REJECT abc123", "Reject"</td><td>Deploy rejection</td></tr>
+<tr><td>FIX_TESTS_PATTERN</td><td>"FIX TESTS abc123"</td><td>CI test fixer trigger</td></tr>
+<tr><td>SKIP_CI_FIX_PATTERN</td><td>"SKIP FIX", "NO FIX"</td><td>Skip CI test fix</td></tr>
+</table>
+
+<h4>Key Functions</h4>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>verify_webhook()</td><td>GET endpoint — WhatsApp webhook verification handshake</td></tr>
+<tr><td>receive_message()</td><td>POST endpoint — Main message handler: verify signature → gate logic → dispatch to graph</td></tr>
+<tr><td>_resolve_task_id()</td><td>Resolves task ID from explicit match or session data</td></tr>
+<tr><td>_pending_deploy_context()</td><td>Loads provider-isolated repo context for CI gate checking</td></tr>
+<tr><td>_run_ci_test_fixer()</td><td>Runs test_fixer agent after user approves FIX TESTS</td></tr>
+<tr><td>_heal_pr_mode_and_resume()</td><td>Fixes stale plan_approval when PR already exists (recovery)</td></tr>
+<tr><td>_resume_gate()</td><td>Resumes LangGraph at a specific gate (plan/PR mode/manual PR)</td></tr>
+<tr><td>_resume_with_approval()</td><td>Resumes with APPROVE/REJECT including CI gate check and deploy lock</td></tr>
+</table>
+
+<h4>Message Processing Flow</h4>
+<div class="flow-diagram">POST /webhooks/whatsapp
+│
+├─ verify_whatsapp_signature(body, header) → 403 if invalid
+├─ parse_incoming_message(payload) → (phone, text, msg_id)
+├─ is_phone_allowed(phone) → skip if not allowed
+│
+├─ Check for status-only update → return early
+├─ Check for CANCEL/RESTART patterns → clear session
+├─ Check for RESUME STATUS → send gate/wizard hint
+│
+├─ Load session → check awaiting state:
+│   ├─ plan_approval → PROCEED/REJECT matching
+│   ├─ pr_review_mode → AI(1) / MANUAL(2) matching
+│   ├─ manual_pr_review → PR READY matching
+│   ├─ approval (deploy) → APPROVE/REJECT with CI gate
+│   ├─ ci_fix → FIX TESTS / SKIP FIX matching
+│   ├─ pipeline_watching → "still watching" reply
+│   ├─ wizard step → pass through to graph
+│   └─ none → new message
+│
+└─ BackgroundTasks.add_task(handle_whatsapp_message)</div>
+</section>
+
+<section id="api-gmail">
+<h3>api/gmail.py <span class="badge badge-green">32 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>gmail_push()</td><td>POST endpoint — Receives Gmail Pub/Sub push, decodes base64 history ID, dispatches to background</td></tr>
+</table>
+</section>
+
+<section id="api-health">
+<h3>api/health.py <span class="badge badge-green">21 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>health_check()</td><td>GET /health — Returns status + version. Optional <code>?deep=true</code> validates WhatsApp token</td></tr>
+</table>
+</section>
+
+<section id="api-tasks">
+<h3>api/tasks.py <span class="badge badge-green">30 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>list_tasks()</td><td>GET /tasks — Lists all tasks from DB</td></tr>
+<tr><td>get_task()</td><td>GET /tasks/{id} — Gets single task by ID</td></tr>
+</table>
+</section>
+
+<section id="api-portal">
+<h3>api/portal.py <span class="badge badge-green">25 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>root()</td><td>GET / — Redirects to /portal</td></tr>
+<tr><td>portal_page()</td><td>GET /portal — Serves portal.html from src/agent/web/</td></tr>
+</table>
+</section>
+
+<!-- ============ AGENTS ============ -->
+<section id="agents-graph">
+<h2>agents/graph.py <span class="badge badge-red">764 lines</span></h2>
+<p>The orchestration core. Defines the LangGraph StateGraph with 38 nodes, all conditional edges, and the graph execution/resume functions.</p>
+
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>build_graph()</td><td>Constructs the full StateGraph: plugin agent nodes from registry + static coding pipeline + infrastructure nodes + all conditional edges</td></tr>
+<tr><td>_get_compiled()</td><td>Lazy-initializes compiled graph with SQLite checkpointer</td></tr>
+<tr><td>run_graph()</td><td>Executes graph for a new task (streams events)</td></tr>
+<tr><td>resume_graph()</td><td>Resumes a paused graph at a gate (plan/PR mode/deploy) with hydrated state from session + gate store</td></tr>
+<tr><td>run_gmail_flow()</td><td>Executes graph for a Gmail push notification trigger</td></tr>
+<tr><td>_route_after_plan()</td><td>Routes planner output: coding intents (hardcoded) → registry intents (dynamic)</td></tr>
+<tr><td>_route_after_review()</td><td>Routes after code review: approved → PR publish, changes_requested → re-develop (max 3), rejected → notify</td></tr>
+<tr><td>_route_after_approval()</td><td>Routes after human approval: approved → deployer, rejected → notify</td></tr>
+<tr><td>_format_change_preview()</td><td>Formats file changes as WhatsApp-friendly code preview (truncated)</td></tr>
+<tr><td>_request_plan_approval()</td><td>Persists plan gate state and pauses graph for human input</td></tr>
+<tr><td>_request_approval()</td><td>Persists deploy gate state and pauses graph for APPROVE/REJECT</td></tr>
+</table>
+</section>
+
+<section id="agents-state">
+<h3>agents/state.py <span class="badge badge-green">85 lines</span></h3>
+<p>The <code>AgentState</code> TypedDict — every field that flows through the LangGraph.</p>
+<table class="fn-table">
+<tr><th>Field Group</th><th>Fields</th></tr>
+<tr><td>Core</td><td>task_id, status, source, intent, user_message</td></tr>
+<tr><td>Email</td><td>email_to, email_subject, email_body, email_sender</td></tr>
+<tr><td>Repo</td><td>repo_url, repo_owner, repo_name, branch_name, repo_provider, azdo_project, azdo_repo_id</td></tr>
+<tr><td>Session</td><td>session_awaiting, session_data</td></tr>
+<tr><td>Meeting</td><td>meeting_title, meeting_when, meeting_attendees, meeting_link</td></tr>
+<tr><td>Developer</td><td>file_changes, dev_reasoning, workspace_path</td></tr>
+<tr><td>Multi-gate</td><td>implementation_plan, plan_summary, plan_approved, pr_review_mode, pr_number, pr_id, pr_review_score</td></tr>
+<tr><td>Review</td><td>review_result, review_comments, review_iteration</td></tr>
+<tr><td>Approval</td><td>approval_status, approval_message</td></tr>
+<tr><td>Deploy</td><td>commit_sha, pr_url, pipeline_url, pipeline_status</td></tr>
+<tr><td>CI Fixer</td><td>ci_build_id, ci_failure_summary, ci_watch_phase</td></tr>
+<tr><td>Communication</td><td>whatsapp_phone, notification_text, messages, error</td></tr>
+</table>
+</section>
+
+<section id="agents-developer">
+<h3>agents/developer.py <span class="badge badge-amber">189 lines</span></h3>
+<p>The code generation engine. Clones a repo, reads context, invokes LLM with codegen prompt, parses JSON file changes, applies them via code_guards safety checks.</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>develop_code(state)</td><td>Full pipeline: clone → read tree → build prompt → LLM codegen → parse changes → sanitize via code_guards → apply to disk</td></tr>
+<tr><td>_read_relevant_files()</td><td>Reads up to 10 source files (5KB each) alphabetically for LLM context. <em>To be replaced by RAG in Phase 4</em></td></tr>
+<tr><td>_parse_changes()</td><td>Extracts JSON array of {path, action, content} from LLM response</td></tr>
+</table>
+</section>
+
+<section id="agents-reviewer">
+<h3>agents/reviewer.py <span class="badge badge-amber">161 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>review_code(state)</td><td>LLM code review: builds prompt with file changes + task description → parses JSON verdict {result, score, issues}</td></tr>
+<tr><td>_soften_false_incomplete_html()</td><td>Prevents false rejections when reviewer flags truncated HTML as "incomplete"</td></tr>
+<tr><td>_parse_review()</td><td>Parses JSON review verdict from LLM response</td></tr>
+</table>
+</section>
+
+<section id="agents-architect">
+<h3>agents/architect.py <span class="badge badge-amber">220 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>plan_implementation(state)</td><td>Generates structured implementation plan via LLM (with heuristic fallback when all deployments are down)</td></tr>
+<tr><td>_heuristic_plan()</td><td>Builds a structured plan without LLM — guesses target files from repo tree and user message</td></tr>
+<tr><td>_guess_target_files()</td><td>Keyword-based file matching from user message against repo tree</td></tr>
+</table>
+</section>
+
+<section id="agents-deployment">
+<h3>agents/deployment.py <span class="badge badge-red">631 lines</span></h3>
+<p>The deployment engine — handles both GitHub and Azure DevOps with full CI integration.</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>deploy_code(state)</td><td>Main entry: checks CI busy → detects provider → delegates to _deploy_github or _deploy_azdo</td></tr>
+<tr><td>_deploy_github()</td><td>GitHub: push → create PR → merge (squash) → trigger workflow → wait for Actions → optional Kudu fallback</td></tr>
+<tr><td>_deploy_azdo()</td><td>AzDO: push → create PR → merge → start durable CI watch for pipeline completion</td></tr>
+<tr><td>_merge_github_pr()</td><td>Squash-merges a GitHub PR</td></tr>
+<tr><td>_kudu_sample_fallback()</td><td>Falls back to Kudu zip deploy if GitHub Actions didn't complete</td></tr>
+</table>
+</section>
+
+<section id="agents-notification">
+<h3>agents/notification.py <span class="badge badge-green">116 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>notify(state)</td><td>Sends WhatsApp message using status-based templates. 17 notifier nodes in the graph all call this same function.</td></tr>
+</table>
+</section>
+
+<section id="agents-gmail">
+<h3>agents/gmail_agent.py <span class="badge badge-amber">243 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>read_gmail(state)</td><td>Fetches recent emails → LLM classifies actionable items → builds digest → optionally chains to developer for code PRs</td></tr>
+<tr><td>compose_and_send_email(state)</td><td>LLM composes email from user instructions → sends via Gmail API</td></tr>
+<tr><td>_build_digest()</td><td>LLM-powered email digest for WhatsApp</td></tr>
+<tr><td>_classify_email()</td><td>LLM classifies single email for repo/actionability</td></tr>
+</table>
+</section>
+
+<section id="agents-meeting">
+<h3>agents/meeting.py <span class="badge badge-amber">191 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>schedule_meeting(state)</td><td>Multi-turn flow: collects title → when → attendees via WhatsApp → creates Google Calendar event with Meet link → falls back to Gmail invite</td></tr>
+</table>
+</section>
+
+<section id="agents-evaluator">
+<h3>agents/evaluator.py <span class="badge badge-green">81 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>evaluate_result(state)</td><td>Generates step-by-step final evaluation report (what happened, what was committed, PR URL, etc.)</td></tr>
+<tr><td>task_status(state)</td><td>Lists recent task summaries from DB</td></tr>
+</table>
+</section>
+
+<section id="agents-pr-publisher">
+<h3>agents/pr_publisher.py <span class="badge badge-amber">198 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>publish_pull_request(state)</td><td>Commits changes, pushes feature branch, creates PR (does NOT merge). For AzDO, starts CI watch on the PR validation pipeline.</td></tr>
+</table>
+</section>
+
+<section id="agents-pr-reviewer">
+<h3>agents/pr_reviewer.py <span class="badge badge-green">120 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>review_pull_request(state)</td><td>Post-PR AI review: reads file changes from state → LLM review with review-role deployment → formats detailed WhatsApp feedback with score</td></tr>
+</table>
+</section>
+
+<section id="agents-test-fixer">
+<h3>agents/test_fixer.py <span class="badge badge-amber">344 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>fix_ci_test_failures(state)</td><td>Reads CI failure logs → reads related test/source files → LLM generates fixes → pushes to branch → opens/updates PR → restarts CI watch</td></tr>
+<tr><td>_read_failure_related_files()</td><td>Extracts file paths from CI failure logs and reads their content</td></tr>
+<tr><td>_ensure_fix_pr()</td><td>Opens or reuses a PR for CI fix changes</td></tr>
+</table>
+</section>
+
+<!-- ============ PLANNER ============ -->
+<section id="planner">
+<h2>planner/agent.py <span class="badge badge-amber">263 lines</span></h2>
+<p>Intent classification engine. First checks multi-turn session state, then tries regex fast-paths, then falls back to LLM classification.</p>
+
+<h4>Classification Priority</h4>
+<div class="flow-diagram">1. Session-aware routing (awaiting state from previous turn)
+   ├── approval → remind about APPROVE/REJECT
+   ├── plan_approval / pr_review_mode / manual_pr → gate hint
+   ├── meeting_* → continue calendar flow
+   └── repo_* / code_instruction → continue wizard
+
+2. Regex fast-paths (no LLM call)
+   ├── Greetings (hi/hello/hey...) → GREETING_REPLY
+   ├── Help (help/menu/?) → HELP_MENU
+   ├── Numeric shortcuts (1=email, 2=meeting, 3=repos, 5=status)
+   └── Registry patterns (from @register_agent intent_patterns)
+
+3. LLM classification (fallback)
+   └── router_classify.txt prompt → JSON {intent, task_id, repo_url, ...}</div>
+
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>plan(state)</td><td>Main planner: session check → greeting/help → numeric shortcuts → registry fast-paths → LLM classify → extract slots</td></tr>
+<tr><td>is_simple_greeting(msg)</td><td>Regex check for simple greetings (used by background.py to skip graph entirely)</td></tr>
+<tr><td>_get_system_prompt()</td><td>Builds router system prompt with dynamically registered intents from plugin registry</td></tr>
+</table>
+</section>
+
+<!-- ============ SERVICES ============ -->
+<section id="svc-whatsapp">
+<h2>services/whatsapp.py <span class="badge badge-green">114 lines</span></h2>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>send_message(phone, text)</td><td>Sends WhatsApp text via Meta Graph API v21. Raises WhatsAppAuthError on 401.</td></tr>
+<tr><td>check_access_token()</td><td>Validates token without sending a message — used at startup health check</td></tr>
+<tr><td>parse_incoming_message(payload)</td><td>Parses webhook payload → returns (phone, text, message_id) or (None, None, None)</td></tr>
+</table>
+</section>
+
+<section id="svc-gmail">
+<h3>services/gmail.py <span class="badge badge-green">121 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>list_recent_messages()</td><td>Lists recent Gmail messages (label INBOX)</td></tr>
+<tr><td>get_message(msg_id)</td><td>Gets single message with parsed body (plain + HTML)</td></tr>
+<tr><td>send_email(to, subject, body)</td><td>Sends MIME multipart email (text + HTML) with display name via formataddr()</td></tr>
+<tr><td>setup_watch()</td><td>Registers Gmail Pub/Sub push notification watch</td></tr>
+</table>
+</section>
+
+<section id="svc-github">
+<h3>services/github.py <span class="badge badge-amber">162 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>create_pull_request()</td><td>Creates GitHub PR</td></tr>
+<tr><td>merge_pull_request()</td><td>Squash-merges a GitHub PR</td></tr>
+<tr><td>trigger_workflow()</td><td>Triggers GitHub Actions workflow_dispatch</td></tr>
+<tr><td>list_repos()</td><td>Lists repos for authenticated user or default owner</td></tr>
+<tr><td>list_active_workflow_runs()</td><td>Returns queued/in-progress GitHub Actions runs</td></tr>
+<tr><td>parse_repo_url()</td><td>Extracts owner/repo from GitHub URL</td></tr>
+</table>
+</section>
+
+<section id="svc-azdo">
+<h3>services/azure_devops.py <span class="badge badge-red">479 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>list_projects() / list_repositories()</td><td>Lists AzDO projects and repos</td></tr>
+<tr><td>create_pull_request()</td><td>Creates AzDO PR</td></tr>
+<tr><td>merge_pull_request()</td><td>Completes (merges) an AzDO PR</td></tr>
+<tr><td>find_pipeline_for_repo()</td><td>Resolves the correct pipeline for a repo (never returns wrong pipeline — isolation guard)</td></tr>
+<tr><td>trigger_pipeline()</td><td>Triggers pipeline run with cross-repo safety guard</td></tr>
+<tr><td>get_build_failure_summary()</td><td>Extracts failed-step logs for test_fixer agent</td></tr>
+<tr><td>download_repo_zip()</td><td>Downloads branch as zip (no git binary required)</td></tr>
+<tr><td>push_commit()</td><td>Creates/updates branch via pushes API (HTTP-based git)</td></tr>
+</table>
+</section>
+
+<section id="svc-llm">
+<h3>services/llm.py <span class="badge badge-amber">163 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>deployment_chain(role)</td><td>Returns ordered list of Azure OpenAI deployments for a role (primary + fallbacks)</td></tr>
+<tr><td>get_llm(deployment)</td><td>Returns AzureChatOpenAI client for a specific deployment name</td></tr>
+<tr><td>invoke_llm(messages, role)</td><td>Invokes LLM with per-deployment retries and automatic fallback across the deployment chain</td></tr>
+<tr><td>is_rate_limit_error()</td><td>Detects 429 rate limit errors</td></tr>
+<tr><td>user_facing_llm_error()</td><td>User-safe error message hiding raw API details</td></tr>
+</table>
+</section>
+
+<section id="svc-gitops">
+<h3>services/git_ops.py <span class="badge badge-red">591 lines</span></h3>
+<p>Handles all git operations with fallbacks for environments without a git binary (Azure App Service).</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>clone_repo()</td><td>Clones repo: tries system git → GitHub zipball → AzDO zip API</td></tr>
+<tr><td>apply_changes()</td><td>Applies file changes [{path, action, content}] to disk</td></tr>
+<tr><td>commit_and_push()</td><td>Commits and pushes: system git or HTTP API (GitHub Git Data API / AzDO Pushes API)</td></tr>
+<tr><td>get_repo_tree()</td><td>Returns directory tree listing (max 200 lines)</td></tr>
+<tr><td>cleanup_workspace()</td><td>Removes workspace directory</td></tr>
+</table>
+</section>
+
+<section id="svc-cigate">
+<h3>services/ci_gate.py <span class="badge badge-amber">309 lines</span></h3>
+<p>Provider-isolated CI busy checks and deploy locks — prevents concurrent deploys and blocks APPROVE while CI is running.</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>try_acquire_deploy() / release_deploy()</td><td>In-process deploy lock (per provider+repo)</td></tr>
+<tr><td>check_ci_busy_for_context()</td><td>Provider-isolated CI busy check (GitHub Actions or AzDO Pipelines)</td></tr>
+<tr><td>check_deploy_blocked()</td><td>Checks both deploy lock AND CI busy status</td></tr>
+</table>
+</section>
+
+<section id="svc-ciwatch">
+<h3>services/ci_watch.py <span class="badge badge-red">696 lines</span></h3>
+<p>Durable CI pipeline monitoring. Persists watch records to DB, polls Azure DevOps builds, sends WhatsApp notifications on completion, offers test fixer on failure.</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>save_ci_watch()</td><td>Persists CI watch record to DB</td></tr>
+<tr><td>watch_azdo_pipeline_and_notify()</td><td>Background poller: polls build status → sends WhatsApp on completion → offers test fixer on failure</td></tr>
+<tr><td>tick_open_ci_watches()</td><td>Safety net: restarts watchers for any open DB rows (runs every 45s)</td></tr>
+<tr><td>resume_pending_ci_watches()</td><td>Resumes watches on app startup after App Service restart</td></tr>
+</table>
+</section>
+
+<section id="svc-calendar">
+<h3>services/calendar.py <span class="badge badge-green">135 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>create_event()</td><td>Creates Google Calendar event with Google Meet link</td></tr>
+<tr><td>parse_when_heuristic()</td><td>Light NLP time parser for "tomorrow 3pm" style phrases</td></tr>
+<tr><td>send_calendar_invite_email()</td><td>Fallback: sends meeting invite via Gmail when Calendar API fails</td></tr>
+</table>
+</section>
+
+<section id="svc-codeguards">
+<h3>services/code_guards.py <span class="badge badge-amber">211 lines</span></h3>
+<p>Safety layer that sanitizes LLM-generated file changes before applying them to disk. Prevents the AI from accidentally breaking config, removing routers, or writing to wrong paths.</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>sanitize_file_changes()</td><td>Main guard: fixes BaseSettings imports, remaps wrong portal paths, rejects unsafe config/portal/main.py rewrites</td></tr>
+<tr><td>fix_basesettings_import()</td><td>Rewrites pydantic v1 BaseSettings → pydantic-settings v2</td></tr>
+<tr><td>config_change_is_safe()</td><td>Validates config.py edits preserve required settings fields</td></tr>
+<tr><td>main_change_is_safe()</td><td>Validates main.py edits preserve all FastAPI router includes</td></tr>
+</table>
+</section>
+
+<!-- ============ CORE ============ -->
+<section id="core-security">
+<h2>core/security.py <span class="badge badge-green">21 lines</span></h2>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>verify_whatsapp_signature(body, sig)</td><td>HMAC-SHA256 verification of WhatsApp webhook payloads using WHATSAPP_APP_SECRET</td></tr>
+<tr><td>is_phone_allowed(phone)</td><td>Checks phone number against ALLOWED_PHONE_NUMBERS list</td></tr>
+</table>
+</section>
+
+<section id="core-session">
+<h3>core/session.py <span class="badge badge-amber">213 lines</span></h3>
+<p>Multi-turn conversation state persistence. Merges SQLite sessions with durable gate files to survive App Service restarts.</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>get_session(phone)</td><td>Reads session from DB + merges with durable gate store</td></tr>
+<tr><td>save_session(phone, awaiting, data)</td><td>Writes session to DB + durable gate store</td></tr>
+<tr><td>clear_session(phone)</td><td>Clears session from both DB and gate store</td></tr>
+</table>
+</section>
+
+<section id="core-background">
+<h3>core/background.py <span class="badge badge-green">106 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>handle_whatsapp_message()</td><td>Main handler: fast-path greetings/help → session gate blocks → run_graph()</td></tr>
+<tr><td>handle_gmail_notification()</td><td>Runs Gmail flow from push notification</td></tr>
+</table>
+</section>
+
+<section id="core-oauth">
+<h3>core/oauth.py <span class="badge badge-green">52 lines</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>get_gmail_credentials()</td><td>Gmail OAuth2 credentials (gmail.readonly + gmail.send scopes)</td></tr>
+<tr><td>get_calendar_credentials()</td><td>Calendar OAuth2 credentials (calendar.events scope, tries combined scopes on failure)</td></tr>
+</table>
+</section>
+
+<section id="core-gatestore">
+<h3>core/gate_store.py <span class="badge badge-green">126 lines</span></h3>
+<p>Durable gate file system on <code>/home/site/data/workflow_gates/</code>. Survives Oryx zip deploy (which replaces wwwroot each release) and App Service container restarts.</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>write_gate(phone, gate_type, data)</td><td>Atomically writes gate JSON file</td></tr>
+<tr><td>read_gate(phone)</td><td>Reads gate JSON file</td></tr>
+<tr><td>merge_session_with_gate()</td><td>Merges durable gate data into SQLite session, preferring later gates</td></tr>
+</table>
+</section>
+
+<!-- ============ WORKFLOW ============ -->
+<section id="wf-gates">
+<h2>workflow/gates.py <span class="badge badge-amber">213 lines</span></h2>
+<p>Defines all gate constants and persistence functions for the multi-gate workflow.</p>
+<table class="fn-table">
+<tr><th>Constant</th><th>Value</th><th>Purpose</th></tr>
+<tr><td>GATE_PLAN</td><td>plan_approval</td><td>Architect plan approval</td></tr>
+<tr><td>GATE_PR_MODE</td><td>pr_review_mode</td><td>AI vs manual review choice</td></tr>
+<tr><td>GATE_MANUAL_PR</td><td>manual_pr_review</td><td>Manual PR review complete</td></tr>
+<tr><td>GATE_DEPLOY</td><td>approval</td><td>Final deploy approval</td></tr>
+<tr><td>GATE_CI_FIX</td><td>ci_fix</td><td>CI test fixer approval</td></tr>
+<tr><td>GATE_PIPELINE_WATCH</td><td>pipeline_watching</td><td>CI pipeline monitoring</td></tr>
+</table>
+</section>
+
+<section id="wf-resume">
+<h3>workflow/resume_context.py <span class="badge badge-amber">328 lines</span></h3>
+<p>WhatsApp message formatting for gate hints, resume acknowledgments, session status, and error messages.</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>format_gate_hint()</td><td>Rich gate reminder with step-specific options (e.g., "Reply PROCEED or REJECT")</td></tr>
+<tr><td>format_session_status()</td><td>Current session status for "what's pending?" queries</td></tr>
+<tr><td>format_resume_ack()</td><td>Gate resume acknowledgment ("Resuming plan approval...")</td></tr>
+<tr><td>is_cancel_session_message()</td><td>Detects CANCEL/STOP/RESET patterns</td></tr>
+</table>
+</section>
+
+<!-- ============ PLUGIN SYSTEM ============ -->
+<section id="registry">
+<h2>registry.py <span class="badge badge-blue">NEW</span></h2>
+<p>Plugin agent registry. Agents self-register via <code>@register_agent</code> decorator at import time.</p>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>@register_agent(name, intents, description, patterns)</td><td>Decorator that registers an agent handler in the global registry</td></tr>
+<tr><td>get_registry()</td><td>Returns all registered agents as {name: AgentRegistration}</td></tr>
+<tr><td>get_intent_map()</td><td>Returns {intent: node_name} mapping for graph routing</td></tr>
+<tr><td>match_fast_path(message)</td><td>Tries all registered regex patterns, returns matching intent or None</td></tr>
+<tr><td>build_intent_description_list()</td><td>Generates intent list for the LLM router prompt</td></tr>
+</table>
+</section>
+
+<section id="discovery">
+<h3>discovery.py <span class="badge badge-blue">NEW</span></h3>
+<table class="fn-table">
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>discover_agents(package_path)</td><td>Auto-imports all modules in specialists/ package to trigger @register_agent decorators. Called once at startup in main.py lifespan.</td></tr>
+</table>
+</section>
+
+<!-- ============ LLM PROMPT ============ -->
+<section id="llm-prompt">
+<h2>LLM Codebase Context Prompt</h2>
+<p>Copy the prompt below and paste it into any LLM (GPT-4, Claude, Gemini) to give it complete understanding of this codebase. It covers architecture, business logic, all agents, services, and key patterns.</p>
+
+<div class="prompt-box">You are analyzing the "WhatsApp AI Agent" codebase — a multi-agent LLM-powered automation platform where a user interacts via WhatsApp to orchestrate automated workflows including email management, calendar scheduling, code development, review, and deployment.
+
+## Architecture
+
+- **Runtime**: Python 3.12 + FastAPI + Uvicorn
+- **AI Orchestration**: LangGraph StateGraph (38 nodes, 7+ conditional edges, AsyncSqliteSaver checkpointing)
+- **LLM**: Azure OpenAI (GPT-4o-mini for routing, GPT-4.1 for codegen/review) via langchain-openai
+- **Messaging**: WhatsApp Cloud API (Meta Graph API v21)
+- **Email**: Gmail API (OAuth2 — gmail.readonly + gmail.send scopes)
+- **Calendar**: Google Calendar API (calendar.events scope, Google Meet links)
+- **Source Control**: GitHub REST API + Azure DevOps REST API v7.1
+- **Git**: GitPython with HTTP API fallback (GitHub Git Data API / AzDO Pushes API) for environments without git binary
+- **Database**: SQLite + aiosqlite + SQLAlchemy 2.0 (async), persisted at /home/site/data/agent.db on Azure
+- **Hosting**: Azure App Service (B1 Linux), Oryx remote build, Azure DevOps CI/CD
+
+## Two-Layer Agent Architecture
+
+1. **Specialists** (src/agent/specialists/*.py): Thin LangGraph node wrappers implementing the Specialist Protocol. They call the agent function and tag() the result with handled_by.
+2. **Agents** (src/agent/agents/*.py): Pure async functions (AgentState) → AgentState. No graph awareness — testable independently. They call services directly.
+
+## Plugin Agent Registry
+
+Leaf agents self-register via @register_agent decorator in specialists/*.py. The graph and planner discover agents automatically at startup via discover_agents().
+- 6 registered leaf agents: email_agent, send_email_agent, calendar_agent, repo_wizard, task_status_agent, general_agent
+- The coding pipeline (architect → plan approval → developer → reviewer → PR → deploy) remains a static subgraph
+
+## Core Flow: WhatsApp Message → Response
+
+1. POST /webhooks/whatsapp → HMAC-SHA256 verify → phone allowlist → gate routing
+2. FastAPI BackgroundTasks dispatches to handle_whatsapp_message()
+3. Fast-path: greetings/help → direct WhatsApp reply (skip graph entirely)
+4. LangGraph StateGraph executes: planner → [specialist agent] → notifier → evaluator
+5. For coding tasks: planner → architect (plan) → [plan approval gate] → developer (codegen) → reviewer (max 3 loops) → PR publish → [PR review mode gate] → [deploy approval gate] → deployer (merge + CI) → CI watch
+
+## Multi-Gate Workflow (Human-in-the-Loop)
+
+The graph pauses at gates where the user must respond via WhatsApp:
+- GATE_PLAN: "PROCEED {task_id}" or "REJECT {task_id}" after architect generates implementation plan
+- GATE_PR_MODE: "1" (AI review) or "2" (manual review) after PR is created
+- GATE_MANUAL_PR: "PR READY {task_id}" after manual PR review
+- GATE_DEPLOY: "APPROVE {task_id}" or "REJECT {task_id}" before merging and deploying
+- GATE_CI_FIX: "FIX TESTS {task_id}" or "SKIP FIX" when CI fails
+
+Gate state is persisted in both SQLite (ConversationSession) and durable gate files (/home/site/data/workflow_gates/) to survive Azure App Service container restarts.
+
+## Key Services
+
+- **services/llm.py**: Multi-deployment LLM with role-based routing (deployment_chain), per-deployment retries, automatic fallback across deployments on rate limits
+- **services/git_ops.py**: Git operations with 3-tier fallback: system git → GitHub zipball/AzDO zip → HTTP API push (blob+tree+commit)
+- **services/ci_gate.py**: Provider-isolated CI busy checks and in-process deploy locks — prevents concurrent deploys
+- **services/ci_watch.py**: Durable CI pipeline monitoring with DB persistence, background polling, WhatsApp notifications on completion, automatic test fixer offers on failure
+- **services/code_guards.py**: Safety layer that sanitizes LLM-generated file changes — prevents breaking config.py, removing FastAPI routers, writing to wrong paths
+
+## AgentState TypedDict
+
+The full state dictionary flowing through the LangGraph with fields for: task_id, status, source, intent, user_message, email context, repo context, session/multi-turn state, meeting details, developer output (file_changes, workspace_path), multi-gate workflow (implementation_plan, pr_review_mode, pr_number), review output (review_result, review_iteration), human approval, deployment output (commit_sha, pr_url, pipeline_status), CI test-fixer, evaluation, and communication (whatsapp_phone, notification_text, messages, error).
+
+## Project Structure
+
+src/agent/
+├── main.py              # FastAPI app, lifespan (discover_agents → init_db → deferred startup)
+├── config.py            # Pydantic Settings from .env (Azure OpenAI, WhatsApp, Gmail, GitHub, AzDO)
+├── registry.py          # @register_agent decorator + plugin registry
+├── discovery.py         # Auto-discovery via pkgutil.walk_packages
+├── api/                 # FastAPI routers (whatsapp, gmail, health, tasks, portal)
+├── agents/              # Business logic (graph, developer, reviewer, architect, deployment, notification, evaluator, gmail_agent, meeting, pr_publisher, pr_reviewer, test_fixer)
+├── planner/             # Intent classification (regex fast-path → LLM fallback)
+├── specialists/         # Thin graph-wired wrappers with @register_agent decorators
+├── services/            # External API clients (whatsapp, gmail, github, azure_devops, llm, git_ops, ci_gate, ci_watch, calendar, code_guards, deploy_notify)
+├── core/                # Infrastructure (security, session, background, oauth, gate_store, persona, logging)
+├── workflow/            # Gate constants, session persistence, resume formatting
+├── models/              # SQLAlchemy ORM (Task, ConversationSession, PendingCiWatch)
+├── prompts/             # LLM prompt templates (.txt files)
+└── web/                 # Portal HTML
+
+## Key Design Patterns
+
+1. **State Spread**: Every agent returns {**state, "status": "new", "notification_text": "..."}
+2. **Fast-Path**: Simple greetings skip the entire LangGraph (direct WhatsApp reply)
+3. **Session-Aware Multi-Turn**: ConversationSession tracks awaiting state for wizards and gates
+4. **Provider Dispatch**: Routes to GitHub or Azure DevOps based on repo_url
+5. **Durable Gates**: Gate state persisted to both SQLite and filesystem to survive App Service restarts
+6. **Code Guards**: LLM output sanitized before disk write to prevent self-destructive changes
+7. **CI Watch**: Background poller monitors pipeline, offers test fixer on failure, sends WhatsApp on completion
+
+When answering questions about this codebase, use these file paths and function names as references. The codebase is at src/agent/ with tests at tests/.</div>
+
+</section>
+
+</main>
+
+<script>
+document.querySelectorAll('nav a').forEach(a => {
+  a.addEventListener('click', () => {
+    document.querySelector('nav').classList.remove('open');
+  });
+});
+
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      document.querySelectorAll('nav a').forEach(a => a.classList.remove('active'));
+      const id = e.target.id;
+      const link = document.querySelector(`nav a[href="#${id}"]`);
+      if (link) link.classList.add('active');
+    }
+  });
+}, { rootMargin: '-20% 0px -70% 0px' });
+
+document.querySelectorAll('section[id]').forEach(s => observer.observe(s));
+</script>

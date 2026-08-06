@@ -1,0 +1,1690 @@
+<title>WhatsApp AI Agent — Architecture & Developer Documentation</title>
+<style>
+  /* ── Fonts (inlined system stacks) ── */
+  :root {
+    --ff-display: 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+    --ff-body: 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    --ff-mono: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+
+    /* ── Palette: slate-blue tech document ── */
+    --c-bg: #f7f8fa;
+    --c-surface: #ffffff;
+    --c-surface-alt: #f0f2f5;
+    --c-border: #d8dce3;
+    --c-border-accent: #4a6cf7;
+    --c-text: #1a1d26;
+    --c-text-secondary: #5a6170;
+    --c-text-muted: #8b91a0;
+    --c-accent: #4a6cf7;
+    --c-accent-soft: #e8ecfe;
+    --c-accent-dark: #3451d1;
+    --c-green: #22a06b;
+    --c-green-soft: #e3fcef;
+    --c-amber: #cf8a09;
+    --c-amber-soft: #fff7e6;
+    --c-red: #de350b;
+    --c-red-soft: #ffebe6;
+    --c-code-bg: #f4f5f7;
+    --c-diagram-bg: #f8f9fc;
+    --c-toc-hover: #edf0fe;
+    --c-badge: #e9ecef;
+    --shadow-sm: 0 1px 3px rgba(26,29,38,.06);
+    --shadow-md: 0 4px 12px rgba(26,29,38,.08);
+    --radius: 8px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --c-bg: #0f1117;
+      --c-surface: #1a1d28;
+      --c-surface-alt: #22252f;
+      --c-border: #2e3241;
+      --c-border-accent: #6b8aff;
+      --c-text: #e4e6ed;
+      --c-text-secondary: #9ba1b0;
+      --c-text-muted: #6b7080;
+      --c-accent: #6b8aff;
+      --c-accent-soft: #1e2544;
+      --c-accent-dark: #8ea4ff;
+      --c-green: #36b37e;
+      --c-green-soft: #1a3329;
+      --c-amber: #f0b429;
+      --c-amber-soft: #332b1a;
+      --c-red: #ff5630;
+      --c-red-soft: #331a14;
+      --c-code-bg: #1e2130;
+      --c-diagram-bg: #151822;
+      --c-toc-hover: #252a3a;
+      --c-badge: #2e3241;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.25);
+      --shadow-md: 0 4px 12px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --c-bg: #0f1117;
+    --c-surface: #1a1d28;
+    --c-surface-alt: #22252f;
+    --c-border: #2e3241;
+    --c-border-accent: #6b8aff;
+    --c-text: #e4e6ed;
+    --c-text-secondary: #9ba1b0;
+    --c-text-muted: #6b7080;
+    --c-accent: #6b8aff;
+    --c-accent-soft: #1e2544;
+    --c-accent-dark: #8ea4ff;
+    --c-green: #36b37e;
+    --c-green-soft: #1a3329;
+    --c-amber: #f0b429;
+    --c-amber-soft: #332b1a;
+    --c-red: #ff5630;
+    --c-red-soft: #331a14;
+    --c-code-bg: #1e2130;
+    --c-diagram-bg: #151822;
+    --c-toc-hover: #252a3a;
+    --c-badge: #2e3241;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.25);
+    --shadow-md: 0 4px 12px rgba(0,0,0,.3);
+  }
+  :root[data-theme="light"] {
+    --c-bg: #f7f8fa;
+    --c-surface: #ffffff;
+    --c-surface-alt: #f0f2f5;
+    --c-border: #d8dce3;
+    --c-border-accent: #4a6cf7;
+    --c-text: #1a1d26;
+    --c-text-secondary: #5a6170;
+    --c-text-muted: #8b91a0;
+    --c-accent: #4a6cf7;
+    --c-accent-soft: #e8ecfe;
+    --c-accent-dark: #3451d1;
+    --c-green: #22a06b;
+    --c-green-soft: #e3fcef;
+    --c-amber: #cf8a09;
+    --c-amber-soft: #fff7e6;
+    --c-red: #de350b;
+    --c-red-soft: #ffebe6;
+    --c-code-bg: #f4f5f7;
+    --c-diagram-bg: #f8f9fc;
+    --c-toc-hover: #edf0fe;
+    --c-badge: #e9ecef;
+    --shadow-sm: 0 1px 3px rgba(26,29,38,.06);
+    --shadow-md: 0 4px 12px rgba(26,29,38,.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--ff-body);
+    background: var(--c-bg);
+    color: var(--c-text);
+    line-height: 1.65;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Layout ── */
+  .page-wrap {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: 100vh;
+  }
+  @media (max-width: 900px) {
+    .page-wrap { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+  }
+
+  /* ── Sidebar / TOC ── */
+  .sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    padding: 32px 20px 40px 24px;
+    border-right: 1px solid var(--c-border);
+    background: var(--c-surface);
+  }
+  .sidebar-title {
+    font-family: var(--ff-display);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--c-text-muted);
+    margin-bottom: 20px;
+  }
+  .toc { list-style: none; }
+  .toc li { margin-bottom: 2px; }
+  .toc a {
+    display: block;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13.5px;
+    color: var(--c-text-secondary);
+    text-decoration: none;
+    transition: background .15s, color .15s;
+  }
+  .toc a:hover, .toc a.active {
+    background: var(--c-toc-hover);
+    color: var(--c-accent);
+  }
+  .toc .indent { padding-left: 28px; font-size: 12.5px; }
+
+  /* ── Main content ── */
+  .main {
+    max-width: 920px;
+    padding: 48px 48px 80px;
+  }
+  @media (max-width: 900px) {
+    .main { padding: 28px 20px 60px; }
+  }
+
+  /* ── Hero ── */
+  .hero {
+    margin-bottom: 52px;
+    padding-bottom: 36px;
+    border-bottom: 1px solid var(--c-border);
+  }
+  .hero-badge {
+    display: inline-block;
+    padding: 4px 12px;
+    border-radius: 20px;
+    background: var(--c-accent-soft);
+    color: var(--c-accent);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .hero h1 {
+    font-family: var(--ff-display);
+    font-size: 32px;
+    font-weight: 700;
+    line-height: 1.2;
+    text-wrap: balance;
+    color: var(--c-text);
+    margin-bottom: 12px;
+  }
+  .hero-sub {
+    font-size: 16px;
+    color: var(--c-text-secondary);
+    max-width: 640px;
+    line-height: 1.6;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 20px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+  }
+  .hero-meta span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--c-text-muted);
+    font-weight: 500;
+  }
+  .hero-meta .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--c-green);
+  }
+
+  /* ── Sections ── */
+  .section {
+    margin-bottom: 56px;
+  }
+  .section h2 {
+    font-family: var(--ff-display);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--c-text);
+    margin-bottom: 20px;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--c-accent);
+    display: inline-block;
+  }
+  .section h3 {
+    font-family: var(--ff-display);
+    font-size: 17px;
+    font-weight: 650;
+    color: var(--c-text);
+    margin: 28px 0 12px;
+  }
+  .section h4 {
+    font-size: 14px;
+    font-weight: 650;
+    color: var(--c-text-secondary);
+    margin: 20px 0 8px;
+    letter-spacing: .02em;
+  }
+  .section p {
+    margin-bottom: 12px;
+    color: var(--c-text-secondary);
+  }
+  .section ul, .section ol {
+    margin: 0 0 16px 20px;
+    color: var(--c-text-secondary);
+  }
+  .section li { margin-bottom: 6px; }
+  .section li strong { color: var(--c-text); }
+
+  /* ── Cards / Boxes ── */
+  .card {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .card-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--c-text-muted);
+    margin-bottom: 8px;
+  }
+  .card h4 { margin-top: 0; }
+
+  /* ── Stat row ── */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 28px;
+  }
+  .stat {
+    background: var(--c-surface);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    text-align: center;
+  }
+  .stat-value {
+    font-family: var(--ff-display);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--c-accent);
+    font-variant-numeric: tabular-nums;
+  }
+  .stat-label {
+    font-size: 11.5px;
+    color: var(--c-text-muted);
+    font-weight: 600;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    margin-top: 4px;
+  }
+
+  /* ── Tables ── */
+  .table-wrap {
+    overflow-x: auto;
+    margin-bottom: 20px;
+    border-radius: var(--radius);
+    border: 1px solid var(--c-border);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  thead {
+    background: var(--c-surface-alt);
+  }
+  th {
+    text-align: left;
+    padding: 10px 14px;
+    font-weight: 650;
+    font-size: 11.5px;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--c-text-muted);
+    border-bottom: 1px solid var(--c-border);
+    white-space: nowrap;
+  }
+  td {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--c-border);
+    vertical-align: top;
+    color: var(--c-text-secondary);
+  }
+  tr:last-child td { border-bottom: none; }
+
+  /* ── Code ── */
+  code {
+    font-family: var(--ff-mono);
+    font-size: 12.5px;
+    background: var(--c-code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--c-accent);
+  }
+  pre {
+    background: var(--c-code-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 16px 20px;
+    overflow-x: auto;
+    margin-bottom: 16px;
+    font-size: 12.5px;
+    line-height: 1.6;
+  }
+  pre code {
+    background: none;
+    padding: 0;
+    color: var(--c-text);
+  }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .badge-blue { background: var(--c-accent-soft); color: var(--c-accent); }
+  .badge-green { background: var(--c-green-soft); color: var(--c-green); }
+  .badge-amber { background: var(--c-amber-soft); color: var(--c-amber); }
+  .badge-red { background: var(--c-red-soft); color: var(--c-red); }
+
+  /* ── Diagram containers ── */
+  .diagram-box {
+    background: var(--c-diagram-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 32px 24px;
+    margin-bottom: 20px;
+    overflow-x: auto;
+  }
+  .diagram-box svg {
+    display: block;
+    margin: 0 auto;
+    max-width: 100%;
+    height: auto;
+  }
+
+  /* ── Callout ── */
+  .callout {
+    padding: 16px 20px;
+    border-radius: var(--radius);
+    border-left: 4px solid var(--c-accent);
+    background: var(--c-accent-soft);
+    margin-bottom: 20px;
+    font-size: 13.5px;
+    color: var(--c-text-secondary);
+  }
+  .callout-warn {
+    border-left-color: var(--c-amber);
+    background: var(--c-amber-soft);
+  }
+  .callout-danger {
+    border-left-color: var(--c-red);
+    background: var(--c-red-soft);
+  }
+  .callout strong { color: var(--c-text); }
+
+  /* ── Flow diagram (CSS-drawn) ── */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding: 20px;
+    background: var(--c-diagram-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    overflow-x: auto;
+  }
+  .flow-node {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    border: 1.5px solid var(--c-border);
+    background: var(--c-surface);
+    color: var(--c-text);
+  }
+  .flow-node.primary {
+    background: var(--c-accent);
+    color: #fff;
+    border-color: var(--c-accent);
+  }
+  .flow-node.success {
+    background: var(--c-green-soft);
+    color: var(--c-green);
+    border-color: var(--c-green);
+  }
+  .flow-node.warn {
+    background: var(--c-amber-soft);
+    color: var(--c-amber);
+    border-color: var(--c-amber);
+  }
+  .flow-arrow {
+    font-size: 16px;
+    color: var(--c-text-muted);
+    padding: 0 6px;
+    flex-shrink: 0;
+  }
+
+  /* ── Directory tree ── */
+  .tree {
+    font-family: var(--ff-mono);
+    font-size: 12.5px;
+    line-height: 1.8;
+    color: var(--c-text-secondary);
+    background: var(--c-code-bg);
+    border: 1px solid var(--c-border);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    overflow-x: auto;
+    margin-bottom: 20px;
+  }
+  .tree .dir { color: var(--c-accent); font-weight: 600; }
+  .tree .file { color: var(--c-text-secondary); }
+  .tree .comment { color: var(--c-text-muted); font-style: italic; }
+
+  /* ── Mermaid ── */
+  pre.mermaid {
+    background: var(--c-diagram-bg);
+    border: 1px solid var(--c-border);
+    padding: 24px;
+    text-align: center;
+  }
+
+  /* ── Print ── */
+  @media print {
+    .sidebar { display: none; }
+    .page-wrap { grid-template-columns: 1fr; }
+    .main { padding: 20px; max-width: none; }
+  }
+
+  .secret-table td:nth-child(1) { font-family: var(--ff-mono); font-size: 12px; white-space: nowrap; }
+  .secret-table td:nth-child(3) code { font-size: 11px; }
+
+  .layer-label {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: var(--c-text-muted);
+    margin-bottom: 6px;
+  }
+</style>
+
+<div class="page-wrap">
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-title">Documentation</div>
+    <ul class="toc">
+      <li><a href="#overview">Project Overview</a></li>
+      <li><a href="#tech-stack">Technology Stack</a></li>
+      <li><a href="#hld">High-Level Design</a></li>
+      <li><a href="#system-arch" class="indent">System Architecture</a></li>
+      <li><a href="#agent-flow" class="indent">Agent Orchestration Flow</a></li>
+      <li><a href="#lld">Low-Level Design</a></li>
+      <li><a href="#state-machine" class="indent">LangGraph State Machine</a></li>
+      <li><a href="#agents-detail" class="indent">Agent Specifications</a></li>
+      <li><a href="#services-detail" class="indent">Service Layer</a></li>
+      <li><a href="#api-endpoints" class="indent">API Endpoints</a></li>
+      <li><a href="#data-models" class="indent">Data Models</a></li>
+      <li><a href="#project-structure">Project Structure</a></li>
+      <li><a href="#setup-guide">Setup Guide</a></li>
+      <li><a href="#secrets-guide">Secrets & Credentials</a></li>
+      <li><a href="#azure-deploy">Azure Deployment</a></li>
+      <li><a href="#developer-guide">Developer Guide</a></li>
+      <li><a href="#code-flow" class="indent">Code Flow Walkthrough</a></li>
+      <li><a href="#libraries" class="indent">Libraries Reference</a></li>
+      <li><a href="#testing">Testing</a></li>
+      <li><a href="#security">Security Design</a></li>
+      <li><a href="#cost">Cost Estimation</a></li>
+    </ul>
+  </nav>
+
+  <!-- ── Main ── -->
+  <main class="main">
+
+    <!-- HERO -->
+    <div class="hero" id="overview">
+      <div class="hero-badge">Architecture & Developer Documentation</div>
+      <h1>WhatsApp AI Agent Platform</h1>
+      <p class="hero-sub">
+        A multi-agent, LLM-powered automation platform that turns WhatsApp into a personal engineering command center &mdash; reading emails, scheduling meetings, browsing repositories, developing code, reviewing changes, and deploying to production, all through conversational messages with human-in-the-loop approval.
+      </p>
+      <div class="hero-meta">
+        <span><span class="dot"></span> Production on Azure App Service</span>
+        <span>Owner: Sunny Kushwaha</span>
+        <span>Python 3.12 &middot; FastAPI &middot; LangGraph</span>
+        <span>Last updated: Aug 2026</span>
+      </div>
+    </div>
+
+    <!-- STATS -->
+    <div class="stat-row">
+      <div class="stat"><div class="stat-value">12</div><div class="stat-label">AI Agents</div></div>
+      <div class="stat"><div class="stat-value">7</div><div class="stat-label">External APIs</div></div>
+      <div class="stat"><div class="stat-value">53</div><div class="stat-label">Source Files</div></div>
+      <div class="stat"><div class="stat-value">~$8</div><div class="stat-label">Monthly Cost</div></div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: TECH STACK -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="tech-stack">
+      <h2>Technology Stack</h2>
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-label">Core Framework</div>
+          <ul style="list-style:none;margin:0;">
+            <li><strong>Python 3.12</strong> &mdash; async-first runtime</li>
+            <li><strong>FastAPI + Uvicorn</strong> &mdash; async ASGI server</li>
+            <li><strong>LangGraph</strong> &mdash; stateful multi-agent orchestration</li>
+            <li><strong>LangChain Core</strong> &mdash; LLM abstractions</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="card-label">AI / LLM</div>
+          <ul style="list-style:none;margin:0;">
+            <li><strong>Azure OpenAI GPT-4o-mini</strong> &mdash; primary LLM</li>
+            <li><strong>langchain-openai</strong> &mdash; AzureChatOpenAI wrapper</li>
+            <li><strong>6 LLM prompt templates</strong> &mdash; routing, codegen, review, persona</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="card-label">External APIs</div>
+          <ul style="list-style:none;margin:0;">
+            <li><strong>WhatsApp Cloud API</strong> &mdash; Meta Graph API v21</li>
+            <li><strong>Gmail API</strong> &mdash; OAuth2, read + send</li>
+            <li><strong>Google Calendar API</strong> &mdash; event creation</li>
+            <li><strong>GitHub REST API</strong> &mdash; PRs, workflows</li>
+            <li><strong>Azure DevOps REST API</strong> &mdash; PRs, pipelines</li>
+          </ul>
+        </div>
+        <div class="card">
+          <div class="card-label">Infrastructure</div>
+          <ul style="list-style:none;margin:0;">
+            <li><strong>Azure App Service</strong> &mdash; Linux B1 hosting</li>
+            <li><strong>SQLite + aiosqlite</strong> &mdash; task & session persistence</li>
+            <li><strong>SQLAlchemy 2.0</strong> &mdash; async ORM</li>
+            <li><strong>Azure DevOps Pipelines</strong> &mdash; CI/CD</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: HIGH-LEVEL DESIGN -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="hld">
+      <h2>High-Level Design (HLD)</h2>
+
+      <h3 id="system-arch">System Architecture</h3>
+      <p>The platform follows a <strong>webhook-driven, event-sourced architecture</strong> where WhatsApp and Gmail push events into the FastAPI server, which delegates work to a LangGraph state machine containing specialized AI agents. The system is designed for a single-user personal deployment with enterprise-grade patterns.</p>
+
+      <div class="diagram-box">
+        <pre class="mermaid">
+graph TB
+    subgraph "User Interface"
+        WA["WhatsApp<br/>(Personal Phone)"]
+    end
+
+    subgraph "Ingress Layer"
+        WH_WA["WhatsApp Webhook<br/>/webhooks/whatsapp"]
+        WH_GM["Gmail Webhook<br/>/webhooks/gmail"]
+        PORTAL["Web Portal<br/>/portal"]
+        HEALTH["Health Check<br/>/health"]
+    end
+
+    subgraph "Orchestration Layer"
+        BG["Background Task Runner"]
+        GRAPH["LangGraph StateGraph<br/>(12 Agent Nodes)"]
+        CKPT["SQLite Checkpointer<br/>(State Persistence)"]
+        SESSION["Conversation Sessions<br/>(Multi-turn Context)"]
+    end
+
+    subgraph "Agent Layer"
+        PLAN["Planner<br/>(Intent Router)"]
+        DEV["Developer<br/>(Code Generator)"]
+        REV["Reviewer<br/>(Code Reviewer)"]
+        DEPLOY["Deployer<br/>(PR + CI/CD)"]
+        EMAIL["Email Agent<br/>(Read + Send)"]
+        CAL["Calendar Agent<br/>(Meetings)"]
+        REPO["Repo Wizard<br/>(Browse Repos)"]
+        GEN["General Agent<br/>(Free Chat)"]
+        EVAL["Evaluator<br/>(Task Summary)"]
+        NOTIFY["Notifier<br/>(WhatsApp Replies)"]
+    end
+
+    subgraph "Service Layer"
+        LLM["Azure OpenAI<br/>GPT-4o-mini"]
+        GMAIL_S["Gmail API<br/>(OAuth2)"]
+        GH["GitHub API<br/>(PAT)"]
+        AZDO["Azure DevOps API<br/>(PAT)"]
+        GIT["Git Operations<br/>(Clone/Push)"]
+        WA_S["WhatsApp API<br/>(Send Messages)"]
+        CI["CI Gate<br/>(Deploy Locks)"]
+        KUDU["Kudu SCM<br/>(Zip Deploy)"]
+    end
+
+    subgraph "Data Layer"
+        DB[("SQLite<br/>agent.db")]
+    end
+
+    WA -->|"Message / Approval"| WH_WA
+    WH_WA --> BG
+    WH_GM --> BG
+    BG --> GRAPH
+    GRAPH <--> CKPT
+    GRAPH <--> SESSION
+    CKPT --> DB
+    SESSION --> DB
+
+    GRAPH --> PLAN
+    PLAN -->|"route"| DEV
+    PLAN -->|"route"| EMAIL
+    PLAN -->|"route"| CAL
+    PLAN -->|"route"| REPO
+    PLAN -->|"route"| GEN
+    DEV --> REV
+    REV -->|"approved"| DEPLOY
+    DEPLOY --> EVAL
+    EVAL --> NOTIFY
+    NOTIFY --> WA_S
+    WA_S --> WA
+
+    DEV --> GIT
+    DEV --> LLM
+    REV --> LLM
+    EMAIL --> GMAIL_S
+    CAL --> GMAIL_S
+    DEPLOY --> GH
+    DEPLOY --> AZDO
+    DEPLOY --> KUDU
+    GEN --> LLM
+    REPO --> GH
+    REPO --> AZDO
+        </pre>
+      </div>
+
+      <h3 id="agent-flow">Agent Orchestration Flow</h3>
+      <p>The platform implements <strong>six distinct conversational workflows</strong>, each routing through the LangGraph state machine from a single entry point (the Planner).</p>
+
+      <h4>Flow 1: General Conversation</h4>
+      <div class="flow">
+        <span class="flow-node primary">WhatsApp Message</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Planner</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">General Agent</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node success">Notify (Reply)</span>
+      </div>
+
+      <h4>Flow 2: Email Read / Send</h4>
+      <div class="flow">
+        <span class="flow-node primary">WhatsApp</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Planner</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Email Agent</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Evaluator</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node success">Notify</span>
+      </div>
+
+      <h4>Flow 3: Code Development (Full Pipeline)</h4>
+      <div class="flow">
+        <span class="flow-node primary">WhatsApp</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Planner</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Repo Wizard</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Developer</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Reviewer</span>
+        <span class="flow-arrow">&harr;</span>
+        <span class="flow-node warn">Approval (WhatsApp)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Deployer</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node success">Live</span>
+      </div>
+
+      <h4>Flow 4: Calendar / Meetings</h4>
+      <div class="flow">
+        <span class="flow-node primary">WhatsApp</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Planner</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Calendar Agent</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node success">Event Created + Notify</span>
+      </div>
+
+      <h4>Flow 5: Repository Browsing</h4>
+      <div class="flow">
+        <span class="flow-node primary">WhatsApp</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Planner</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Repo Wizard</span>
+        <span class="flow-arrow">&harr;</span>
+        <span class="flow-node warn">Multi-turn (Provider &rarr; Project &rarr; Repo)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node success">Ready</span>
+      </div>
+
+      <h4>Flow 6: Human Approval & Deploy</h4>
+      <div class="flow">
+        <span class="flow-node warn">APPROVE task-xxx</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">CI Gate Check</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Resume Graph</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Deployer</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">CI Watch</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node success">Evaluation</span>
+      </div>
+
+      <div class="callout">
+        <strong>Human-in-the-Loop:</strong> The code development pipeline pauses at the approval stage, persists state to SQLite via LangGraph's <code>AsyncSqliteSaver</code>, and resumes when the user sends <code>APPROVE &lt;task-id&gt;</code> or <code>REJECT &lt;task-id&gt;</code> via WhatsApp.
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: LOW-LEVEL DESIGN -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="lld">
+      <h2>Low-Level Design (LLD)</h2>
+
+      <h3 id="state-machine">LangGraph State Machine</h3>
+      <p>The core state machine is defined in <code>src/agent/agents/graph.py</code>. It uses LangGraph's <code>StateGraph</code> with <code>AgentState</code> as the shared typed dictionary flowing through all nodes.</p>
+
+      <div class="diagram-box">
+        <pre class="mermaid">
+stateDiagram-v2
+    [*] --> planner: Entry Point
+
+    planner --> email_agent: check_email
+    planner --> send_email_agent: send_email
+    planner --> calendar_agent: schedule_meeting
+    planner --> repo_wizard: browse_repos
+    planner --> task_status_agent: task_status
+    planner --> coding_developer: code_change (with repo)
+    planner --> handle_approval: approval_yes / no
+    planner --> general_agent: general / unknown
+
+    email_agent --> notify_then_develop: actionable email
+    email_agent --> notify_result: summary only
+
+    send_email_agent --> notify_email_sent
+    notify_email_sent --> evaluator
+
+    calendar_agent --> notify_meeting: done / failed
+    calendar_agent --> notify_meeting_ask: needs info
+    notify_meeting --> evaluator
+    notify_meeting_ask --> [*]
+
+    repo_wizard --> notify_then_develop: has repo + task
+    repo_wizard --> notify_picker: listing only
+    notify_picker --> [*]
+
+    task_status_agent --> notify_result
+
+    notify_then_develop --> coding_developer
+    coding_developer --> notify_dev
+    notify_dev --> coding_reviewer: success
+    notify_dev --> evaluator: failed
+
+    coding_reviewer --> notify_review: approved / max iter
+    coding_reviewer --> coding_developer: changes_requested
+    coding_reviewer --> notify_result: failed
+
+    notify_review --> request_approval
+    request_approval --> notify_approval
+    notify_approval --> [*]: PAUSED (await WhatsApp)
+
+    handle_approval --> coding_deployer: approved
+    handle_approval --> notify_rejected: rejected
+    notify_rejected --> evaluator
+
+    coding_deployer --> notify_result
+
+    notify_result --> evaluator
+    evaluator --> notify_evaluation
+    notify_evaluation --> [*]
+
+    general_agent --> notify_general
+    notify_general --> [*]
+        </pre>
+      </div>
+
+      <h4>AgentState Schema</h4>
+      <p>The <code>AgentState</code> TypedDict (<code>agents/state.py</code>) carries all data through the graph. Every node receives and returns this structure.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Field</th><th>Type</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td><code>task_id</code></td><td>str</td><td>Unique task identifier (8-char UUID prefix)</td></tr>
+            <tr><td><code>status</code></td><td>str</td><td>Current state: PENDING, task_started, awaiting_approval, deployed, failed</td></tr>
+            <tr><td><code>source</code></td><td>str</td><td>Origin: whatsapp, gmail</td></tr>
+            <tr><td><code>intent</code></td><td>str</td><td>Classified intent from planner</td></tr>
+            <tr><td><code>user_message</code></td><td>str</td><td>Raw WhatsApp message text</td></tr>
+            <tr><td><code>email_to/subject/body/sender</code></td><td>str</td><td>Email composition and context fields</td></tr>
+            <tr><td><code>repo_url/owner/name</code></td><td>str</td><td>Target repository coordinates</td></tr>
+            <tr><td><code>branch_name</code></td><td>str</td><td>Working branch for code changes</td></tr>
+            <tr><td><code>file_changes</code></td><td>list[dict]</td><td>LLM-generated code changes: [{path, action, content}]</td></tr>
+            <tr><td><code>dev_reasoning</code></td><td>str</td><td>Developer agent's explanation of changes</td></tr>
+            <tr><td><code>workspace_path</code></td><td>str</td><td>Temp directory for git clone</td></tr>
+            <tr><td><code>review_result</code></td><td>str</td><td>approved / changes_requested</td></tr>
+            <tr><td><code>review_comments</code></td><td>str</td><td>Reviewer's detailed feedback</td></tr>
+            <tr><td><code>review_iteration</code></td><td>int</td><td>Current review loop count (max 3)</td></tr>
+            <tr><td><code>approval_status</code></td><td>str</td><td>pending / approved / rejected</td></tr>
+            <tr><td><code>pr_url</code></td><td>str</td><td>Created pull request URL</td></tr>
+            <tr><td><code>pipeline_url/status</code></td><td>str</td><td>CI/CD pipeline tracking</td></tr>
+            <tr><td><code>whatsapp_phone</code></td><td>str</td><td>User's phone number for notifications</td></tr>
+            <tr><td><code>notification_text</code></td><td>str</td><td>Next message to send via WhatsApp</td></tr>
+            <tr><td><code>messages</code></td><td>list[BaseMessage]</td><td>LangGraph message accumulator</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="agents-detail">Agent Specifications</h3>
+
+      <p>The system uses a two-layer architecture: <strong>Specialists</strong> (graph-wired wrappers in <code>specialists/</code>) delegate to <strong>Agents</strong> (business logic in <code>agents/</code>).</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Agent</th><th>Node Name</th><th>LLM Prompt</th><th>Services Used</th><th>Key Logic</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Planner</strong></td>
+              <td><code>planner</code></td>
+              <td><code>router_classify.txt</code></td>
+              <td>llm, session, ci_gate</td>
+              <td>Regex fast-paths for greetings/help, then LLM intent classification. Session-aware: detects pending approvals, in-progress repos, meeting slots</td>
+            </tr>
+            <tr>
+              <td><strong>Developer</strong></td>
+              <td><code>coding_developer</code></td>
+              <td><code>developer_system.txt</code><br/><code>developer_codegen.txt</code></td>
+              <td>git_ops, github, llm</td>
+              <td>Clones repo, reads file tree, sends to LLM with task description, parses JSON file changes, applies to workspace</td>
+            </tr>
+            <tr>
+              <td><strong>Reviewer</strong></td>
+              <td><code>coding_reviewer</code></td>
+              <td><code>reviewer_system.txt</code></td>
+              <td>llm</td>
+              <td>Reviews proposed changes with severity scoring (1-10). Softens false "incomplete HTML" rejections. Max 3 review iterations</td>
+            </tr>
+            <tr>
+              <td><strong>Deployer</strong></td>
+              <td><code>coding_deployer</code></td>
+              <td>None (no LLM)</td>
+              <td>git_ops, github, azure_devops, ci_gate, ci_watch, sample_deploy</td>
+              <td>Dispatches to GitHub or Azure DevOps flow. Creates PR, optionally auto-merges, triggers CI, starts CI watcher for post-deploy notifications</td>
+            </tr>
+            <tr>
+              <td><strong>Email Agent</strong></td>
+              <td><code>email_agent</code> / <code>send_email_agent</code></td>
+              <td>Inline CLASSIFY_PROMPT</td>
+              <td>gmail, llm, persona</td>
+              <td>Read: fetches 5 recent emails, classifies each for actionability. Send: LLM composes subject/body if not provided, sends via Gmail API with proper MIME</td>
+            </tr>
+            <tr>
+              <td><strong>Calendar Agent</strong></td>
+              <td><code>calendar_agent</code></td>
+              <td>None (heuristic)</td>
+              <td>calendar, session, gmail</td>
+              <td>Multi-turn slot filling: parses when/who/title from natural language. Creates Google Calendar event with Meet link, falls back to Gmail invite</td>
+            </tr>
+            <tr>
+              <td><strong>Repo Wizard</strong></td>
+              <td><code>repo_wizard</code></td>
+              <td>None</td>
+              <td>github_agent, azdo_agent, session, ci_gate</td>
+              <td>Multi-turn wizard: pick provider &rarr; project &rarr; repo &rarr; enter task instruction. Persists wizard state in session table</td>
+            </tr>
+            <tr>
+              <td><strong>General Agent</strong></td>
+              <td><code>general_agent</code></td>
+              <td><code>persona_sunny.txt</code></td>
+              <td>llm</td>
+              <td>Free-form LLM conversation with Sunny's persona context for non-actionable messages</td>
+            </tr>
+            <tr>
+              <td><strong>Evaluator</strong></td>
+              <td><code>evaluator</code></td>
+              <td>None</td>
+              <td>session</td>
+              <td>Generates final step-by-step task summary for WhatsApp delivery. Also handles "task status" queries by listing recent tasks</td>
+            </tr>
+            <tr>
+              <td><strong>Notifier</strong></td>
+              <td>Multiple notify_* nodes</td>
+              <td>None</td>
+              <td>whatsapp</td>
+              <td>Renders status-keyed templates and sends formatted WhatsApp messages. Used as intermediate nodes between agents</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="services-detail">Service Layer</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Service</th><th>File</th><th>API Base</th><th>Auth Method</th><th>Key Methods</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>WhatsApp</strong></td>
+              <td><code>services/whatsapp.py</code></td>
+              <td><code>https://graph.facebook.com/v21.0</code></td>
+              <td>Bearer token</td>
+              <td><code>send_message(phone, text)</code>, <code>check_access_token()</code>, <code>parse_incoming_message(body)</code></td>
+            </tr>
+            <tr>
+              <td><strong>Gmail</strong></td>
+              <td><code>services/gmail.py</code></td>
+              <td>Google API client</td>
+              <td>OAuth2 refresh token</td>
+              <td><code>list_recent_messages()</code>, <code>get_message(id)</code>, <code>send_email(to, subject, body)</code>, <code>setup_watch(topic)</code></td>
+            </tr>
+            <tr>
+              <td><strong>Calendar</strong></td>
+              <td><code>services/calendar.py</code></td>
+              <td>Google API client</td>
+              <td>OAuth2 refresh token</td>
+              <td><code>create_event(title, when, attendees)</code>, <code>parse_when_heuristic(text)</code></td>
+            </tr>
+            <tr>
+              <td><strong>GitHub</strong></td>
+              <td><code>services/github.py</code></td>
+              <td><code>https://api.github.com</code></td>
+              <td>Bearer PAT</td>
+              <td><code>create_pull_request()</code>, <code>merge_pull_request()</code>, <code>trigger_workflow()</code>, <code>list_repos()</code></td>
+            </tr>
+            <tr>
+              <td><strong>Azure DevOps</strong></td>
+              <td><code>services/azure_devops.py</code></td>
+              <td><code>{org_url}/_apis/ (v7.1)</code></td>
+              <td>Basic :PAT base64</td>
+              <td><code>create_pull_request()</code>, <code>merge_pull_request()</code>, <code>trigger_pipeline()</code>, <code>push_commit()</code>, <code>download_repo_zip()</code></td>
+            </tr>
+            <tr>
+              <td><strong>Azure OpenAI</strong></td>
+              <td><code>services/llm.py</code></td>
+              <td>Azure OpenAI endpoint</td>
+              <td>API key</td>
+              <td><code>get_llm(temperature)</code> &rarr; <code>AzureChatOpenAI</code></td>
+            </tr>
+            <tr>
+              <td><strong>Git Operations</strong></td>
+              <td><code>services/git_ops.py</code></td>
+              <td>Local / HTTP fallback</td>
+              <td>PAT via URL</td>
+              <td><code>clone_repo()</code>, <code>create_branch()</code>, <code>apply_changes()</code>, <code>commit_and_push()</code></td>
+            </tr>
+            <tr>
+              <td><strong>CI Gate</strong></td>
+              <td><code>services/ci_gate.py</code></td>
+              <td>Internal orchestration</td>
+              <td>N/A</td>
+              <td><code>wait_for_ci_idle()</code>, <code>acquire_deploy_lock()</code>, <code>release_deploy_lock()</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="api-endpoints">API Endpoints</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Route</th><th>Method</th><th>Purpose</th><th>Auth</th><th>Response</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>/webhooks/whatsapp</code></td>
+              <td><span class="badge badge-green">GET</span></td>
+              <td>Meta webhook verification (hub.challenge handshake)</td>
+              <td>Verify token match</td>
+              <td>int (challenge)</td>
+            </tr>
+            <tr>
+              <td><code>/webhooks/whatsapp</code></td>
+              <td><span class="badge badge-blue">POST</span></td>
+              <td>Receive WhatsApp messages and approval responses</td>
+              <td>HMAC-SHA256</td>
+              <td><code>{"status":"ok"}</code></td>
+            </tr>
+            <tr>
+              <td><code>/webhooks/gmail</code></td>
+              <td><span class="badge badge-blue">POST</span></td>
+              <td>Gmail Pub/Sub push notifications</td>
+              <td>None (public)</td>
+              <td><code>{"status":"ok"}</code></td>
+            </tr>
+            <tr>
+              <td><code>/health</code></td>
+              <td><span class="badge badge-green">GET</span></td>
+              <td>Health check. <code>?deep=true</code> verifies WhatsApp token</td>
+              <td>None</td>
+              <td><code>HealthResponse</code></td>
+            </tr>
+            <tr>
+              <td><code>/portal</code></td>
+              <td><span class="badge badge-green">GET</span></td>
+              <td>Serves the web portal HTML page</td>
+              <td>None</td>
+              <td>HTML</td>
+            </tr>
+            <tr>
+              <td><code>/tasks/</code></td>
+              <td><span class="badge badge-green">GET</span></td>
+              <td>List recent tasks (with limit param)</td>
+              <td>None</td>
+              <td><code>list[TaskResponse]</code></td>
+            </tr>
+            <tr>
+              <td><code>/tasks/{id}</code></td>
+              <td><span class="badge badge-green">GET</span></td>
+              <td>Get task details by ID</td>
+              <td>None</td>
+              <td><code>TaskResponse</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 id="data-models">Data Models</h3>
+
+      <h4>SQLAlchemy ORM Models</h4>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Model</th><th>Table</th><th>Key Columns</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>Task</code></td>
+              <td>tasks</td>
+              <td>id (PK), status, source, intent, repo_url, branch_name, pr_url, whatsapp_phone, error, metadata_json, created_at, updated_at</td>
+              <td>Tracks every task from creation to completion</td>
+            </tr>
+            <tr>
+              <td><code>ConversationSession</code></td>
+              <td>conversation_sessions</td>
+              <td>phone (PK), awaiting, provider, data_json, updated_at</td>
+              <td>Multi-turn conversation state (repo wizard steps, meeting slot filling, pending approvals)</td>
+            </tr>
+            <tr>
+              <td><code>PendingCiWatch</code></td>
+              <td>pending_ci_watches</td>
+              <td>id (PK), task_id, provider, org_url, project, repo_name, build_id, pipeline_name, phone, created_at</td>
+              <td>Durable CI pipeline watchers that survive app restarts</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: PROJECT STRUCTURE -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="project-structure">
+      <h2>Project Structure</h2>
+      <div class="tree">
+<span class="dir">src/agent/</span>
+├── <span class="file">main.py</span>              <span class="comment"># FastAPI app factory, lifespan, ngrok middleware</span>
+├── <span class="file">config.py</span>            <span class="comment"># Pydantic Settings — all env vars</span>
+│
+├── <span class="dir">api/</span>                 <span class="comment"># HTTP endpoints</span>
+│   ├── <span class="file">whatsapp.py</span>      <span class="comment"># WhatsApp webhook (GET verify + POST receive)</span>
+│   ├── <span class="file">gmail.py</span>         <span class="comment"># Gmail Pub/Sub push webhook</span>
+│   ├── <span class="file">health.py</span>        <span class="comment"># Health check endpoint</span>
+│   ├── <span class="file">portal.py</span>        <span class="comment"># Web portal serving</span>
+│   └── <span class="file">tasks.py</span>         <span class="comment"># Task listing / detail API</span>
+│
+├── <span class="dir">agents/</span>              <span class="comment"># Business logic layer</span>
+│   ├── <span class="file">graph.py</span>         <span class="comment"># LangGraph StateGraph — THE CORE</span>
+│   ├── <span class="file">state.py</span>         <span class="comment"># AgentState TypedDict definition</span>
+│   ├── <span class="file">developer.py</span>     <span class="comment"># Code generation via LLM</span>
+│   ├── <span class="file">reviewer.py</span>      <span class="comment"># Code review via LLM</span>
+│   ├── <span class="file">deployment.py</span>    <span class="comment"># Git push, PR, CI trigger</span>
+│   ├── <span class="file">gmail_agent.py</span>   <span class="comment"># Email read + send</span>
+│   ├── <span class="file">meeting.py</span>       <span class="comment"># Calendar event creation</span>
+│   ├── <span class="file">evaluator.py</span>     <span class="comment"># Task summary generation</span>
+│   ├── <span class="file">notification.py</span>  <span class="comment"># WhatsApp message templates</span>
+│   └── <span class="file">router.py</span>        <span class="comment"># Backward-compat shim → planner</span>
+│
+├── <span class="dir">planner/</span>             <span class="comment"># Intent classification</span>
+│   └── <span class="file">agent.py</span>         <span class="comment"># Regex fast-paths + LLM router</span>
+│
+├── <span class="dir">specialists/</span>         <span class="comment"># Graph-wired agent wrappers</span>
+│   ├── <span class="file">base.py</span>          <span class="comment"># Specialist Protocol + tag()</span>
+│   ├── <span class="file">coding_developer.py</span>
+│   ├── <span class="file">coding_reviewer.py</span>
+│   ├── <span class="file">coding_deployer.py</span>
+│   ├── <span class="file">email_agent.py</span>
+│   ├── <span class="file">calendar_agent.py</span>
+│   ├── <span class="file">evaluator_agent.py</span>
+│   ├── <span class="file">general_agent.py</span>
+│   ├── <span class="file">github_agent.py</span>
+│   ├── <span class="file">azdo_agent.py</span>
+│   ├── <span class="file">repo_wizard.py</span>  <span class="comment"># Multi-turn repo browser</span>
+│   └── <span class="file">notifier_agent.py</span>
+│
+├── <span class="dir">services/</span>            <span class="comment"># External API clients</span>
+│   ├── <span class="file">whatsapp.py</span>      <span class="comment"># Meta Cloud API v21</span>
+│   ├── <span class="file">gmail.py</span>         <span class="comment"># Gmail API (OAuth2)</span>
+│   ├── <span class="file">calendar.py</span>      <span class="comment"># Google Calendar API</span>
+│   ├── <span class="file">github.py</span>        <span class="comment"># GitHub REST API</span>
+│   ├── <span class="file">azure_devops.py</span>  <span class="comment"># Azure DevOps REST API v7.1</span>
+│   ├── <span class="file">git_ops.py</span>       <span class="comment"># GitPython + HTTP fallback</span>
+│   ├── <span class="file">llm.py</span>           <span class="comment"># Azure OpenAI wrapper</span>
+│   ├── <span class="file">ci_gate.py</span>       <span class="comment"># Deploy locks + CI busy check</span>
+│   ├── <span class="file">ci_watch.py</span>      <span class="comment"># Durable pipeline watcher</span>
+│   └── <span class="file">sample_deploy.py</span> <span class="comment"># Kudu zip deploy helper</span>
+│
+├── <span class="dir">core/</span>                <span class="comment"># Cross-cutting concerns</span>
+│   ├── <span class="file">oauth.py</span>         <span class="comment"># Google OAuth2 token refresh</span>
+│   ├── <span class="file">security.py</span>      <span class="comment"># HMAC verification, phone allowlist</span>
+│   ├── <span class="file">background.py</span>    <span class="comment"># Async task runner (greeting fast-path)</span>
+│   ├── <span class="file">session.py</span>       <span class="comment"># Multi-turn conversation persistence</span>
+│   ├── <span class="file">persona.py</span>       <span class="comment"># Persona prompt + help/greeting text</span>
+│   └── <span class="file">logging.py</span>       <span class="comment"># Structured logging setup</span>
+│
+├── <span class="dir">models/</span>              <span class="comment"># Database layer</span>
+│   ├── <span class="file">db.py</span>            <span class="comment"># Async SQLAlchemy engine + init</span>
+│   ├── <span class="file">task.py</span>          <span class="comment"># Task ORM model</span>
+│   └── <span class="file">schemas.py</span>       <span class="comment"># Pydantic response schemas</span>
+│
+├── <span class="dir">prompts/</span>             <span class="comment"># LLM prompt templates</span>
+│   ├── <span class="file">router_classify.txt</span>
+│   ├── <span class="file">developer_system.txt</span>
+│   ├── <span class="file">developer_codegen.txt</span>
+│   ├── <span class="file">reviewer_system.txt</span>
+│   ├── <span class="file">reviewer_checklist.txt</span>
+│   └── <span class="file">persona_sunny.txt</span>
+│
+└── <span class="dir">web/</span>
+    └── <span class="file">portal.html</span>      <span class="comment"># Static web portal page</span>
+
+<span class="dir">tests/</span>
+├── <span class="file">conftest.py</span>
+├── <span class="dir">test_agents/</span>         <span class="comment"># Agent logic tests</span>
+├── <span class="dir">test_api/</span>            <span class="comment"># Webhook/API tests</span>
+└── <span class="dir">test_services/</span>       <span class="comment"># Service integration tests</span>
+
+<span class="dir">scripts/</span>
+├── <span class="file">setup_gmail_oauth.py</span> <span class="comment"># One-time Gmail + Calendar OAuth</span>
+└── <span class="file">set_whatsapp_token.py</span> <span class="comment"># WhatsApp token updater</span>
+
+<span class="dir">infra/</span>
+├── <span class="file">azure-deploy.yml</span>    <span class="comment"># Azure DevOps CI/CD pipeline</span>
+└── <span class="file">startup.sh</span>          <span class="comment"># App Service startup script</span>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: SETUP GUIDE -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="setup-guide">
+      <h2>Setup Guide</h2>
+
+      <h3>Prerequisites</h3>
+      <ul>
+        <li>Python 3.11+ (3.12 recommended)</li>
+        <li>Azure subscription (Pay-As-You-Go or Free Tier)</li>
+        <li>Meta Developer Account (for WhatsApp Business API)</li>
+        <li>Google Cloud project (for Gmail/Calendar APIs)</li>
+        <li>GitHub account and/or Azure DevOps organization</li>
+      </ul>
+
+      <h3>Local Development Setup</h3>
+
+      <h4>Step 1: Clone & Install</h4>
+      <pre><code>git clone https://Az-FullStack@dev.azure.com/Az-FullStack/Project-NIT/_git/web.Whatsapp-AI-Agent
+cd web.Whatsapp-AI-Agent
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"</code></pre>
+
+      <h4>Step 2: Environment Configuration</h4>
+      <pre><code>cp .env.example .env
+# Edit .env with your actual credentials (see Secrets Guide below)</code></pre>
+
+      <h4>Step 3: Gmail OAuth Token (one-time)</h4>
+      <pre><code># Download your OAuth Desktop credentials JSON from Google Cloud Console
+python scripts/setup_gmail_oauth.py --credentials /path/to/credentials.json
+# Follow the browser prompt, copy the refresh token into .env</code></pre>
+
+      <h4>Step 4: Run the Server</h4>
+      <pre><code>uvicorn agent.main:app --host 0.0.0.0 --port 8000 --reload</code></pre>
+
+      <h4>Step 5: Expose via ngrok (for local testing)</h4>
+      <pre><code>ngrok http 8000
+# Copy the HTTPS URL and set it as your WhatsApp webhook:
+# https://xxxx.ngrok.io/webhooks/whatsapp</code></pre>
+
+      <h4>Step 6: Verify</h4>
+      <pre><code>curl http://localhost:8000/health
+# → {"status":"healthy","version":"0.1.0"}</code></pre>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: SECRETS GUIDE -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="secrets-guide">
+      <h2>Secrets & Credentials Guide</h2>
+      <p>Every credential the system needs, where to generate it, and what scope/permission it requires.</p>
+
+      <div class="callout-danger callout">
+        <strong>Security:</strong> Never commit <code>.env</code> to version control. The <code>.gitignore</code> excludes it. For Azure deployment, all secrets are stored as App Service Application Settings (encrypted at rest).
+      </div>
+
+      <div class="table-wrap secret-table">
+        <table>
+          <thead><tr><th>Variable</th><th>Where to Generate</th><th>Scopes / Permissions</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>OPENAI_API_KEY</code></td>
+              <td>Azure Portal &rarr; Cognitive Services &rarr; Keys</td>
+              <td>Azure OpenAI resource access key</td>
+            </tr>
+            <tr>
+              <td><code>AZURE_OPENAI_ENDPOINT</code></td>
+              <td>Azure Portal &rarr; Cognitive Services &rarr; Overview</td>
+              <td>Endpoint URL (e.g., <code>https://xxx.cognitiveservices.azure.com</code>)</td>
+            </tr>
+            <tr>
+              <td><code>AZURE_OPENAI_DEPLOYMENT</code></td>
+              <td>Azure AI Foundry &rarr; Deployments</td>
+              <td>Model deployment name (e.g., <code>gpt-4o-mini</code>)</td>
+            </tr>
+            <tr>
+              <td><code>WHATSAPP_ACCESS_TOKEN</code></td>
+              <td>Meta Business Suite &rarr; System Users &rarr; Generate Token</td>
+              <td><code>whatsapp_business_messaging</code>, <code>whatsapp_business_management</code>. Permanent token via System User recommended</td>
+            </tr>
+            <tr>
+              <td><code>WHATSAPP_PHONE_NUMBER_ID</code></td>
+              <td>Meta Developer Console &rarr; WhatsApp &rarr; API Setup</td>
+              <td>Phone Number ID (numeric, not the phone number itself)</td>
+            </tr>
+            <tr>
+              <td><code>WHATSAPP_APP_SECRET</code></td>
+              <td>Meta Developer Console &rarr; App Settings &rarr; Basic</td>
+              <td>App Secret for HMAC webhook verification</td>
+            </tr>
+            <tr>
+              <td><code>WHATSAPP_VERIFY_TOKEN</code></td>
+              <td>Self-generated random string</td>
+              <td>Any random string — must match what you enter in Meta webhook config</td>
+            </tr>
+            <tr>
+              <td><code>GOOGLE_CLIENT_ID</code></td>
+              <td>Google Cloud Console &rarr; Credentials &rarr; OAuth 2.0 (Desktop type)</td>
+              <td>OAuth client for Gmail + Calendar</td>
+            </tr>
+            <tr>
+              <td><code>GOOGLE_CLIENT_SECRET</code></td>
+              <td>Same as above</td>
+              <td>Client secret from the Desktop OAuth credential</td>
+            </tr>
+            <tr>
+              <td><code>GOOGLE_REFRESH_TOKEN</code></td>
+              <td>Run <code>scripts/setup_gmail_oauth.py</code></td>
+              <td>Scopes: <code>gmail.readonly</code>, <code>gmail.send</code>, <code>calendar.events</code></td>
+            </tr>
+            <tr>
+              <td><code>GITHUB_TOKEN</code></td>
+              <td>GitHub &rarr; Settings &rarr; Developer Settings &rarr; Fine-grained PATs</td>
+              <td>Contents (read/write), Pull Requests (read/write), Actions (read/write), Metadata (read)</td>
+            </tr>
+            <tr>
+              <td><code>AZDO_PAT</code></td>
+              <td>Azure DevOps &rarr; User Settings &rarr; Personal Access Tokens</td>
+              <td>Code (Read & Write), Build (Read & Execute), Project (Read)</td>
+            </tr>
+            <tr>
+              <td><code>AZDO_ORG_URL</code></td>
+              <td>Your Azure DevOps org URL</td>
+              <td>e.g., <code>https://dev.azure.com/Az-FullStack</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>WhatsApp Permanent Token (System User)</h3>
+      <p>The temporary developer token expires every 24 hours. For production, create a permanent token:</p>
+      <ol>
+        <li>Go to <strong>Meta Business Suite</strong> &rarr; <strong>Settings</strong> &rarr; <strong>Business Settings</strong></li>
+        <li>Under <strong>Users</strong>, click <strong>System Users</strong> &rarr; <strong>Add</strong></li>
+        <li>Name: "AI Agent", Role: Admin</li>
+        <li>Click <strong>Add Assets</strong> &rarr; select your WhatsApp app &rarr; toggle Full Control</li>
+        <li>Click <strong>Generate Token</strong> &rarr; select <code>whatsapp_business_messaging</code> and <code>whatsapp_business_management</code></li>
+        <li>Copy the token into <code>WHATSAPP_ACCESS_TOKEN</code> &mdash; this token does not expire</li>
+      </ol>
+
+      <h3>Google OAuth Scopes Setup</h3>
+      <ol>
+        <li>Go to <strong>Google Cloud Console</strong> &rarr; <strong>Google Auth Platform</strong> &rarr; <strong>Data access</strong></li>
+        <li>Add these scopes:
+          <ul>
+            <li><code>https://www.googleapis.com/auth/gmail.readonly</code></li>
+            <li><code>https://www.googleapis.com/auth/gmail.send</code></li>
+            <li><code>https://www.googleapis.com/auth/calendar.events</code></li>
+          </ul>
+        </li>
+        <li>Create <strong>Desktop</strong> type OAuth 2.0 credentials (not Web)</li>
+        <li>Run the setup script and complete the browser flow</li>
+      </ol>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: AZURE DEPLOYMENT -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="azure-deploy">
+      <h2>Azure Deployment</h2>
+
+      <h3>Infrastructure</h3>
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-label">App Service</div>
+          <p style="margin:0"><strong>whatsapp-ai-agent-sunny</strong><br/>Plan: B1 Linux (Central India)<br/>Runtime: Python 3.12<br/>Always On: Enabled</p>
+        </div>
+        <div class="card">
+          <div class="card-label">Resource Group</div>
+          <p style="margin:0"><strong>ai-agent-rg</strong><br/>Location: Central India<br/>All resources contained here</p>
+        </div>
+        <div class="card">
+          <div class="card-label">CI/CD Pipeline</div>
+          <p style="margin:0"><strong>Azure DevOps Pipelines</strong><br/>Repo: web.Whatsapp-AI-Agent<br/>Trigger: push to main</p>
+        </div>
+      </div>
+
+      <h3>Deployment Pipeline Stages</h3>
+      <div class="flow">
+        <span class="flow-node primary">Push to main</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Install + Test</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">rsync source &rarr; zip</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Publish Artifact</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node">Oryx Build (on App Service)</span>
+        <span class="flow-arrow">&rarr;</span>
+        <span class="flow-node success">/health 200</span>
+      </div>
+
+      <div class="callout">
+        <strong>Why Oryx remote build?</strong> The pipeline ships source-only and lets Oryx build the Python virtualenv directly on App Service. Pre-building wheels on Ubuntu CI fails because <code>cryptography</code> and <code>pydantic</code> C-extensions compiled against newer glibc versions produce <code>GLIBC_2.33 not found</code> errors on App Service's Debian Bullseye base.
+      </div>
+
+      <h3>Key App Settings</h3>
+      <pre><code>SCM_DO_BUILD_DURING_DEPLOYMENT=true
+ENABLE_ORYX_BUILD=true
+WEBSITES_PORT=8000
+WEBSITES_CONTAINER_START_TIME_LIMIT=600
+GIT_PYTHON_REFRESH=quiet</code></pre>
+
+      <h3>Webhook URL (Production)</h3>
+      <pre><code>https://whatsapp-ai-agent-sunny.azurewebsites.net/webhooks/whatsapp</code></pre>
+      <p>Update this URL in Meta Developer Console &rarr; WhatsApp &rarr; Configuration &rarr; Webhook URL.</p>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: DEVELOPER GUIDE -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="developer-guide">
+      <h2>Developer Guide</h2>
+
+      <h3 id="code-flow">Code Flow Walkthrough</h3>
+      <p>Tracing a WhatsApp message from arrival to response:</p>
+
+      <h4>1. Message Arrival</h4>
+      <p><code>api/whatsapp.py</code> receives the POST webhook. It verifies the HMAC-SHA256 signature using <code>core/security.py</code>, checks the phone allowlist, and parses the message payload via <code>services/whatsapp.parse_incoming_message()</code>.</p>
+
+      <h4>2. Approval Check</h4>
+      <p>The message text is matched against <code>APPROVE_PATTERN</code> / <code>REJECT_PATTERN</code> regex patterns. If matched, the CI gate is checked (<code>services/ci_gate.py</code>), then <code>resume_graph()</code> is called with a LangGraph <code>Command(goto="handle_approval")</code> to resume the paused graph.</p>
+
+      <h4>3. New Message Handling</h4>
+      <p>For non-approval messages, <code>core/background.py:handle_whatsapp_message()</code> runs as a FastAPI <code>BackgroundTask</code>:</p>
+      <ol>
+        <li><strong>Fast-path check:</strong> If the message is a simple greeting (regex match in <code>planner/agent.py:is_simple_greeting()</code>), respond immediately from <code>core/persona.py:GREETING_REPLY</code> without loading the graph</li>
+        <li><strong>Instant ack:</strong> Send "Working on it..." to WhatsApp so the user sees immediate feedback</li>
+        <li><strong>Graph execution:</strong> Call <code>agents/graph.py:run_graph()</code> which builds, compiles (with SQLite checkpointer), and streams the LangGraph</li>
+      </ol>
+
+      <h4>4. Planner Node</h4>
+      <p><code>planner/agent.py:plan()</code> runs first:</p>
+      <ul>
+        <li>Checks <code>ConversationSession</code> for in-progress multi-turn flows (repo wizard, meeting, pending approval)</li>
+        <li>Regex fast-paths for known patterns: "check email", "schedule meeting", "check repos", "task status"</li>
+        <li>Falls back to LLM classification using <code>prompts/router_classify.txt</code></li>
+        <li>Returns <code>AgentState</code> with <code>intent</code> set for conditional routing</li>
+      </ul>
+
+      <h4>5. Conditional Routing</h4>
+      <p><code>_route_after_plan()</code> maps the intent to the appropriate specialist node. Each specialist wraps the underlying agent logic and tags <code>handled_by</code>.</p>
+
+      <h4>6. Code Development Pipeline (example)</h4>
+      <ol>
+        <li><strong>Developer Agent</strong> &rarr; clones repo via <code>git_ops</code>, builds LLM prompt from repo tree + task, parses JSON file changes, applies to workspace</li>
+        <li><strong>Notify</strong> &rarr; sends diff preview to WhatsApp</li>
+        <li><strong>Reviewer Agent</strong> &rarr; LLM reviews with severity scoring, may loop back to developer (max 3x)</li>
+        <li><strong>Request Approval</strong> &rarr; formats change preview, sends to WhatsApp, graph pauses at END</li>
+        <li><strong>Resume</strong> &rarr; user sends APPROVE, graph resumes at <code>handle_approval</code></li>
+        <li><strong>Deployer Agent</strong> &rarr; commits, pushes, creates PR, optionally merges, triggers pipeline</li>
+        <li><strong>CI Watch</strong> &rarr; background poller monitors pipeline to completion</li>
+        <li><strong>Evaluator</strong> &rarr; generates step-by-step summary sent to WhatsApp</li>
+      </ol>
+
+      <h3 id="libraries">Libraries Reference</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Library</th><th>Version</th><th>Used For</th><th>Key Classes/Functions</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>fastapi</code></td>
+              <td>&ge;0.115</td>
+              <td>HTTP framework, webhooks, API routes</td>
+              <td><code>FastAPI</code>, <code>APIRouter</code>, <code>BackgroundTasks</code>, <code>Request</code></td>
+            </tr>
+            <tr>
+              <td><code>uvicorn</code></td>
+              <td>&ge;0.30</td>
+              <td>ASGI server</td>
+              <td>CLI: <code>uvicorn agent.main:app</code></td>
+            </tr>
+            <tr>
+              <td><code>langgraph</code></td>
+              <td>&ge;0.2</td>
+              <td>Multi-agent state machine orchestration</td>
+              <td><code>StateGraph</code>, <code>Command</code>, conditional edges, <code>END</code></td>
+            </tr>
+            <tr>
+              <td><code>langgraph-checkpoint-sqlite</code></td>
+              <td>&ge;2.0</td>
+              <td>Graph state persistence across pauses</td>
+              <td><code>AsyncSqliteSaver</code></td>
+            </tr>
+            <tr>
+              <td><code>langchain-openai</code></td>
+              <td>&ge;0.2</td>
+              <td>Azure OpenAI LLM wrapper</td>
+              <td><code>AzureChatOpenAI</code></td>
+            </tr>
+            <tr>
+              <td><code>langchain-core</code></td>
+              <td>&ge;0.3</td>
+              <td>Message types, prompt abstractions</td>
+              <td><code>SystemMessage</code>, <code>HumanMessage</code></td>
+            </tr>
+            <tr>
+              <td><code>sqlalchemy[asyncio]</code></td>
+              <td>&ge;2.0</td>
+              <td>Async ORM for tasks, sessions, CI watches</td>
+              <td><code>AsyncSession</code>, <code>create_async_engine</code></td>
+            </tr>
+            <tr>
+              <td><code>aiosqlite</code></td>
+              <td>&ge;0.20</td>
+              <td>SQLite async driver</td>
+              <td>Used by SQLAlchemy and LangGraph checkpointer</td>
+            </tr>
+            <tr>
+              <td><code>google-api-python-client</code></td>
+              <td>&ge;2.150</td>
+              <td>Gmail and Calendar API client</td>
+              <td><code>build("gmail","v1")</code>, <code>build("calendar","v3")</code></td>
+            </tr>
+            <tr>
+              <td><code>google-auth</code></td>
+              <td>&ge;2.35</td>
+              <td>OAuth2 credential management</td>
+              <td><code>Credentials</code>, <code>Request</code></td>
+            </tr>
+            <tr>
+              <td><code>gitpython</code></td>
+              <td>&ge;3.1</td>
+              <td>Local git operations (clone, commit, push)</td>
+              <td><code>Repo.clone_from()</code>, <code>repo.git.checkout()</code></td>
+            </tr>
+            <tr>
+              <td><code>httpx</code></td>
+              <td>&ge;0.27</td>
+              <td>HTTP client for GitHub, Azure DevOps, WhatsApp APIs</td>
+              <td><code>httpx.AsyncClient</code>, <code>httpx.Client</code></td>
+            </tr>
+            <tr>
+              <td><code>pydantic-settings</code></td>
+              <td>&ge;2.5</td>
+              <td>Environment variable loading</td>
+              <td><code>BaseSettings</code> with <code>.env</code> file support</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: TESTING -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="testing">
+      <h2>Testing</h2>
+
+      <h3>Running Tests</h3>
+      <pre><code>pip install -e ".[dev]"
+PYTHONPATH=src python -m pytest tests/ -v</code></pre>
+
+      <h3>Test Coverage</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Test File</th><th>Covers</th><th>Type</th></tr></thead>
+          <tbody>
+            <tr><td><code>test_greeting_fastpath.py</code></td><td>Greeting regex, persona content, deep health check</td><td>Unit</td></tr>
+            <tr><td><code>test_review_approval_routing.py</code></td><td>Graph routing logic: review approved/rejected/max-iter</td><td>Unit</td></tr>
+            <tr><td><code>test_router.py</code></td><td>WhatsApp payload parsing</td><td>Unit</td></tr>
+            <tr><td><code>test_approve_ci_gate.py</code></td><td>Approval blocked when CI is busy</td><td>Integration</td></tr>
+            <tr><td><code>test_approve_patterns.py</code></td><td>APPROVE/REJECT regex matching + change preview formatting</td><td>Unit</td></tr>
+            <tr><td><code>test_whatsapp_webhook.py</code></td><td>Webhook verification success/failure</td><td>Integration</td></tr>
+            <tr><td><code>test_gmail_webhook.py</code></td><td>Gmail push webhook payloads</td><td>Integration</td></tr>
+            <tr><td><code>test_azdo_pipeline_isolation.py</code></td><td>Pipeline-to-repo isolation safety</td><td>Unit</td></tr>
+            <tr><td><code>test_ci_gate.py</code></td><td>Deploy lock semantics, provider isolation</td><td>Unit</td></tr>
+            <tr><td><code>test_ci_watch.py</code></td><td>CI outcome normalization, status notifications</td><td>Unit</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: SECURITY -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="security">
+      <h2>Security Design</h2>
+
+      <div class="card-grid">
+        <div class="card">
+          <div class="card-label">Webhook Authentication</div>
+          <p style="margin:0"><strong>HMAC-SHA256</strong> signature verification on every WhatsApp POST webhook using the App Secret. Prevents spoofed messages.</p>
+        </div>
+        <div class="card">
+          <div class="card-label">Phone Allowlist</div>
+          <p style="margin:0">Only phone numbers in <code>ALLOWED_PHONE_NUMBERS</code> can interact. Empty list = allow all (dev mode).</p>
+        </div>
+        <div class="card">
+          <div class="card-label">OAuth2 (Google)</div>
+          <p style="margin:0">Refresh tokens stored in App Settings (encrypted at rest). No interactive flow at runtime — token generated once via setup script.</p>
+        </div>
+        <div class="card">
+          <div class="card-label">API Tokens</div>
+          <p style="margin:0">GitHub PAT, Azure DevOps PAT, WhatsApp token — all stored as <code>SecretStr</code> in pydantic-settings, never logged or serialized.</p>
+        </div>
+        <div class="card">
+          <div class="card-label">CI Gate & Deploy Locks</div>
+          <p style="margin:0">Provider-isolated async locks prevent concurrent deploys to the same repo. CI busy check blocks approval until pipeline completes.</p>
+        </div>
+        <div class="card">
+          <div class="card-label">Human-in-the-Loop</div>
+          <p style="margin:0">No code is pushed without explicit <code>APPROVE &lt;task-id&gt;</code> via WhatsApp. Rejection stops the pipeline immediately.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════ -->
+    <!-- SECTION: COST -->
+    <!-- ══════════════════════════════════════════════════ -->
+    <div class="section" id="cost">
+      <h2>Cost Estimation</h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Service</th><th>Tier</th><th>Est. Monthly Cost</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>Azure App Service</td><td>B1 Linux</td><td>~$13</td><td>Central India pricing. Can downgrade to F1 (free) for lighter usage</td></tr>
+            <tr><td>Azure OpenAI (GPT-4o-mini)</td><td>Pay-per-token</td><td>~$2-5</td><td>~$0.15/1M input, $0.60/1M output tokens. Personal usage = low volume</td></tr>
+            <tr><td>WhatsApp Cloud API</td><td>Free tier</td><td>$0</td><td>1,000 free conversations/month</td></tr>
+            <tr><td>Gmail API</td><td>Free tier</td><td>$0</td><td>250 quota units/user/second</td></tr>
+            <tr><td>SQLite</td><td>Bundled</td><td>$0</td><td>File-based, no separate service</td></tr>
+            <tr><td>Azure DevOps</td><td>Free tier</td><td>$0</td><td>1 free parallel job, 1800 minutes/month</td></tr>
+            <tr><td><strong>Total</strong></td><td></td><td><strong>~$5-18/mo</strong></td><td></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+  // TOC active state on scroll
+  const sections = document.querySelectorAll('[id]');
+  const tocLinks = document.querySelectorAll('.toc a');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        tocLinks.forEach(l => l.classList.remove('active'));
+        const link = document.querySelector(`.toc a[href="#${entry.target.id}"]`);
+        if (link) link.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  sections.forEach(s => observer.observe(s));
+</script>

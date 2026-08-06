@@ -1,0 +1,2267 @@
+<title>AI Document Generation Prompt Toolkit v2.1</title>
+<style>
+  @font-face {
+    font-family: 'JetBrains';
+    src: local('JetBrains Mono'), local('Menlo'), local('Consolas');
+  }
+
+  :root {
+    --bg: #fafaf9;
+    --bg-card: #ffffff;
+    --bg-code: #f5f3ef;
+    --bg-code-hover: #eae7e0;
+    --bg-badge: #e8e5df;
+    --text: #1c1917;
+    --text-secondary: #57534e;
+    --text-muted: #a8a29e;
+    --accent: #b45309;
+    --accent-light: #fef3c7;
+    --accent-border: #d97706;
+    --border: #e7e5e4;
+    --border-strong: #d6d3d1;
+    --shadow: 0 1px 3px rgba(28,25,23,.08);
+    --shadow-lg: 0 4px 16px rgba(28,25,23,.1);
+    --cat-arch: #0f766e;
+    --cat-arch-bg: #ccfbf1;
+    --cat-tech: #0369a1;
+    --cat-tech-bg: #e0f2fe;
+    --cat-biz: #7c3aed;
+    --cat-biz-bg: #ede9fe;
+    --cat-sec: #dc2626;
+    --cat-sec-bg: #fef2f2;
+    --cat-gov: #059669;
+    --cat-gov-bg: #ecfdf5;
+    --cat-ops: #c2410c;
+    --cat-ops-bg: #fff7ed;
+    --cat-ai: #6d28d9;
+    --cat-ai-bg: #f5f3ff;
+    --gen-accent: #0d9488;
+    --gen-accent-bg: #ccfbf1;
+    --gen-accent-border: #14b8a6;
+    --radius: 10px;
+    --radius-sm: 6px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0a09;
+      --bg-card: #1c1917;
+      --bg-code: #292524;
+      --bg-code-hover: #34302c;
+      --bg-badge: #292524;
+      --text: #fafaf9;
+      --text-secondary: #a8a29e;
+      --text-muted: #78716c;
+      --accent: #f59e0b;
+      --accent-light: #451a03;
+      --accent-border: #d97706;
+      --border: #292524;
+      --border-strong: #44403c;
+      --shadow: 0 1px 3px rgba(0,0,0,.3);
+      --shadow-lg: 0 4px 16px rgba(0,0,0,.4);
+      --cat-arch: #2dd4bf;
+      --cat-arch-bg: #042f2e;
+      --cat-tech: #38bdf8;
+      --cat-tech-bg: #0c2d48;
+      --cat-biz: #a78bfa;
+      --cat-biz-bg: #1e1348;
+      --cat-sec: #f87171;
+      --cat-sec-bg: #3b1010;
+      --cat-gov: #34d399;
+      --cat-gov-bg: #052e1f;
+      --cat-ops: #fb923c;
+      --cat-ops-bg: #3b1506;
+      --cat-ai: #a78bfa;
+      --cat-ai-bg: #1e1348;
+      --gen-accent: #2dd4bf;
+      --gen-accent-bg: #042f2e;
+      --gen-accent-border: #14b8a6;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c0a09;
+    --bg-card: #1c1917;
+    --bg-code: #292524;
+    --bg-code-hover: #34302c;
+    --bg-badge: #292524;
+    --text: #fafaf9;
+    --text-secondary: #a8a29e;
+    --text-muted: #78716c;
+    --accent: #f59e0b;
+    --accent-light: #451a03;
+    --accent-border: #d97706;
+    --border: #292524;
+    --border-strong: #44403c;
+    --shadow: 0 1px 3px rgba(0,0,0,.3);
+    --shadow-lg: 0 4px 16px rgba(0,0,0,.4);
+    --cat-arch: #2dd4bf;
+    --cat-arch-bg: #042f2e;
+    --cat-tech: #38bdf8;
+    --cat-tech-bg: #0c2d48;
+    --cat-biz: #a78bfa;
+    --cat-biz-bg: #1e1348;
+    --cat-sec: #f87171;
+    --cat-sec-bg: #3b1010;
+    --cat-gov: #34d399;
+    --cat-gov-bg: #052e1f;
+    --cat-ops: #fb923c;
+    --cat-ops-bg: #3b1506;
+    --cat-ai: #a78bfa;
+    --cat-ai-bg: #1e1348;
+    --gen-accent: #2dd4bf;
+    --gen-accent-bg: #042f2e;
+    --gen-accent-border: #14b8a6;
+  }
+  :root[data-theme="light"] {
+    --bg: #fafaf9;
+    --bg-card: #ffffff;
+    --bg-code: #f5f3ef;
+    --bg-code-hover: #eae7e0;
+    --bg-badge: #e8e5df;
+    --text: #1c1917;
+    --text-secondary: #57534e;
+    --text-muted: #a8a29e;
+    --accent: #b45309;
+    --accent-light: #fef3c7;
+    --accent-border: #d97706;
+    --border: #e7e5e4;
+    --border-strong: #d6d3d1;
+    --shadow: 0 1px 3px rgba(28,25,23,.08);
+    --shadow-lg: 0 4px 16px rgba(28,25,23,.1);
+    --cat-arch: #0f766e;
+    --cat-arch-bg: #ccfbf1;
+    --cat-tech: #0369a1;
+    --cat-tech-bg: #e0f2fe;
+    --cat-biz: #7c3aed;
+    --cat-biz-bg: #ede9fe;
+    --cat-sec: #dc2626;
+    --cat-sec-bg: #fef2f2;
+    --cat-gov: #059669;
+    --cat-gov-bg: #ecfdf5;
+    --cat-ops: #c2410c;
+    --cat-ops-bg: #fff7ed;
+    --cat-ai: #6d28d9;
+    --cat-ai-bg: #f5f3ff;
+    --gen-accent: #0d9488;
+    --gen-accent-bg: #ccfbf1;
+    --gen-accent-border: #14b8a6;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .hero {
+    padding: 48px 24px 32px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+  .hero h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 8px; }
+  .hero h1 span { color: var(--accent); }
+  .hero p { color: var(--text-secondary); font-size: 15px; max-width: 620px; margin: 0 auto; }
+  .hero .version {
+    display: inline-block; margin-top: 10px; padding: 3px 10px; border-radius: 12px;
+    font-size: 11px; font-weight: 600; background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent-border);
+  }
+
+  .stats-bar {
+    display: flex; justify-content: center; gap: 32px; padding: 16px 24px;
+    border-bottom: 1px solid var(--border); background: var(--bg-code); flex-wrap: wrap;
+  }
+  .stat { text-align: center; }
+  .stat-num { font-size: 22px; font-weight: 700; color: var(--accent); }
+  .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ═══════════ ONE-CLICK GENERATOR ═══════════ */
+  .generator {
+    max-width: 900px; margin: 0 auto; padding: 24px 24px 0;
+  }
+  .gen-box {
+    background: var(--bg-card); border: 2px solid var(--gen-accent-border);
+    border-radius: var(--radius); box-shadow: var(--shadow-lg); overflow: hidden;
+  }
+  .gen-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 24px; background: var(--gen-accent-bg); border-bottom: 1px solid var(--gen-accent-border);
+    cursor: pointer; user-select: none;
+  }
+  .gen-header-left { display: flex; align-items: center; gap: 12px; }
+  .gen-header h2 { font-size: 18px; font-weight: 700; }
+  .gen-flash {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    padding: 3px 10px; border-radius: 10px;
+    background: var(--gen-accent); color: #fff;
+  }
+  .gen-chevron {
+    width: 24px; height: 24px; color: var(--text-muted); transition: transform .2s;
+  }
+  .gen-box.collapsed .gen-body { display: none; }
+  .gen-box.collapsed .gen-chevron { transform: rotate(-90deg); }
+
+  .gen-body { padding: 24px; }
+
+  .gen-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+  }
+  .gen-field { display: flex; flex-direction: column; gap: 4px; }
+  .gen-field.full { grid-column: 1 / -1; }
+  .gen-field label {
+    font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.3px;
+  }
+  .gen-field input, .gen-field textarea, .gen-field select {
+    padding: 9px 12px; border-radius: var(--radius-sm); border: 1px solid var(--border-strong);
+    background: var(--bg-code); color: var(--text); font-size: 14px; font-family: inherit;
+    transition: border-color .15s;
+  }
+  .gen-field input:focus, .gen-field textarea:focus, .gen-field select:focus {
+    outline: none; border-color: var(--gen-accent-border);
+  }
+  .gen-field textarea { resize: vertical; min-height: 60px; }
+
+  .gen-docs-section { margin-top: 20px; }
+  .gen-docs-section h3 {
+    font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 10px;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+
+  .gen-doc-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px;
+  }
+  .gen-doc-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-radius: var(--radius-sm); border: 1px solid var(--border);
+    background: var(--bg-card); cursor: pointer; transition: all .15s; user-select: none;
+  }
+  .gen-doc-item:hover { border-color: var(--gen-accent-border); background: var(--gen-accent-bg); }
+  .gen-doc-item.selected { border-color: var(--gen-accent-border); background: var(--gen-accent-bg); }
+  .gen-doc-item input[type="checkbox"] { accent-color: var(--gen-accent); width: 16px; height: 16px; cursor: pointer; flex-shrink: 0; }
+  .gen-doc-item span { font-size: 13px; font-weight: 500; }
+  .gen-doc-item .doc-cat {
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 1px 6px; border-radius: 8px; margin-left: auto; flex-shrink: 0;
+  }
+
+  .gen-select-bar {
+    display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center;
+  }
+  .gen-select-btn {
+    font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 12px;
+    border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary);
+    cursor: pointer; transition: all .15s;
+  }
+  .gen-select-btn:hover { border-color: var(--gen-accent-border); color: var(--gen-accent); }
+  .gen-select-count { font-size: 12px; color: var(--text-muted); margin-left: auto; }
+
+  .gen-actions {
+    display: flex; gap: 12px; margin-top: 24px; align-items: center; flex-wrap: wrap;
+  }
+  .gen-btn {
+    padding: 12px 28px; border-radius: var(--radius-sm); font-size: 15px; font-weight: 700;
+    border: none; cursor: pointer; transition: all .15s; display: inline-flex; align-items: center; gap: 8px;
+  }
+  .gen-btn-primary {
+    background: var(--gen-accent); color: #fff;
+  }
+  .gen-btn-primary:hover { opacity: .9; transform: translateY(-1px); box-shadow: var(--shadow-lg); }
+  .gen-btn-secondary {
+    background: var(--bg-code); color: var(--text-secondary); border: 1px solid var(--border-strong);
+  }
+  .gen-btn-secondary:hover { border-color: var(--gen-accent-border); color: var(--gen-accent); }
+  .gen-btn.copied { background: #059669; }
+
+  .gen-output {
+    margin-top: 20px; display: none;
+  }
+  .gen-output.visible { display: block; }
+  .gen-output-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+  }
+  .gen-output-header h3 { font-size: 14px; font-weight: 600; color: var(--gen-accent); }
+  .gen-output-text {
+    background: var(--bg-code); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 16px; font-family: 'JetBrains', monospace; font-size: 12px; line-height: 1.7;
+    white-space: pre-wrap; word-break: break-word; color: var(--text);
+    max-height: 500px; overflow-y: auto;
+  }
+  .gen-word-count { font-size: 11px; color: var(--text-muted); }
+  .gen-tip {
+    margin-top: 12px; padding: 12px 16px; border-radius: var(--radius-sm);
+    background: var(--accent-light); border: 1px solid var(--accent-border);
+    font-size: 13px; color: var(--accent);
+  }
+
+  /* ═══════════ EXISTING STYLES ═══════════ */
+  .container { max-width: 900px; margin: 0 auto; padding: 0 24px 80px; }
+
+  .instructions {
+    max-width: 900px; margin: 24px auto; padding: 0 24px;
+  }
+  .instructions-box {
+    background: var(--accent-light); border: 1px solid var(--accent-border);
+    border-radius: var(--radius); padding: 20px 24px;
+  }
+  .instructions-box h3 { font-size: 14px; font-weight: 600; color: var(--accent); margin-bottom: 8px; }
+  .instructions-box ol { padding-left: 20px; font-size: 14px; color: var(--text-secondary); }
+  .instructions-box li { margin-bottom: 4px; }
+  .instructions-box code {
+    background: var(--bg-code); padding: 1px 5px; border-radius: 3px;
+    font-family: 'JetBrains', monospace; font-size: 12px;
+  }
+
+  .category-header {
+    display: flex; align-items: center; gap: 12px; margin: 40px 0 16px;
+    padding-bottom: 12px; border-bottom: 2px solid var(--border);
+  }
+  .category-badge {
+    padding: 4px 12px; border-radius: 20px; font-size: 11px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .category-header h2 { font-size: 20px; font-weight: 700; letter-spacing: -0.3px; }
+  .category-desc { font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+
+  .prompt-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    margin-bottom: 12px; box-shadow: var(--shadow); overflow: hidden;
+  }
+  .prompt-card.flagship { border-left: 3px solid var(--accent); }
+  .prompt-header {
+    display: flex; justify-content: space-between; align-items: center; padding: 14px 20px;
+    cursor: pointer; user-select: none; transition: background .15s;
+  }
+  .prompt-header:hover { background: var(--bg-code); }
+  .prompt-title-area { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+  .prompt-icon {
+    font-size: 13px; font-weight: 700; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center; border-radius: 6px;
+    background: var(--bg-badge); color: var(--text-secondary); flex-shrink: 0;
+  }
+  .prompt-title { font-size: 15px; font-weight: 600; }
+  .prompt-subtitle { font-size: 12px; color: var(--text-muted); }
+  .chevron { width: 20px; height: 20px; color: var(--text-muted); transition: transform .2s; flex-shrink: 0; }
+  .prompt-card.open .chevron { transform: rotate(180deg); }
+
+  .prompt-body { display: none; padding: 0 20px 20px; }
+  .prompt-card.open .prompt-body { display: block; }
+
+  .prompt-meta { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .meta-tag {
+    font-size: 11px; padding: 2px 8px; border-radius: 4px;
+    background: var(--bg-badge); color: var(--text-secondary);
+  }
+  .meta-tag.star { background: var(--accent-light); color: var(--accent); border: 1px solid var(--accent-border); }
+
+  .prompt-text {
+    background: var(--bg-code); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 16px; font-family: 'JetBrains', monospace; font-size: 12.5px; line-height: 1.7;
+    white-space: pre-wrap; word-break: break-word; color: var(--text);
+    position: relative; max-height: 600px; overflow-y: auto;
+  }
+  .copy-btn {
+    display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px;
+    background: var(--accent); color: #fff; border: none; border-radius: var(--radius-sm);
+    font-size: 12px; font-weight: 600; cursor: pointer; transition: opacity .15s; margin-top: 10px;
+  }
+  .copy-btn:hover { opacity: .85; }
+  .copy-btn.copied { background: #059669; }
+
+  .toc {
+    position: sticky; top: 0; z-index: 10; background: var(--bg);
+    border-bottom: 1px solid var(--border); padding: 10px 24px;
+    display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch;
+  }
+  .toc::-webkit-scrollbar { display: none; }
+  .toc-btn {
+    padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--border); background: var(--bg-card); color: var(--text-secondary);
+    cursor: pointer; white-space: nowrap; transition: all .15s;
+  }
+  .toc-btn:hover, .toc-btn.active {
+    border-color: var(--accent-border); color: var(--accent); background: var(--accent-light);
+  }
+
+  @media (max-width: 600px) {
+    .hero { padding: 32px 16px 24px; }
+    .hero h1 { font-size: 22px; }
+    .stats-bar { gap: 20px; }
+    .container { padding: 0 16px 60px; }
+    .prompt-header { padding: 12px 14px; }
+    .prompt-text { font-size: 11.5px; padding: 12px; }
+    .gen-grid { grid-template-columns: 1fr; }
+    .gen-doc-grid { grid-template-columns: 1fr; }
+    .generator { padding: 16px 16px 0; }
+    .gen-body { padding: 16px; }
+  }
+</style>
+
+<div class="hero">
+  <h1>AI Document Generation <span>Prompt Toolkit</span></h1>
+  <p>Production-grade prompts for generating enterprise architecture, security, compliance, and business documents. Fill in your project details, select documents, and generate a ready-to-paste prompt.</p>
+  <div class="version">v2.2 — Complete Enterprise Edition (37 Prompts)</div>
+</div>
+
+<div class="stats-bar">
+  <div class="stat"><div class="stat-num">37</div><div class="stat-label">Prompts</div></div>
+  <div class="stat"><div class="stat-num">7</div><div class="stat-label">Categories</div></div>
+  <div class="stat"><div class="stat-num">17+</div><div class="stat-label">Diagram Types</div></div>
+  <div class="stat"><div class="stat-num">1-Click</div><div class="stat-label">Generator</div></div>
+</div>
+
+<!-- ═══════════════ ONE-CLICK GENERATOR ═══════════════ -->
+<div class="generator">
+  <div class="gen-box" id="genBox">
+    <div class="gen-header" onclick="toggleGen()">
+      <div class="gen-header-left">
+        <h2>One-Click Document Generator</h2>
+        <span class="gen-flash">NEW</span>
+      </div>
+      <svg class="gen-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="gen-body">
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px;">Fill in your project details once, select the documents you want, and click <strong>Generate</strong>. You get a single ready-to-paste prompt — no placeholders, no manual editing. Paste it into Claude / ChatGPT / Gemini along with your source code.</p>
+
+      <div class="gen-grid">
+        <div class="gen-field">
+          <label>Project Name *</label>
+          <input type="text" id="g_name" placeholder="e.g., Azure FinOps Scanner" />
+        </div>
+        <div class="gen-field">
+          <label>Organization</label>
+          <input type="text" id="g_org" placeholder="e.g., Contoso Ltd" />
+        </div>
+        <div class="gen-field">
+          <label>Primary Language *</label>
+          <input type="text" id="g_lang" placeholder="e.g., Python 3.12" />
+        </div>
+        <div class="gen-field">
+          <label>Framework *</label>
+          <input type="text" id="g_framework" placeholder="e.g., FastAPI / Next.js / Spring Boot" />
+        </div>
+        <div class="gen-field">
+          <label>Database</label>
+          <input type="text" id="g_db" placeholder="e.g., PostgreSQL 16 / Cosmos DB / MongoDB" />
+        </div>
+        <div class="gen-field">
+          <label>Cloud Provider</label>
+          <input type="text" id="g_cloud" placeholder="e.g., Azure / AWS / GCP" />
+        </div>
+        <div class="gen-field">
+          <label>Deployment Target</label>
+          <input type="text" id="g_deploy" placeholder="e.g., Azure App Service / AWS ECS / K8s" />
+        </div>
+        <div class="gen-field">
+          <label>CI/CD Tool</label>
+          <input type="text" id="g_cicd" placeholder="e.g., Azure DevOps / GitHub Actions" />
+        </div>
+        <div class="gen-field">
+          <label>Business Domain</label>
+          <input type="text" id="g_domain" placeholder="e.g., FinOps / Healthcare / E-commerce" />
+        </div>
+        <div class="gen-field">
+          <label>Target Users</label>
+          <input type="text" id="g_users" placeholder="e.g., Enterprise Finance Teams" />
+        </div>
+        <div class="gen-field">
+          <label>Compliance Frameworks</label>
+          <input type="text" id="g_compliance" placeholder="e.g., SOC 2, GDPR, ISO 27001" />
+        </div>
+        <div class="gen-field">
+          <label>Repo URL</label>
+          <input type="text" id="g_repo" placeholder="e.g., github.com/org/repo" />
+        </div>
+        <div class="gen-field full">
+          <label>Additional Context (optional)</label>
+          <textarea id="g_context" placeholder="Any extra info: AI models used, team size, architecture notes, special requirements..."></textarea>
+        </div>
+      </div>
+
+      <div class="gen-docs-section">
+        <h3>Select Documents to Generate</h3>
+        <div class="gen-select-bar">
+          <button class="gen-select-btn" onclick="selectDocs('all')">Select All</button>
+          <button class="gen-select-btn" onclick="selectDocs('none')">Deselect All</button>
+          <button class="gen-select-btn" onclick="selectDocs('arch')">Architecture</button>
+          <button class="gen-select-btn" onclick="selectDocs('tech')">Technical</button>
+          <button class="gen-select-btn" onclick="selectDocs('biz')">Business</button>
+          <button class="gen-select-btn" onclick="selectDocs('sec')">Security</button>
+          <button class="gen-select-btn" onclick="selectDocs('gov')">Governance</button>
+          <button class="gen-select-btn" onclick="selectDocs('ops')">Operations</button>
+          <span class="gen-select-count" id="docCount">0 selected</span>
+        </div>
+        <div class="gen-doc-grid" id="docGrid"></div>
+      </div>
+
+      <div class="gen-actions">
+        <button class="gen-btn gen-btn-primary" onclick="generatePrompt()">Generate Master Prompt</button>
+        <button class="gen-btn gen-btn-secondary" id="copyGenBtn" onclick="copyGenerated()" style="display:none;">Copy to Clipboard</button>
+      </div>
+
+      <div class="gen-output" id="genOutput">
+        <div class="gen-output-header">
+          <h3>Generated Prompt — Ready to Paste</h3>
+          <span class="gen-word-count" id="wordCount"></span>
+        </div>
+        <div class="gen-output-text" id="genText"></div>
+        <div class="gen-tip">
+          <strong>How to use:</strong> Copy this prompt, open Claude / ChatGPT / Gemini, paste it, then attach or paste your source code files below it. Say "CONTEXT COMPLETE" when done uploading. The AI will generate all selected documents sequentially — say "NEXT" after each one.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<nav class="toc" id="toc">
+  <button class="toc-btn active" data-cat="all">All</button>
+  <button class="toc-btn" data-cat="arch">Architecture</button>
+  <button class="toc-btn" data-cat="tech">Technical</button>
+  <button class="toc-btn" data-cat="biz">Business</button>
+  <button class="toc-btn" data-cat="sec">Security</button>
+  <button class="toc-btn" data-cat="gov">Governance</button>
+  <button class="toc-btn" data-cat="ops">Operations</button>
+  <button class="toc-btn" data-cat="ai">AI Context</button>
+</nav>
+
+<div class="instructions">
+  <div class="instructions-box">
+    <h3>How to Use These Prompts</h3>
+    <ol>
+      <li><strong>Fastest path:</strong> Use the <strong>One-Click Generator</strong> above — fill details, select docs, generate, paste into AI with your code</li>
+      <li>Or click any card below to expand and see individual prompts</li>
+      <li>Replace all <code>{{PLACEHOLDER}}</code> values with your project details</li>
+      <li>Feed your codebase files alongside the prompt</li>
+      <li>Start with <strong>Prompt #1</strong> (Enterprise Architecture Master) for the single most comprehensive document</li>
+      <li>Every architecture prompt mandates <strong>Mermaid diagrams</strong> — renderable in GitHub, Notion, Confluence, or any Markdown viewer</li>
+    </ol>
+  </div>
+</div>
+
+<div class="container" id="cards">
+
+  <!-- ═══════════════ ARCHITECTURE ═══════════════ -->
+  <div class="category-header" id="cat-arch">
+    <span class="category-badge" style="background:var(--cat-arch-bg);color:var(--cat-arch);">Architecture</span>
+    <h2>Architecture & Design Documents</h2>
+  </div>
+  <p class="category-desc">Enterprise-grade HLD, LLD, feature diagrams, and complete architecture documentation with Mermaid diagrams throughout.</p>
+
+  <div class="prompt-card flagship" data-cat="arch">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">1</span>
+        <div><div class="prompt-title">Enterprise Architecture Master Document</div><div class="prompt-subtitle">The flagship — complete 17-part enterprise architecture document with all diagrams</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag star">Flagship</span><span class="meta-tag">17 Parts</span><span class="meta-tag">Mermaid Diagrams</span><span class="meta-tag">Whitepaper Grade</span></div>
+      <div class="prompt-text">You are a Principal Software Architect at a top-tier technology firm (Microsoft / Google / Anthropic calibre). You have been engaged to produce a **complete Enterprise Architecture & Reverse-Engineering Document** for a production codebase.
+
+PROJECT: {{PROJECT_NAME}}
+REPO URL: {{REPO_URL}}
+PRIMARY LANGUAGE: {{LANGUAGE}}
+FRAMEWORK: {{FRAMEWORK}}
+DATABASE: {{DATABASE}}
+CLOUD PROVIDER: {{CLOUD_PROVIDER}}
+DEPLOYMENT TARGET: {{DEPLOYMENT_TARGET}}
+
+I will provide you with the COMPLETE source code of this project. Analyse every file, every function, every import, every config value. Then produce a single comprehensive document with ALL of the following 17 parts. This document must read like a Microsoft / Google engineering whitepaper — exhaustive, specific, and production-grade. No summaries. No placeholders. Every claim references a real file, function, or config value from the code.
+
+**IMPORTANT**: Every part that describes a flow, architecture, or relationship MUST include a Mermaid diagram. Use the appropriate diagram type:
+- `sequenceDiagram` for request flows and API call chains
+- `graph TB/LR` for architecture and component relationships
+- `erDiagram` for database schemas
+- `flowchart` for decision trees and CI/CD pipelines
+- `classDiagram` for class hierarchies
+- `stateDiagram-v2` for state machines and lifecycle flows
+- `pie` for distribution breakdowns
+
+---
+
+## PART 1 — PROJECT OVERVIEW
+1.1 Purpose, 1.2 Business Problem table, 1.3 Differentiation, 1.4 Industry Use Cases, 1.5 Target Customers, 1.6 Pain Points Solved (citing code modules), 1.7 ROI table, 1.8 AI Capabilities table, 1.9 Expected Users, 1.10 Competitor Comparison matrix
+
+## PART 2 — COMPLETE BUSINESS FLOW
+Full sequenceDiagram of end-to-end customer journey. Phase-by-phase narrative citing files and functions.
+
+## PART 3 — SYSTEM ARCHITECTURE (HLD)
+Logical Architecture (graph TB), Component Inventory table, Deployment Topology (graph LR), Scalability Boundaries table
+
+## PART 4 — LOW-LEVEL DESIGN (LLD)
+Complete Folder Structure, Layered Responsibilities table, Key Design Patterns table, Concurrency Model (flowchart)
+
+## PART 5 — COMPLETE CODE FLOW (Per Major Request)
+For EACH major API endpoint (minimum 4): Full sequenceDiagram showing every function call, parallel execution, error handling
+
+## PART 6 — AI ARCHITECTURE (if applicable)
+Provider Layer, Prompt Architecture, Context Assembly, Hallucination Prevention, Token Economics, Caching Strategy
+
+## PART 7 — DATABASE DOCUMENTATION
+Full erDiagram, Schema Strategy, Idempotency Logic, Indexing Strategy, Query Performance, Transactions
+
+## PART 8 — SECURITY DOCUMENTATION
+Auth table, Session Isolation, Authorization Model, Secrets Management, Encryption, OWASP Top-10, Audit
+
+## PART 9 — DEVOPS DOCUMENTATION
+CI/CD Pipeline flowchart, Deploy Script Matrix, Observability, Disaster Recovery, Scaling Levers
+
+## PART 10 — PERFORMANCE
+Bottlenecks table, Optimisations, Latency Budgets
+
+## PART 11 — BUSINESS VALUE
+Benefits, Productivity Gains table, ROI Model
+
+## PART 12 — CLIENT PRESENTATION
+10-slide Pitch Deck, FAQ table (15+ questions), Live Demo Script
+
+## PART 13 — KNOWLEDGE TRANSFER
+Day-1 Setup commands, Folder Cheat-Sheet, Coding Standards, Debug Recipes, Test Strategy
+
+## PART 14 — REVERSE-ENGINEERING REPORT
+Every dependency: Library | Version | Why | Alternatives | Pros | Cons
+
+## PART 15 — CODE QUALITY REVIEW
+SOLID Audit (A-F grades), Design Patterns, Code Smells, Maintainability Scorecard (12 dimensions, 1-5), Top-5 Next Steps
+
+## APPENDIX A — Route Index (every endpoint)
+## APPENDIX B — File Statistics
+## APPENDIX C — Architecture Graph Statistics
+
+TONE: Engineering whitepaper. LENGTH: 1000-2000 lines. DIAGRAMS: Minimum 10 Mermaid diagrams.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="arch">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">2</span>
+        <div><div class="prompt-title">High-Level Design (HLD) with Diagrams</div><div class="prompt-subtitle">C4-model architecture with logical, deployment, and integration diagrams</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">HLD</span><span class="meta-tag">C4 Model</span><span class="meta-tag">6+ Diagrams</span></div>
+      <div class="prompt-text">You are a Principal Solutions Architect. Produce a **High-Level Design (HLD)** document from the provided codebase. Every section MUST include at least one Mermaid diagram.
+
+PROJECT: {{PROJECT_NAME}} | CLOUD: {{CLOUD_PROVIDER}} | DEPLOYMENT: {{DEPLOYMENT_TARGET}}
+
+## 1. System Context (C4 Level 1) — graph TB showing system + all external actors
+## 2. Container Diagram (C4 Level 2) — graph TB breaking system into containers, grouped by deployment boundary
+## 3. Component Diagram (C4 Level 3) — graph TB per major container showing modules by layer
+## 4. Deployment Architecture — graph LR showing cloud infrastructure with service tiers
+## 5. Data Architecture — erDiagram + data store inventory + data lifecycle
+## 6. Integration Architecture — sequenceDiagram per external integration + integration matrix table
+## 7. Security Architecture — graph TB trust boundary diagram with zones and auth mechanisms
+## 8. Scalability & Reliability — capacity model with numbers from code, failure modes, scaling paths
+## 9. Technology Stack Rationale — table: Technology | Category | Why Chosen | Alternative | Trade-off
+## 10. Architecture Decision Records — Context, Decision, Consequences, Status for each major decision
+
+Reference actual code files, config values, and module names throughout.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="arch">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">3</span>
+        <div><div class="prompt-title">Low-Level Design (LLD) with Code Flows</div><div class="prompt-subtitle">Module internals, class diagrams, concurrency model, and function-level flow diagrams</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">LLD</span><span class="meta-tag">Code Flow</span><span class="meta-tag">10+ Diagrams</span></div>
+      <div class="prompt-text">You are a Principal Engineer conducting a Low-Level Design review. PROJECT: {{PROJECT_NAME}}
+
+## 1. Folder Structure — Full annotated directory tree with purpose per file
+## 2. Layer Architecture — table: Layer | Responsibility | Modules | Rules (CAN/CANNOT)
+## 3. Module-by-Module Deep Dive — For EACH source file: Purpose, Depends on, Depended on by, Classes (name, base, responsibility, key methods), Functions (name, params, return, 1-line description), Constants, Error Handling, Side Effects
+## 4. Key Design Patterns — classDiagram with actual names + table: Pattern | Where | Quality Assessment
+## 5. Concurrency Model — flowchart showing async workers, thread pools, semaphores with actual values
+## 6. Complete Code Flow Per Endpoint — For EACH major endpoint (min 5): sequenceDiagram with autonumber, par blocks, actual function names, data shapes, error/retry paths
+## 7. State Management — stateDiagram-v2 for main entity lifecycle + state recovery + cleanup
+## 8. Configuration & Feature Flags — table: Config Key | Type | Default | Source | Purpose | Dependencies
+## 9. Error Taxonomy — table: Error Type | Source | HTTP Code | User Message | Recovery | Logged?
+## 10. Data Transformation Map — Input → [Step: function()] → Intermediate → Output for each pipeline
+
+Cite file paths and line ranges throughout.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="arch">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">4</span>
+        <div><div class="prompt-title">Feature-Level Architecture Diagrams</div><div class="prompt-subtitle">Per-feature sequence diagrams, state machines, and interaction maps</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag star">Diagrams Only</span><span class="meta-tag">Per Feature</span><span class="meta-tag">15+ Diagrams</span></div>
+      <div class="prompt-text">You are a Solutions Architect producing a **Feature-Level Architecture Diagram Package**. PROJECT: {{PROJECT_NAME}}
+
+For EVERY distinct feature in the codebase:
+
+## Feature Index — table: # | Feature Name | Entry Point | Key Modules | Diagram Types
+
+## Per Feature:
+- Sequence Diagram (autonumber, par/alt/loop/opt/Note blocks, actual function names, timing annotations)
+- State Diagram (if feature has states — stateDiagram-v2 with guard conditions)
+- Data Flow Diagram (flowchart LR — Raw Input → Validation → Processing → Storage → Output)
+- Component Interaction (graph TB — components involved, critical path highlighted)
+- Error & Recovery Paths (flowchart TD — success vs failure, retry with backoff params, fallback, user notification)
+
+## Cross-Feature Diagrams:
+- System-Wide Data Flow (all features mapped to data stores)
+- Feature Dependency Matrix table
+- Concurrency Map (which features share locks/semaphores)
+
+REQUIREMENTS: Min 15 diagrams, autonumber in all sequences, ACTUAL names from code, timing annotations.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="arch">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">5</span>
+        <div><div class="prompt-title">Database & Data Architecture Document</div><div class="prompt-subtitle">Complete ER diagrams, schema design, query patterns, and data lifecycle</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Database</span><span class="meta-tag">ER Diagrams</span></div>
+      <div class="prompt-text">You are a Data Architect. PROJECT: {{PROJECT_NAME}} | DB: {{DATABASE}}
+
+## 1. Data Store Inventory — table: Store | Type | Engine | Location | Purpose | Size
+## 2. ER Diagram — Full erDiagram with EVERY table, column, type, constraint, relationship
+## 3. Schema Design Decisions — per table: why it exists, key choices, JSON schema, delete strategy
+## 4. Indexing Strategy — table: Table | Index | Columns | Type | Purpose | Query It Optimizes
+## 5. Query Patterns — SQL templates, when they execute, expected row count, performance
+## 6. Data Flow Between Stores — flowchart LR: API → SQL → Files → Blob → Search Index
+## 7. Transaction Model — isolation levels, batch sizes, locking, idempotency (UPSERT/MERGE)
+## 8. Connection Pool Config — table: Parameter | Value | Why
+## 9. Migration Strategy — how schema changes apply, backward compatibility
+## 10. Data Lifecycle — stateDiagram-v2: Created → Active → Archived → Purged
+## 11. Backup & Recovery — strategy, frequency, PITR, procedures
+## 12. Data Privacy — table: Table | Column | Classification (PII/Sensitive/Public) | Encryption | Retention
+
+Cite actual ORM models and repository functions from the code.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="arch">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">6</span>
+        <div><div class="prompt-title">AI/ML Architecture Document</div><div class="prompt-subtitle">LLM integration, prompt architecture, RAG pipelines, token economics</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">AI/ML</span><span class="meta-tag">LLM</span><span class="meta-tag">RAG</span></div>
+      <div class="prompt-text">You are a Principal AI Architect. PROJECT: {{PROJECT_NAME}}
+
+## 1. AI Provider Landscape — table + graph LR (provider selection with fallback chain)
+## 2. Prompt Architecture — Per AI surface: system prompt, user template, parameters, input context, output schema, validation, failure mode
+## 3. Context Assembly Pipeline — sequenceDiagram: DB → filter → format → token estimate → truncate → inject
+## 4. RAG Pipeline (if applicable) — flowchart: Chunk → Embed → Store → Query → Search → Rerank → Inject
+## 5. Hallucination Prevention — table: Technique | Implementation | Where | Effectiveness
+## 6. Streaming Architecture — sequenceDiagram: Client → API → LLM (streaming) → Parse → Render
+## 7. Multi-Provider Resilience — flowchart: Primary → 429? → Secondary → Both fail? → Fallback
+## 8. Token Economics — table: Operation | Input Tokens | Output Tokens | Cost/Call | Monthly
+## 9. Evaluation & Observability — quality measurement, logging, A/B testing, feedback loops
+## 10. Security & Privacy — PII scrubbing, data residency, model access control
+
+Reference actual prompt strings, model configs, retry constants, and caching logic.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="arch">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">37</span>
+        <div><div class="prompt-title">Service Catalog & API Contracts</div><div class="prompt-subtitle">Service inventory, ownership, interface contracts, event catalog, versioning</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Services</span><span class="meta-tag">Contracts</span><span class="meta-tag">Microservices</span></div>
+      <div class="prompt-text">You are a Platform Architect. PROJECT: {{PROJECT_NAME}}
+
+## 1. Service Inventory — table: Service | Owner | Repo | Language | Runtime | Port | Health Endpoint | Dependencies | SLO
+## 2. Service Relationship Map — `graph TB` showing all services with communication patterns (sync/async, protocol, auth)
+## 3. Per-Service Card — purpose, team owner, on-call, runbook, deploy frequency, MTTR
+## 4. API Contracts Per Boundary — OpenAPI/AsyncAPI spec summary: endpoints, schemas, versioning
+## 5. Contract Testing — consumer-driven contracts, Pact coverage
+## 6. Breaking Change Policy — what constitutes a breaking change, deprecation timeline, notification
+## 7. Event Catalog (if event-driven) — table: Event | Producer | Consumers | Schema | Retry Policy | DLQ
+## 8. Shared Libraries — table: Library | Purpose | Services Using | Version | Maintainer
+## 9. Cross-Service Flows — `sequenceDiagram` for top 3 inter-service workflows
+## 10. Service Mesh / API Gateway — routing rules, rate limits, circuit breakers, retries
+## 11. Data Ownership — table: Data Entity | Owning Service | Read Access | Write Access | Sync Mechanism
+## 12. Versioning Strategy — how APIs version (URL path, header, query)
+## 13. Service Scorecard — table: Service | Uptime | Deploy Freq | Coverage | Tech Debt | Health
+
+For monoliths: treat major modules as internal services and document their contracts and boundaries.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ TECHNICAL ═══════════════ -->
+  <div class="category-header" id="cat-tech">
+    <span class="category-badge" style="background:var(--cat-tech-bg);color:var(--cat-tech);">Technical</span>
+    <h2>Technical Reference Documents</h2>
+  </div>
+  <p class="category-desc">Codebase inventory, API reference, dependency analysis, and code quality reviews.</p>
+
+  <div class="prompt-card" data-cat="tech">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">7</span>
+        <div><div class="prompt-title">Codebase Discovery & Inventory</div><div class="prompt-subtitle">Foundation document — master inventory all other prompts reference</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Foundation</span><span class="meta-tag">Run First</span></div>
+      <div class="prompt-text">You are a senior software architect performing a complete codebase audit. PROJECT: {{PROJECT_NAME}} | LANGUAGE: {{LANGUAGE}} | FRAMEWORK: {{FRAMEWORK}}
+
+## 1. Project Overview — Purpose, tech stack, architecture pattern
+## 2. Directory Structure — Annotated tree with purpose per directory/file, entry points
+## 3. Module-by-Module Reference — Per source file: path, line count, purpose, classes, functions/methods (name, params, return, description), key dependencies, external integrations
+## 4. Data Models — All models/schemas/types with fields, types, constraints, relationships
+## 5. Configuration & Environment — Config files, env vars table: Name | Purpose | Required | Example, feature flags
+## 6. Entry Points & Routing — API endpoints: Method | Path | Handler | Auth, CLI commands, jobs, webhooks
+## 7. Dependency Inventory — table: Library | Version | Category | Purpose | Alternative
+
+Be exhaustive. This inventory feeds every subsequent document.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="tech">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">8</span>
+        <div><div class="prompt-title">API Reference Document</div><div class="prompt-subtitle">Complete endpoint reference with schemas, examples, and error catalogue</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">API</span><span class="meta-tag">Reference</span></div>
+      <div class="prompt-text">You are a technical writer. PROJECT: {{PROJECT_NAME}} | BASE URL: {{BASE_URL}}
+
+For EVERY API endpoint:
+- Summary, Authentication, Rate Limits
+- Request: Headers, Params, Body (JSON schema), Example (curl)
+- Response: Success + Error responses with examples
+- Business Logic: Validation, side effects, async behavior
+
+Plus: Webhooks (trigger, payload, signature, retry), Authentication Guide, Error Reference catalogue.
+Generate realistic JSON examples. Reference actual validation logic from code.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="tech">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">9</span>
+        <div><div class="prompt-title">Reverse-Engineering & Dependency Report</div><div class="prompt-subtitle">Every dependency audited — version, rationale, alternatives, license, upgrade risk</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Dependencies</span><span class="meta-tag">Reverse Engineering</span></div>
+      <div class="prompt-text">You are a Principal Engineer. Produce a **Reverse-Engineering & Dependency Report**. PROJECT: {{PROJECT_NAME}}
+
+## 1. Dependency Inventory — table: Library | Version | Why (from actual code usage) | Alternatives | Pros | Cons | Upgrade Risk
+## 2. Dependency Graph — graph TD showing major clusters
+## 3. Transitive Risk — deep trees, known CVEs, end-of-life packages
+## 4. Version Pinning — pinned vs floating, lock file freshness, Dependabot/Renovate
+## 5. Vendor Lock-in — table: Dependency | Lock-in Level | Migration Path | Effort
+## 6. Bundle Size Impact (frontend) — tree-shaking, largest contributors
+## 7. License Compliance — table: Library | License | Commercial Use | Copyleft Risk
+
+Cite actual import sites and usage patterns for each dependency.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="tech">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">10</span>
+        <div><div class="prompt-title">Code Quality & Principal Engineer Review</div><div class="prompt-subtitle">SOLID audit, pattern assessment, code smells, maintainability scorecard</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Code Quality</span><span class="meta-tag">SOLID</span><span class="meta-tag">Scorecard</span></div>
+      <div class="prompt-text">You are a Principal Engineer at a FAANG company. PROJECT: {{PROJECT_NAME}}
+
+## 1. SOLID Audit — table: Principle | Grade (A+ to F) | Evidence | Improvement
+## 2. Design Patterns Observed — table: Pattern | Location (file:function) | Quality | Notes
+## 3. Code Smells — table: Smell | Where (file:line) | Severity | Suggested Fix | Effort
+## 4. Complexity — Files over 500 lines, functions over 50, cyclomatic hotspots, deep nesting
+## 5. Maintainability Scorecard — table: Dimension | Score (1-5) | Notes — 12 dimensions: Readability, Documentation, Test Coverage, Modularity, Tooling, Observability, Performance, Security, Scalability, Deployability, Error Handling, API Design
+## 6. Scalability Assessment — bottlenecks, scaling readiness, state limitations
+## 7. Testability — coverage, hard-to-test patterns, improvements
+## 8. Top-10 Improvements — prioritized by impact x effort
+
+Grade fairly — acknowledge strengths, not just problems.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="tech">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">31</span>
+        <div><div class="prompt-title">Testing & QA Strategy</div><div class="prompt-subtitle">Test pyramid, E2E scenarios, coverage targets, performance test plan, quality gates</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Testing</span><span class="meta-tag">QA</span><span class="meta-tag">Coverage</span></div>
+      <div class="prompt-text">You are a QA Architect. Analyze the codebase and produce a **Testing & QA Strategy Document**. PROJECT: {{PROJECT_NAME}}
+
+## 1. Test Pyramid — Unit | Integration | E2E: current count, target, framework for each level
+## 2. Test Matrix — table: Feature | Unit Tests | Integration | E2E | Manual | Status
+## 3. Coverage Analysis — table: Module | Line Coverage | Branch Coverage | Untested Critical Paths
+## 4. Test Data Strategy — how data is created, seeded, cleaned up, isolated between tests
+## 5. E2E Test Scenarios — Per major workflow: preconditions, steps, assertions, edge cases
+## 6. Performance Test Plan — load profile, target throughput, latency SLOs, tools, baseline benchmarks
+## 7. Security Test Plan — SAST/DAST tools, fuzzing, pen test scope, vulnerability scan schedule
+## 8. CI Integration — which tests run on PR, on merge, nightly; flaky test handling strategy
+## 9. Mocking Strategy — table: Dependency | Mocked/Real | Test Double Type | Justification
+## 10. Test Environment — table: Env | Purpose | Data | Config Differences
+## 11. Quality Gates — what must pass before merge, before deploy, before release
+## 12. Regression Suite — critical path smoke tests with expected execution time
+
+Analyze actual test files in the repo. Identify gaps between tested and untested code paths.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="tech">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">32</span>
+        <div><div class="prompt-title">Technical Debt Register</div><div class="prompt-subtitle">Cataloged debt with severity, business impact, remediation roadmap, and prevention</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Tech Debt</span><span class="meta-tag">Remediation</span></div>
+      <div class="prompt-text">You are a Principal Engineer. Analyze the codebase and produce a **Technical Debt Register**. PROJECT: {{PROJECT_NAME}}
+
+## 1. Debt Inventory — table: ID | Category | Description | Location (file:line) | Severity (Critical/High/Med/Low) | Business Impact | Remediation Effort | Interest (ongoing cost of NOT fixing)
+Categories: Architecture, Code, Test, Documentation, Infrastructure, Dependency, Design Debt
+## 2. Debt Heat Map — table: Module | Debt Items | Aggregate Severity | Refactoring Priority
+## 3. Root Cause Analysis — how each debt item was introduced (time pressure, knowledge gap, scope change)
+## 4. Remediation Roadmap — Sprint 1 (quick wins) | 30-day | 90-day | Backlog — with effort and justification
+## 5. Impact on Velocity — how debt slows development (developer friction, bug rate, onboarding time)
+## 6. Debt-to-Value Ratio — cost vs feature delivery capacity
+## 7. Prevention Strategies — coding standards, review checklists, architecture fitness functions
+## 8. Tracking Methodology — triggers for adding/closing items, review cadence
+## 9. Connection to Code Quality — link each debt item to SOLID violations, code smells, pattern issues
+
+Every debt item must reference a specific file and line. No vague "should refactor X" entries.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ BUSINESS ═══════════════ -->
+  <div class="category-header" id="cat-biz">
+    <span class="category-badge" style="background:var(--cat-biz-bg);color:var(--cat-biz);">Business</span>
+    <h2>Business & Product Documents</h2>
+  </div>
+  <p class="category-desc">Stakeholder-facing documents — BRD, PRD, solution design, ROI, client presentation.</p>
+
+  <div class="prompt-card" data-cat="biz">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">11</span>
+        <div><div class="prompt-title">Business Requirements Document (BRD)</div><div class="prompt-subtitle">Executive-level business case with objectives, scope, and ROI</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Executive</span><span class="meta-tag">Strategy</span></div>
+      <div class="prompt-text">You are a senior business analyst. PROJECT: {{PROJECT_NAME}} | DOMAIN: {{BUSINESS_DOMAIN}} | ORG: {{ORGANIZATION_NAME}}
+
+## 1. Executive Summary — Problem, solution, ROI
+## 2. Business Objectives — SMART format with KPIs
+## 3. Stakeholder Analysis — table: Stakeholder | Role | Interest | Impact | Communication
+## 4. Scope — In/Out of Scope, Assumptions, Constraints
+## 5. Functional Requirements — table: ID | Requirement | Priority | User Story | Acceptance Criteria
+## 6. Non-Functional Requirements — Performance, Availability, Scalability, Security, Usability
+## 7. Business Process Flows — Current vs Future state with improvement metrics
+## 8. Risk Assessment — table: Risk | Probability | Impact | Mitigation
+## 9. Dependencies & Integrations — External systems with business impact
+## 10. Timeline & Milestones
+
+Write for non-technical executives. Translate technical capabilities into business value.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="biz">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">12</span>
+        <div><div class="prompt-title">Product Requirements Document (PRD)</div><div class="prompt-subtitle">Feature catalogue with user stories and acceptance criteria</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Product</span><span class="meta-tag">Features</span></div>
+      <div class="prompt-text">You are a product manager. PROJECT: {{PROJECT_NAME}}
+
+## 1. Product Overview — Vision, value proposition, personas
+## 2. Feature Catalogue — Per feature: Description, User Story (As a/I want/So that), Acceptance Criteria (Given/When/Then), Status (Complete/Partial/Planned), Technical Components, Edge Cases, Priority (P0-P2)
+## 3. User Journeys — Top 5 workflows end-to-end
+## 4. Technical Constraints — Platform, API, performance limits
+## 5. Analytics & Instrumentation — Events tracked, recommended metrics
+## 6. Feature Gap Analysis — Features implied by architecture but not built
+## 7. Competitive Feature Matrix — vs 3-4 alternatives
+## 8. Release Notes — Current capabilities for user communication</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="biz">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">13</span>
+        <div><div class="prompt-title">Client Presentation & Pitch Deck</div><div class="prompt-subtitle">10-slide pitch, demo script, FAQ, and competitor positioning</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Presentation</span><span class="meta-tag">Demo</span></div>
+      <div class="prompt-text">You are a Solutions Architect preparing for a CIO/CTO presentation. PROJECT: {{PROJECT_NAME}}
+
+## 1. Pitch Deck (10 slides) — Per slide: title, key message, supporting points, visual suggestion
+## 2. Live Demo Script — 10-15 steps with what to say, wow moments, backup plan
+## 3. Expected Questions — table: Question | Answer | Evidence (15+ questions)
+## 4. Competitor Positioning — feature matrix vs 3-4 alternatives
+## 5. ROI Calculator — cost breakdown, time saved, break-even, ROI multiplier
+## 6. Objection Handling — table: Objection | Response | Proof Point
+
+Derive everything from actual capabilities in the code.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="biz">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">14</span>
+        <div><div class="prompt-title">Cost & ROI Analysis</div><div class="prompt-subtitle">Infrastructure costs, LLM token economics, business value quantification</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Finance</span><span class="meta-tag">ROI</span></div>
+      <div class="prompt-text">You are a cloud cost analyst. PROJECT: {{PROJECT_NAME}} | CLOUD: {{CLOUD_PROVIDER}}
+
+## 1. Infrastructure Costs — table: Service | Provider | Tier | Monthly Cost | Usage Metric
+## 2. API & Third-Party Costs — table: API | Pricing | Calls/Month | Cost/Month
+## 3. LLM Token Cost Model — tokens per operation, model pricing, cost per interaction, monthly projection
+## 4. Total Cost of Ownership — monthly ops + dev + hidden costs
+## 5. Optimization Opportunities — inefficiencies, model routing savings, caching
+## 6. Business Value — time saved, labor equivalent, revenue impact
+## 7. ROI Calculation — table: Activity | Manual Hours | With App | Savings — total ROI multiplier
+## 8. Break-Even Analysis — at what usage level the system pays for itself
+
+Use current public pricing. Provide specific dollar estimates.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="biz">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">33</span>
+        <div><div class="prompt-title">User & Admin Documentation</div><div class="prompt-subtitle">End-user guides, admin configuration, workflows, FAQ, and troubleshooting</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">User Guide</span><span class="meta-tag">Admin Guide</span></div>
+      <div class="prompt-text">You are a technical writer producing end-user and admin documentation. PROJECT: {{PROJECT_NAME}}
+
+## USER GUIDE:
+## 1. Getting Started — first-time setup, account creation, initial configuration
+## 2. Feature Guide — per user-facing feature: purpose, step-by-step, tips, common mistakes
+## 3. Workflows — top 5 user workflows end-to-end with decision points
+## 4. FAQ — 15+ questions with answers derived from actual feature behavior
+## 5. Troubleshooting — table: Problem | Cause | Solution — common user-facing issues
+## 6. Keyboard Shortcuts / Power User Tips (if applicable)
+## 7. Glossary — domain-specific terms used in the UI
+
+## ADMIN GUIDE:
+## 8. System Configuration — all admin settings with descriptions, defaults, effects
+## 9. User Management — roles, permissions, provisioning, deprovisioning
+## 10. Integration Setup — how to configure each external integration (API keys, OAuth, webhooks)
+## 11. Monitoring & Health — what admins should watch, dashboard interpretation
+## 12. Backup & Restore — user-facing procedures
+## 13. Scaling & Tuning — knobs admins can adjust
+## 14. Audit & Compliance — how to pull audit logs, generate compliance reports
+
+Write for non-technical users. Derive all features from actual code.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ SECURITY ═══════════════ -->
+  <div class="category-header" id="cat-sec">
+    <span class="category-badge" style="background:var(--cat-sec-bg);color:var(--cat-sec);">Security</span>
+    <h2>Security & Compliance Documents</h2>
+  </div>
+  <p class="category-desc">Security architecture, threat models, compliance mapping, DPIA, and incident response.</p>
+
+  <div class="prompt-card" data-cat="sec">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">15</span>
+        <div><div class="prompt-title">Security Architecture Review</div><div class="prompt-subtitle">OWASP Top 10, attack surface, secrets audit, trust boundaries</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Critical</span><span class="meta-tag">OWASP</span></div>
+      <div class="prompt-text">You are a senior application security architect. PROJECT: {{PROJECT_NAME}} | DEPLOYMENT: {{DEPLOYMENT_TARGET}}
+
+## 1. Security Architecture — Auth, authz, trust boundary diagram (graph TB), encryption
+## 2. Attack Surface — table: Surface | Entry Point | Protocol | Auth | Data Exposed | Risk
+## 3. OWASP Top 10 (2021) — Per item: Status (Pass/Fail/Partial), Evidence (file:line), Recommendation
+## 4. Secrets Audit — storage, rotation, exposure in logs, hardcoded credentials
+## 5. Input Validation — all entry points, validation applied, encoding per context
+## 6. API Security — auth per endpoint, rate limiting, CORS, webhook verification
+## 7. Dependency Security — CVE status, outdated packages, update strategy
+## 8. Cryptographic Review — algorithms, key management, TLS, token generation
+## 9. Findings — table: ID | Severity | Category | Finding | File:Line | Recommendation | Effort
+## 10. Remediation Roadmap — Immediate, 30-day, 90-day
+
+Cite actual code patterns. Distinguish confirmed vulnerabilities from potential risks.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="sec">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">16</span>
+        <div><div class="prompt-title">Threat Model (STRIDE)</div><div class="prompt-subtitle">Systematic threat analysis with attack trees and DREAD scoring</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">STRIDE</span><span class="meta-tag">DREAD</span></div>
+      <div class="prompt-text">You are a threat modeling specialist. PROJECT: {{PROJECT_NAME}}
+
+## 1. System Decomposition — Data Flow Diagram (Mermaid) with trust boundaries, all assets
+## 2. STRIDE per Component — For EACH component, all 6 categories: Threat Category | Threat | Attack Scenario | Likelihood | Impact | Risk | Current Mitigation | Gap
+## 3. Attack Trees — Mermaid diagrams for top 5 threats
+## 4. Trust Boundary Analysis — table: Boundary | Components | Data Crossing | Validation | Gap
+## 5. Threat Prioritization — DREAD scores (Damage+Reproducibility+Exploitability+Affected+Discoverability)
+## 6. Mitigation Recommendations — For each High/Critical: current state, recommended control, effort
+## 7. Residual Risk Register — table: Threat | Residual Risk | Accepted By | Review Date</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="sec">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">17</span>
+        <div><div class="prompt-title">Compliance Mapping (SOC 2 / GDPR / ISO 27001)</div><div class="prompt-subtitle">Map codebase controls to compliance frameworks with gap analysis</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">SOC 2</span><span class="meta-tag">GDPR</span><span class="meta-tag">ISO 27001</span></div>
+      <div class="prompt-text">You are a compliance officer. PROJECT: {{PROJECT_NAME}} | FRAMEWORKS: {{COMPLIANCE_FRAMEWORKS}}
+
+## PART A: SOC 2 Trust Services Criteria — CC1-CC9: Criteria | Requirement | Evidence | Status | Gap
+## PART B: GDPR Article Mapping — Articles 5,6,12-20,25,28,30,32-35,44-49: Article | Requirement | Implementation | Status | Remediation
+## PART C: ISO 27001 Annex A — A.5-A.8: Control ID | Name | Implementation | Evidence | Gap
+## PART D: Gap Summary — Critical Gaps: Framework | Requirement | Gap | Remediation | Effort
+## PART E: Evidence Collection Guide — Per control: artifact, location, how to demonstrate to auditors
+
+Mark confidence: implemented/partial/missing. Cite file paths as evidence.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="sec">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">18</span>
+        <div><div class="prompt-title">Data Privacy Impact Assessment (DPIA)</div><div class="prompt-subtitle">GDPR Art. 35 with personal data inventory and data flow maps</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">GDPR</span><span class="meta-tag">DPIA</span></div>
+      <div class="prompt-text">You are a Data Protection Officer. PROJECT: {{PROJECT_NAME}} | CONTROLLER: {{ORGANIZATION_NAME}}
+
+## 1. Processing Description
+## 2. Personal Data Inventory — table: Data Element | Category | Source | Storage | Retention | Legal Basis | Encryption
+## 3. Data Flow Map — Mermaid diagram showing personal data entry, flow, storage, exit, cross-border transfers
+## 4. Necessity & Proportionality — table: Activity | Purpose | Data Used | Minimization | Alternative
+## 5. Risk Assessment — table: Risk | Likelihood (1-5) | Severity (1-5) | Score | Controls
+## 6. Data Subject Rights — table: Right | GDPR Article | Implementation | Mechanism | Gap
+## 7. Third-Party Processors — table: Processor | Data Shared | Purpose | DPA | Transfer Mechanism
+## 8. Mitigation Measures — per High/Critical risk: measure, status, residual risk
+## 9. DPO Recommendation — overall risk, conditions, review schedule
+## 10. Consultation Requirements — Art. 36 prior consultation needed?
+
+Cite specific code paths where data is collected, stored, or transmitted.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="sec">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">19</span>
+        <div><div class="prompt-title">Incident Response Plan</div><div class="prompt-subtitle">Playbooks for credential compromise, data breach, DoS, supply chain</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Incident</span><span class="meta-tag">Playbooks</span></div>
+      <div class="prompt-text">You are a security incident response specialist. PROJECT: {{PROJECT_NAME}}
+
+## 1. Incident Classification — table: Severity | Definition | Example | Response Time | Escalation
+## 2. Response Team — table: Role | Responsibility | Primary | Backup
+## 3. Detection — table: Signal | Source | Method | Status | Gap
+## 4. Response Playbooks — 5 playbooks (Compromised Creds, Data Breach, Service Compromise, DoS, Supply Chain) each with detection → containment → investigation → recovery → post-incident
+## 5. Communication Templates — internal, customer, regulatory, status page
+## 6. Evidence Checklist — specific to actual log locations from code
+## 7. Recovery Procedures — restoration, data integrity, monitoring escalation
+## 8. Post-Incident Review Template — timeline, root cause, 5 Whys, improvements
+
+Make playbooks specific to the actual tech stack and deployment model.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="sec">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">34</span>
+        <div><div class="prompt-title">Accessibility Compliance (WCAG 2.1)</div><div class="prompt-subtitle">WCAG audit, color contrast, keyboard navigation, screen reader, remediation</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">WCAG</span><span class="meta-tag">A11y</span><span class="meta-tag">Legal</span></div>
+      <div class="prompt-text">You are an accessibility specialist. Audit the codebase for **WCAG 2.1 Level AA** compliance. PROJECT: {{PROJECT_NAME}}
+
+## 1. WCAG 2.1 Level AA Audit — table: Criterion | Level | Description | Status (Pass/Fail/Partial/N-A) | Evidence | Remediation
+## 2. Perceivable (1.x) — text alternatives, time-based media, adaptable content, color contrast, text resize
+## 3. Operable (2.x) — keyboard accessible, enough time, seizures, navigable, input modalities
+## 4. Understandable (3.x) — readable, predictable, input assistance (error identification, labels)
+## 5. Robust (4.x) — compatible with assistive technologies, parsing, name-role-value
+## 6. Automated Scan Results — tool recommendations (axe, Lighthouse, WAVE), issue summary
+## 7. Manual Testing Checklist — screen reader (VoiceOver/NVDA), keyboard-only, zoom 200%, high contrast
+## 8. Color Contrast Audit — table: Element | Foreground | Background | Ratio | Required | Pass?
+## 9. Form Accessibility — label associations, error messages, focus management, ARIA attributes
+## 10. Dynamic Content — live regions, focus after DOM changes, SPA navigation announcements
+## 11. Remediation Priority — table: Issue | Impact | Affected Users | Fix Effort | Priority
+## 12. Accessibility Statement Template — for public-facing compliance statement
+
+Analyze actual HTML templates, CSS, and JS in the codebase. If backend-only, document API accessibility considerations.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ GOVERNANCE ═══════════════ -->
+  <div class="category-header" id="cat-gov">
+    <span class="category-badge" style="background:var(--cat-gov-bg);color:var(--cat-gov);">Governance</span>
+    <h2>Governance & Policy Documents</h2>
+  </div>
+  <p class="category-desc">IT governance, change management, risk registers, and audit policies.</p>
+
+  <div class="prompt-card" data-cat="gov">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">20</span>
+        <div><div class="prompt-title">IT Governance Framework</div><div class="prompt-subtitle">Policies, RACI matrix, risk management, and compliance monitoring</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">COBIT</span><span class="meta-tag">Governance</span></div>
+      <div class="prompt-text">You are an IT governance consultant. PROJECT: {{PROJECT_NAME}} | ORG: {{ORGANIZATION_NAME}}
+
+## 1. Governance Structure — RACI matrix, roles, review cadence
+## 2. Policy Framework — InfoSec, Access Control, Change Mgmt, Data Mgmt, Incident Mgmt policies (scope, principles, procedures each)
+## 3. Risk Management Framework — ID methodology, 5x5 matrix, appetite, treatment options
+## 4. Compliance Management — regulatory landscape, monitoring, audit prep, remediation
+## 5. Performance Metrics — table: Domain | KPI | Target | Measurement | Frequency
+## 6. Continuous Improvement — review cycles, lessons learned, maturity model
+
+Tailor to actual team scale and structure.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="gov">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">21</span>
+        <div><div class="prompt-title">Change Management & Release Policy</div><div class="prompt-subtitle">Release governance from actual CI/CD pipeline and approval gates</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">ITIL</span><span class="meta-tag">CI/CD</span></div>
+      <div class="prompt-text">You are an ITIL change management specialist. PROJECT: {{PROJECT_NAME}} | CI/CD: {{CI_CD_TOOL}}
+
+## 1. Change Classification — table: Type | Definition | Approval | Lead Time | Example
+## 2. Change Request Process — Mermaid flowchart of actual pipeline mapped to change management
+## 3. Approval Gates — table: Gate | Stage | Approver | Criteria | Automated/Manual
+## 4. CI/CD as Change Control — pipeline stages mapped to change steps
+## 5. Release Management — cadence, readiness checklist, go/no-go criteria
+## 6. Rollback Procedures — automated triggers, manual steps, data considerations
+## 7. Emergency Change Process — authorization, abbreviated approval
+## 8. Audit Trail — what's logged, retention, access
+## 9. Metrics — table: Metric | Definition | Target — change success rate, MTTD, MTTR
+
+Base on actual pipeline code and deploy scripts.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="gov">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">22</span>
+        <div><div class="prompt-title">Risk Register & Audit Trail Policy</div><div class="prompt-subtitle">Scored risk register with treatment plans and logging audit</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Risk</span><span class="meta-tag">Audit</span></div>
+      <div class="prompt-text">You are a risk management consultant. PROJECT: {{PROJECT_NAME}}
+
+## PART A: Risk Register
+- 5x5 matrix with definitions
+- Table: ID | Category | Risk | Likelihood (1-5) | Impact (1-5) | Score | Owner | Controls | Treatment | Status
+- Treatment plans for High/Critical, KRIs, heat map
+
+## PART B: Audit Trail & Logging Policy
+- Current logging inventory: Module | Level | Event | Data | Sensitive? | Destination
+- Required audit events: Category | Events | Logged? | Gap
+- Log format, sensitive data handling, retention, monitoring & alerting, compliance mapping
+
+Every risk traceable to codebase, architecture, or deployment model.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ OPERATIONS ═══════════════ -->
+  <div class="category-header" id="cat-ops">
+    <span class="category-badge" style="background:var(--cat-ops-bg);color:var(--cat-ops);">Operations</span>
+    <h2>Operations & Onboarding Documents</h2>
+  </div>
+  <p class="category-desc">Deployment runbooks, KT documents, and developer onboarding guides.</p>
+
+  <div class="prompt-card" data-cat="ops">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">23</span>
+        <div><div class="prompt-title">Deployment & Operations Runbook</div><div class="prompt-subtitle">Step-by-step deployment, monitoring, troubleshooting, and DR</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Runbook</span><span class="meta-tag">DR</span></div>
+      <div class="prompt-text">You are a DevOps/SRE engineer. PROJECT: {{PROJECT_NAME}} | CLOUD: {{CLOUD_PROVIDER}} | CI/CD: {{CI_CD_TOOL}}
+
+## 1. System Overview — Architecture diagram (Mermaid), service inventory, health endpoints
+## 2. Environment Setup — Prerequisites, local dev (step-by-step commands), env vars reference
+## 3. Deployment — Standard deploy, hotfix, rollback (each step-by-step with verification)
+## 4. Monitoring — Health checks table, key metrics with thresholds, log locations
+## 5. Troubleshooting — App won't start, high latency, integration failures, DB issues, auth problems (diagnostics + resolution)
+## 6. Disaster Recovery — RTO/RPO, DR procedures per failure scenario, testing schedule
+## 7. Capacity Planning — utilization, scaling triggers, procedures
+## 8. Deploy Script Matrix — table: Script | One-time | Idempotent | Purpose
+
+Derive from actual code, config, and pipeline definitions.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="ops">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">24</span>
+        <div><div class="prompt-title">Knowledge Transfer & Developer Onboarding</div><div class="prompt-subtitle">Day-1 setup, codebase tour, patterns guide, debug recipes</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">KT</span><span class="meta-tag">Onboarding</span></div>
+      <div class="prompt-text">You are a senior developer writing the onboarding guide. PROJECT: {{PROJECT_NAME}}
+
+## 1. Welcome — What this does, who uses it, key outcomes
+## 2. Day-1 Setup — bash commands from clone to running, first-run verification, common issues
+## 3. Architecture Overview — diagram, key decisions + WHY, one thing to remember per layer
+## 4. Codebase Tour — Top 10 files IN ORDER with why each matters
+## 5. Folder Cheat-Sheet — table: Folder | If you're working on…
+## 6. Coding Standards — from actual code conventions
+## 7. Development Workflow — branch naming, commit format, PR, review, testing
+## 8. Key Patterns — table: Pattern | Where | How to Follow | Anti-pattern
+## 9. Common Tasks — "How do I add a new [X]?" step-by-step with file paths
+## 10. Debug Recipes — table: Symptom | Likely Cause | Fix
+## 11. Test Strategy — how to run, organization, what to test, mocking
+
+Write for a smart developer who knows the language but has never seen this project.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="ops">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">35</span>
+        <div><div class="prompt-title">SLA/SLO/SLI & Observability Strategy</div><div class="prompt-subtitle">Service levels, error budgets, dashboards, alerting, distributed tracing</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">SRE</span><span class="meta-tag">SLO</span><span class="meta-tag">Monitoring</span></div>
+      <div class="prompt-text">You are an SRE / Observability Architect. PROJECT: {{PROJECT_NAME}} | CLOUD: {{CLOUD_PROVIDER}}
+
+## 1. SLIs — table: SLI | Definition | Measurement Method | Data Source | Current Value
+## 2. SLOs — table: SLO | SLI | Target | Window | Error Budget | Status
+## 3. SLAs (if applicable) — table: SLA | Metric | Guarantee | Penalty | Measurement
+## 4. Error Budget Policy — calculation, burn rate alerts, exhaustion consequences
+## 5. Monitoring Architecture — `graph TB`: app → collector → time-series DB → dashboards → alerting → on-call
+## 6. Dashboard Inventory — table: Dashboard | Purpose | Key Panels | Audience | URL
+## 7. Alert Rules — table: Alert | Condition | Threshold | Severity | Channel | Runbook Link
+## 8. Log Aggregation — format, structured fields, levels, retention, search tool
+## 9. Distributed Tracing — propagation, span naming, sampling rate, trace analysis
+## 10. Health Checks — table: Endpoint | Type (liveness/readiness/startup) | Checks | Timeout
+## 11. Incident Detection Flow — `flowchart`: metric spike → alert → triage → runbook
+## 12. Capacity Signals — metrics that predict exhaustion, auto-scaling triggers
+## 13. Observability Costs — storage, ingestion, tooling costs per month
+
+Analyze actual logging, health endpoints, and monitoring config from the code.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="ops">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">36</span>
+        <div><div class="prompt-title">Migration & Upgrade Guide</div><div class="prompt-subtitle">Version upgrades, breaking changes, data migration, rollback plans</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Migration</span><span class="meta-tag">Upgrade</span></div>
+      <div class="prompt-text">You are a Platform Engineer. PROJECT: {{PROJECT_NAME}}
+
+## 1. Version Inventory — table: Component | Current Version | Latest Available | End-of-Life | Upgrade Urgency
+## 2. Language/Runtime Upgrade — step-by-step for major version upgrades with breaking changes
+## 3. Framework Upgrade — deprecated APIs, migration scripts, compatibility notes
+## 4. Database Migration — schema change strategy, zero-downtime patterns, rollback, data backfill
+## 5. Dependency Upgrade Matrix — table: Library | Current | Target | Breaking Changes | Steps | Risk
+## 6. Cloud Service Migration — moving between tiers, regions, or providers with impact analysis
+## 7. Data Migration — ETL pipeline, validation, reconciliation, rollback plan
+## 8. Config Migration — env var changes, config format changes, feature flag transitions
+## 9. API Versioning — how consumers migrate between versions, deprecation timeline
+## 10. Rollout Strategy — `flowchart`: blue-green / canary deployment for major upgrades
+## 11. Rollback Plan — per migration step: what if it fails, data recovery, service restoration
+## 12. Testing Checklist — what to verify after each migration step
+## 13. Communication Plan — stakeholder notification, maintenance window, status updates
+
+Identify all outdated dependencies and construct a concrete upgrade path.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════ AI CONTEXT ═══════════════ -->
+  <div class="category-header" id="cat-ai">
+    <span class="category-badge" style="background:var(--cat-ai-bg);color:var(--cat-ai);">AI Context</span>
+    <h2>AI/LLM Context & Meta-Prompts</h2>
+  </div>
+  <p class="category-desc">Master prompts for giving any LLM complete understanding. Includes the document generation chain.</p>
+
+  <div class="prompt-card flagship" data-cat="ai">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">25</span>
+        <div><div class="prompt-title">Full Codebase Context Prompt</div><div class="prompt-subtitle">One prompt that gives any LLM complete architectural understanding</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag star">Master Prompt</span><span class="meta-tag">Context Window</span></div>
+      <div class="prompt-text">You are a Principal Software Architect. I'm providing you with the complete source code of my project. Before I ask any questions, internalize the following context:
+
+PROJECT: {{PROJECT_NAME}} | STACK: {{LANGUAGE}} / {{FRAMEWORK}} / {{DATABASE}} / {{CLOUD_PROVIDER}}
+
+## YOUR ROLE — You understand every module, the business domain, deployment, security, design patterns, tech debt.
+
+## HOW TO ANALYZE — Build mental model: What does it DO? How is it STRUCTURED? How does data FLOW? INTEGRATION points? STATE model? PATTERNS? RISKS? DEPLOYMENT?
+
+## RESPONSE GUIDELINES — Reference specific files/functions/lines. Explain WHY. Use Mermaid diagrams for flows.
+
+## CONTEXT — I will share source files in batches. After each batch, confirm understanding and patterns noticed.
+
+When I say "CONTEXT COMPLETE", summarize:
+1. Architecture (3-5 sentences)
+2. Key components table
+3. Top 3 data flows (Mermaid sequence diagrams)
+4. Security model
+5. Deployment model
+6. Top 5 risks/improvements
+
+Then await questions.
+
+[PASTE SOURCE FILES BELOW, GROUPED BY LAYER]</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="ai">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">26</span>
+        <div><div class="prompt-title">Document Generation Meta-Prompt</div><div class="prompt-subtitle">A prompt that generates other prompts — customize for any document type</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Meta</span><span class="meta-tag">Generator</span></div>
+      <div class="prompt-text">You are a prompt engineering specialist. Generate a production-ready prompt for creating:
+
+DOCUMENT TYPE: {{DOCUMENT_TYPE}}
+PROJECT: {{BRIEF_DESCRIPTION}}
+AUDIENCE: {{AUDIENCE}}
+COMPLIANCE: {{FRAMEWORKS}}
+FOCUS: {{FOCUS}}
+
+Generate a prompt with: right persona, {{PLACEHOLDERS}}, complete structure with headings, Mermaid diagrams, quality gates (file:function refs, severity, effort), constraints (no generic content, specific, actionable).
+
+500-1500 words, self-contained, reusable. Output ONLY the prompt.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="ai">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">27</span>
+        <div><div class="prompt-title">Codebase Q&A Context</div><div class="prompt-subtitle">Optimized for interactive Q&A sessions about your codebase</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Q&A</span><span class="meta-tag">Interactive</span></div>
+      <div class="prompt-text">You are a codebase expert for {{PROJECT_NAME}}. Full source code is loaded.
+
+## RULES — Cite evidence (file:function:line). Distinguish fact vs inference. Trace full paths. Show connections. Flag uncertainty. Use Mermaid for flows.
+
+## RESPONSE FORMAT
+- "How does X work?" → entry point → steps → output with refs
+- "Where is X?" → definition + all usage sites
+- "Why does code do X?" → reasoning, trade-offs
+- "What breaks if I change X?" → dependents → transitive → tests
+- "How do I add X?" → files to modify → patterns → tests → watch-outs
+- "Is this secure/performant?" → best practices → risks → recommendations
+
+[PASTE SOURCE CODE, then say "Ready for questions."]</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card flagship" data-cat="ai">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">28</span>
+        <div><div class="prompt-title">Multi-Document Generation Chain (All 17 Parts)</div><div class="prompt-subtitle">Sequential chain — generates ALL enterprise documents from one codebase load</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag star">Chain</span><span class="meta-tag">17 Documents</span></div>
+      <div class="prompt-text">You are a Principal Architect. I will provide a complete codebase. Generate a suite of enterprise documents in sequence.
+
+PROJECT: {{PROJECT_NAME}} | ORG: {{ORGANIZATION_NAME}} | DOMAIN: {{BUSINESS_DOMAIN}} | COMPLIANCE: {{COMPLIANCE_FRAMEWORKS}}
+
+## GENERATION SEQUENCE — After each document, I say "NEXT" to proceed. Every document includes Mermaid diagrams.
+
+STEP 1: Codebase Inventory | STEP 2: HLD | STEP 3: LLD | STEP 4: Feature Diagrams | STEP 5: Database Architecture | STEP 6: AI Architecture | STEP 7: BRD | STEP 8: PRD | STEP 9: Security Architecture | STEP 10: Threat Model | STEP 11: Compliance Mapping | STEP 12: DPIA | STEP 13: Risk Register | STEP 14: Governance Framework | STEP 15: Operations Runbook | STEP 16: Code Quality Review | STEP 17: Knowledge Transfer
+
+## RULES — Cross-reference between documents, consistent IDs, traceability matrix at end.
+
+Begin with Step 1. Source code follows:
+[PASTE SOURCE CODE HERE]</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="ai">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">29</span>
+        <div><div class="prompt-title">Architecture Diagram Generator</div><div class="prompt-subtitle">Focused prompt for generating ONLY Mermaid diagrams — all types in one pass</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag star">Diagrams Only</span><span class="meta-tag">15+ Diagrams</span></div>
+      <div class="prompt-text">You are a Solutions Architect. Produce ONLY Mermaid diagrams — no prose, no tables. PROJECT: {{PROJECT_NAME}}
+
+1. System Context (C4 L1) — graph TB
+2. Container Diagram (C4 L2) — graph TB
+3. Component Diagram (C4 L3) — graph TB
+4. Deployment Topology — graph LR
+5. ER Diagram — erDiagram
+6. Data Flow — flowchart LR
+7-11. Sequence Diagrams (5 major flows) — sequenceDiagram with autonumber, par/alt/loop
+12. Application State — stateDiagram-v2
+13. Session Lifecycle — stateDiagram-v2
+14. CI/CD Pipeline — flowchart LR
+15. Concurrency Model — flowchart LR
+16-18. Optional: AI Provider Selection, Feature Flags, Error Recovery
+
+RULES: ACTUAL names from code, timing annotations, minimum 15 valid Mermaid diagrams.</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+  <div class="prompt-card" data-cat="ai">
+    <div class="prompt-header" onclick="toggleCard(this)">
+      <div class="prompt-title-area">
+        <span class="prompt-icon">30</span>
+        <div><div class="prompt-title">Enterprise Architecture from Existing Document</div><div class="prompt-subtitle">Upgrade existing architecture doc to full whitepaper quality</div></div>
+      </div>
+      <svg class="chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"/></svg>
+    </div>
+    <div class="prompt-body">
+      <div class="prompt-meta"><span class="meta-tag">Upgrade</span><span class="meta-tag">Enhancement</span></div>
+      <div class="prompt-text">You are a Principal Architect. I have an existing architecture document. I want you to:
+1. Review — identify gaps, outdated sections, missing diagrams
+2. Enhance — to full enterprise whitepaper quality
+3. Add — any missing parts from the 17-part standard
+
+## The 17-Part Standard:
+1. Project Overview, 2. Business Flow, 3. HLD, 4. LLD, 5. Code Flow, 6. AI Architecture, 7. Database, 8. Security, 9. DevOps, 10. Performance, 11. Business Value, 12. Client Presentation, 13. KT, 14. Reverse-Engineering, 15. Code Quality, 16. Extended Architecture, 17. Appendices
+
+Produce gap analysis table: Part # | Name | Status (Complete/Partial/Missing) | Gaps
+Then produce COMPLETE upgraded document. Minimum 15 Mermaid diagrams.
+
+## EXISTING DOCUMENT:
+[PASTE HERE]
+
+## SOURCE CODE:
+[PASTE HERE]</div>
+      <button class="copy-btn" onclick="copyPrompt(this)">Copy Prompt</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const DOC_LIST = [
+  { id: 'enterprise_architecture', name: 'Enterprise Architecture (Full 17-Part)', cat: 'arch', key: 'STEP 0' },
+  { id: 'codebase_inventory', name: 'Codebase Inventory', cat: 'arch', key: 'STEP 1' },
+  { id: 'hld', name: 'High-Level Design (HLD)', cat: 'arch', key: 'STEP 2' },
+  { id: 'lld', name: 'Low-Level Design (LLD)', cat: 'arch', key: 'STEP 3' },
+  { id: 'feature_diagrams', name: 'Feature-Level Diagrams', cat: 'arch', key: 'STEP 4' },
+  { id: 'database', name: 'Database Architecture', cat: 'arch', key: 'STEP 5' },
+  { id: 'ai_architecture', name: 'AI/ML Architecture', cat: 'arch', key: 'STEP 6' },
+  { id: 'brd', name: 'Business Requirements (BRD)', cat: 'biz', key: 'STEP 7' },
+  { id: 'prd', name: 'Product Requirements (PRD)', cat: 'biz', key: 'STEP 8' },
+  { id: 'client_presentation', name: 'Client Presentation & Pitch', cat: 'biz', key: 'STEP 9' },
+  { id: 'cost_roi', name: 'Cost & ROI Analysis', cat: 'biz', key: 'STEP 10' },
+  { id: 'security_review', name: 'Security Architecture Review', cat: 'sec', key: 'STEP 11' },
+  { id: 'threat_model', name: 'Threat Model (STRIDE)', cat: 'sec', key: 'STEP 12' },
+  { id: 'compliance', name: 'Compliance Mapping', cat: 'sec', key: 'STEP 13' },
+  { id: 'dpia', name: 'Data Privacy Assessment', cat: 'sec', key: 'STEP 14' },
+  { id: 'incident_response', name: 'Incident Response Plan', cat: 'sec', key: 'STEP 15' },
+  { id: 'governance', name: 'IT Governance Framework', cat: 'gov', key: 'STEP 16' },
+  { id: 'change_mgmt', name: 'Change Management & Release', cat: 'gov', key: 'STEP 17' },
+  { id: 'risk_register', name: 'Risk Register & Audit Trail', cat: 'gov', key: 'STEP 18' },
+  { id: 'runbook', name: 'Deployment & Ops Runbook', cat: 'ops', key: 'STEP 19' },
+  { id: 'kt_onboarding', name: 'Knowledge Transfer & Onboarding', cat: 'ops', key: 'STEP 20' },
+  { id: 'code_quality', name: 'Code Quality Review (SOLID)', cat: 'tech', key: 'STEP 21' },
+  { id: 'dependency_report', name: 'Reverse-Engineering Report', cat: 'tech', key: 'STEP 22' },
+  { id: 'api_reference', name: 'API Reference Document', cat: 'tech', key: 'STEP 23' },
+  { id: 'testing_qa', name: 'Testing & QA Strategy', cat: 'tech', key: 'STEP 24' },
+  { id: 'sla_observability', name: 'SLA/SLO/SLI & Observability', cat: 'ops', key: 'STEP 25' },
+  { id: 'tech_debt', name: 'Technical Debt Register', cat: 'tech', key: 'STEP 26' },
+  { id: 'migration_guide', name: 'Migration & Upgrade Guide', cat: 'ops', key: 'STEP 27' },
+  { id: 'accessibility', name: 'Accessibility Compliance (WCAG)', cat: 'sec', key: 'STEP 28' },
+  { id: 'user_docs', name: 'User & Admin Documentation', cat: 'biz', key: 'STEP 29' },
+  { id: 'service_catalog', name: 'Service Catalog & API Contracts', cat: 'arch', key: 'STEP 30' },
+];
+
+const CAT_COLORS = {
+  arch: { bg: 'var(--cat-arch-bg)', fg: 'var(--cat-arch)', label: 'ARCH' },
+  tech: { bg: 'var(--cat-tech-bg)', fg: 'var(--cat-tech)', label: 'TECH' },
+  biz:  { bg: 'var(--cat-biz-bg)',  fg: 'var(--cat-biz)',  label: 'BIZ' },
+  sec:  { bg: 'var(--cat-sec-bg)',  fg: 'var(--cat-sec)',  label: 'SEC' },
+  gov:  { bg: 'var(--cat-gov-bg)',  fg: 'var(--cat-gov)',  label: 'GOV' },
+  ops:  { bg: 'var(--cat-ops-bg)',  fg: 'var(--cat-ops)',  label: 'OPS' },
+};
+
+function initDocGrid() {
+  const grid = document.getElementById('docGrid');
+  DOC_LIST.forEach(doc => {
+    const c = CAT_COLORS[doc.cat];
+    const item = document.createElement('label');
+    item.className = 'gen-doc-item';
+    item.innerHTML = `<input type="checkbox" data-id="${doc.id}" data-cat="${doc.cat}" checked onchange="updateCount()"><span>${doc.name}</span><span class="doc-cat" style="background:${c.bg};color:${c.fg}">${c.label}</span>`;
+    grid.appendChild(item);
+  });
+  updateCount();
+}
+
+function updateCount() {
+  const checked = document.querySelectorAll('#docGrid input:checked');
+  document.getElementById('docCount').textContent = checked.length + ' of ' + DOC_LIST.length + ' selected';
+  document.querySelectorAll('.gen-doc-item').forEach(item => {
+    item.classList.toggle('selected', item.querySelector('input').checked);
+  });
+}
+
+function selectDocs(mode) {
+  const boxes = document.querySelectorAll('#docGrid input[type="checkbox"]');
+  boxes.forEach(b => {
+    if (mode === 'all') b.checked = true;
+    else if (mode === 'none') b.checked = false;
+    else b.checked = b.dataset.cat === mode;
+  });
+  updateCount();
+}
+
+function toggleGen() {
+  document.getElementById('genBox').classList.toggle('collapsed');
+}
+
+function getVal(id) { return document.getElementById(id).value.trim(); }
+
+function generatePrompt() {
+  const name = getVal('g_name');
+  if (!name) { alert('Please enter a Project Name.'); return; }
+
+  const org = getVal('g_org') || 'the organization';
+  const lang = getVal('g_lang') || 'the primary language';
+  const framework = getVal('g_framework') || 'the framework';
+  const db = getVal('g_db') || 'the database';
+  const cloud = getVal('g_cloud') || 'the cloud provider';
+  const deploy = getVal('g_deploy') || 'the deployment target';
+  const cicd = getVal('g_cicd') || 'CI/CD pipeline';
+  const domain = getVal('g_domain') || 'the business domain';
+  const users = getVal('g_users') || 'end users';
+  const compliance = getVal('g_compliance') || 'SOC 2, GDPR, ISO 27001';
+  const repo = getVal('g_repo') || '[repo URL]';
+  const context = getVal('g_context');
+
+  const checked = Array.from(document.querySelectorAll('#docGrid input:checked'));
+  if (checked.length === 0) { alert('Please select at least one document to generate.'); return; }
+  const selectedDocs = checked.map(cb => DOC_LIST.find(d => d.id === cb.dataset.id));
+
+  const docSections = {
+    enterprise_architecture: `**Enterprise Architecture & Reverse-Engineering Document (Complete 17-Part Whitepaper)**
+This is the FLAGSHIP document — a single, exhaustive, 1000-2000 line Markdown document covering the ENTIRE system. It must read like a Microsoft / Google / OpenAI engineering whitepaper. No summaries. No placeholders. Every claim references a real file, function, or config value. Minimum 10 Mermaid diagrams.
+
+**PART 1 — PROJECT OVERVIEW**: Purpose (1 paragraph), Business Problem table (Problem | Cost | How Solved), Differentiation thesis, Industry Use Cases table (5+ verticals), Target Customers table (Persona | Pain | Trigger), Pain Points Solved (citing code modules), Business Value & ROI table (Metric | Baseline | With App | Delta), AI Capabilities table (Capability | Implementation file:function), Expected Users table, Competitor Comparison feature matrix vs 3-4 alternatives.
+
+**PART 2 — COMPLETE BUSINESS FLOW**: Full \`sequenceDiagram\` of end-to-end customer journey showing every actor (user, browser, API, auth, DB, external APIs, AI provider) with every HTTP method, endpoint, and data payload. Phase-by-phase narrative (Discovery, Auth, Scope Selection, Execution, Persistence, Reporting, Analysis, Distribution) — 3-5 sentences per phase citing specific files and functions.
+
+**PART 3 — SYSTEM ARCHITECTURE (HLD)**: Logical Architecture \`graph TB\` with ALL components grouped into subgraphs (Client, Web Tier, App Services, Data Tier, AI/Search, External APIs). Component Inventory & Rationale table. Deployment Topology \`graph LR\` with cloud infrastructure. Scalability Boundaries table (Axis | Current Limit | Mitigation Path).
+
+**PART 4 — LOW-LEVEL DESIGN (LLD)**: Complete annotated folder structure. Layered Responsibilities table. Key Design Patterns table with quality assessment. Concurrency Model \`flowchart\` showing async, threading, background tasks with actual semaphore values, pool sizes, timeout constants.
+
+**PART 5 — COMPLETE CODE FLOW**: For EACH major API endpoint (minimum 4): full \`sequenceDiagram\` showing every function call from HTTP request to response, parallel execution (par blocks), error handling, retry paths, data transformation at each step.
+
+**PART 6 — AI ARCHITECTURE** (if applicable): Provider Layer table, Prompt Architecture per AI prompt (system message, user template, temperature, max_tokens, response_format), Context Assembly table, Hallucination Prevention table, Token Economics table, Caching Strategy table.
+
+**PART 7 — DATABASE DOCUMENTATION**: Full \`erDiagram\` with all tables/columns/types/relationships. Schema Strategy. Idempotency & Upsert Logic (exact SQL/ORM patterns). Indexing Strategy table. Query Performance patterns. Transactions & Locking (batch sizes, isolation, pool config).
+
+**PART 8 — SECURITY DOCUMENTATION**: Authentication table (Path | Mechanism). Session Isolation. Authorization Model (RBAC/ABAC). Secrets Management table. Transport & Storage Encryption. OWASP Top-10 Posture table (all 10). Audit & Compliance logging.
+
+**PART 9 — DEVOPS DOCUMENTATION**: CI/CD Pipeline \`flowchart LR\` from push to health check. Deploy Script Matrix table. Runtime Observability table. Disaster Recovery table. Scaling Levers table.
+
+**PART 10 — PERFORMANCE**: Bottlenecks table (Step | Time | Bound By). Optimisations in place (citing code). Latency Budgets table (API | p50 | p99).
+
+**PART 11 — BUSINESS VALUE**: Direct Benefits, Operational Benefits, Productivity Gains table (Activity | Manual Hours | With App | Savings), ROI Model with specific numbers.
+
+**PART 12 — CLIENT PRESENTATION**: 10-slide Pitch Deck outline for CIO/CTO. Expected Questions & Answers table (7+ questions). Live Demo Talking Points (step-by-step demo script).
+
+**PART 13 — KNOWLEDGE TRANSFER (KT)**: Day-1 Setup (complete bash commands from clone to running). Folder Cheat-Sheet table. Coding Standards from actual patterns. Common Debug Recipes table. Test Strategy.
+
+**PART 14 — REVERSE-ENGINEERING REPORT**: Complete dependency inventory: Library | Version | Why | Alternatives Considered | Pros | Cons — for EVERY dependency.
+
+**PART 15 — CODE QUALITY REVIEW (Principal Engineer Lens)**: SOLID Audit table (Principle | Grade A-F | Notes). Design Patterns Observed table. Code Smells & Recommendations table. Scalability Improvements. Testability Improvements. Maintainability Score Card (10+ dimensions, 1-5 scores). Top-5 Recommended Next Steps.
+
+**APPENDIX A** — Route Index: Method | Path | Handler — for EVERY endpoint.
+**APPENDIX B** — File Statistics: total files, lines, templates, tests, scripts, tables.
+**APPENDIX C** — Architecture Graph Statistics (if applicable): nodes, edges, communities, flows.
+
+TONE: Microsoft / Google engineering whitepaper — exhaustive, specific, production-grade. LENGTH: 1000-2000 lines of Markdown.`,
+
+    codebase_inventory: `**Codebase Inventory & Module Reference**
+- Annotated directory tree with purpose per file
+- Module-by-module reference: for EACH source file list classes, functions (with signatures), dependencies, external integrations
+- Data models with all fields, types, constraints, relationships
+- Configuration & env vars table: Name | Purpose | Required | Example
+- Entry points: Method | Path | Handler | Auth — for EVERY endpoint
+- Dependency inventory: Library | Version | Category | Purpose`,
+
+    hld: `**High-Level Design (HLD) — C4 Model Architecture**
+Every section MUST include a Mermaid diagram:
+- System Context (C4 Level 1) — \`graph TB\` showing system + ALL external actors with labeled connections
+- Container Diagram (C4 Level 2) — \`graph TB\` breaking system into containers grouped by deployment boundary
+- Component Diagram (C4 Level 3) — \`graph TB\` per major container showing modules by layer
+- Deployment Architecture — \`graph LR\` showing cloud infrastructure with actual service tiers
+- Data Architecture — \`erDiagram\` with all tables + data store inventory + data lifecycle
+- Integration Architecture — \`sequenceDiagram\` per external integration + integration matrix
+- Security Architecture — \`graph TB\` trust boundary diagram with zones and auth mechanisms
+- Scalability — capacity model with actual numbers from code (pool sizes, semaphores, timeouts)
+- Technology Stack Rationale — table: Technology | Category | Why Chosen | Alternative | Trade-off
+- Architecture Decision Records — Context, Decision, Consequences, Status per major decision`,
+
+    lld: `**Low-Level Design (LLD) — Module Internals & Code Flows**
+- Complete annotated folder structure with purpose per file
+- Layer architecture table: Layer | Responsibility | Modules | Rules (CAN/CANNOT)
+- Module deep dive: for EACH source file — purpose, imports, dependents, classes, functions with signatures, constants, error handling, side effects
+- Design patterns with \`classDiagram\` using actual class/function names + quality assessment
+- Concurrency model \`flowchart\` showing async workers, thread pools, semaphores with actual values
+- Complete code flow per major endpoint (minimum 5) — \`sequenceDiagram\` with autonumber, par/alt/loop blocks, actual function names, data shapes
+- State management — \`stateDiagram-v2\` for main entity lifecycle
+- Configuration table: Config Key | Type | Default | Source | Purpose
+- Error taxonomy: Error Type | Source | HTTP Code | Recovery | Logged?
+- Data transformation map: Input → [function()] → Intermediate → Output`,
+
+    feature_diagrams: `**Feature-Level Architecture Diagram Package**
+For EVERY distinct feature/capability in the codebase:
+- Feature index table: # | Feature Name | Entry Point | Key Modules | Diagram Types
+- Per feature: Sequence Diagram (\`sequenceDiagram\` with autonumber, par/alt/loop, actual function names, timing), State Diagram if applicable, Data Flow (\`flowchart LR\`), Component Interaction (\`graph TB\`), Error & Recovery Paths (\`flowchart TD\`)
+- Cross-feature: System-wide data flow, Feature dependency matrix, Concurrency map
+- MINIMUM 15 Mermaid diagrams total with ACTUAL names from code`,
+
+    database: `**Database & Data Architecture**
+- Data store inventory: Store | Type | Engine | Location | Purpose | Size Estimate
+- Full \`erDiagram\` with EVERY table, column, type, constraint, relationship
+- Schema design decisions per table: why it exists, key choices, JSON schema, delete strategy
+- Indexing strategy: Table | Index | Columns | Type | Purpose | Query It Optimizes
+- Query patterns: SQL templates, when they execute, expected rows, performance
+- Data flow between stores — \`flowchart LR\`
+- Transaction model: isolation levels, batch sizes, locking, idempotency
+- Connection pool config: Parameter | Value | Why
+- Migration strategy, data lifecycle (\`stateDiagram-v2\`), backup & recovery
+- Data privacy: Table | Column | Classification | Encryption | Retention`,
+
+    ai_architecture: `**AI/ML Architecture Document**
+- AI provider landscape table + \`graph LR\` provider selection with fallback chain
+- Prompt architecture per AI surface: system prompt, user template, parameters, input context, output schema, validation, failure mode
+- Context assembly pipeline — \`sequenceDiagram\`
+- RAG pipeline (if applicable) — \`flowchart\`: Chunk → Embed → Store → Search → Rerank → Inject
+- Hallucination prevention: Technique | Implementation | Where | Effectiveness
+- Streaming architecture — \`sequenceDiagram\`
+- Multi-provider resilience — \`flowchart\` with fallback chain
+- Token economics: Operation | Input Tokens | Output Tokens | Cost/Call | Monthly
+- Evaluation, observability, security & privacy for AI`,
+
+    brd: `**Business Requirements Document (BRD)**
+- Executive summary: problem, solution, expected ROI
+- Business objectives in SMART format with KPIs
+- Stakeholder analysis: Stakeholder | Role | Interest | Impact | Communication
+- Scope: In/Out, Assumptions, Constraints
+- Functional requirements: ID | Requirement | Priority | User Story | Acceptance Criteria
+- Non-functional requirements: Performance, Availability, Scalability, Security, Usability
+- Business process flows: current vs future state with improvement metrics
+- Risk assessment: Risk | Probability | Impact | Mitigation
+- Dependencies & integrations, Timeline & milestones
+Write for non-technical executives — translate technical capabilities into business value`,
+
+    prd: `**Product Requirements Document (PRD)**
+- Product overview: vision, value proposition, target personas
+- Feature catalogue per feature: Description, User Story (As a/I want/So that), Acceptance Criteria (Given/When/Then), Status, Technical Components, Edge Cases, Priority
+- Top 5 user journeys end-to-end (happy + error paths)
+- Technical constraints affecting product
+- Analytics & instrumentation recommendations
+- Feature gap analysis, Competitive feature matrix, Release notes`,
+
+    client_presentation: `**Client Presentation & Pitch Deck**
+- 10-slide pitch deck: per slide — title, key message, supporting points, visual suggestion
+- Live demo script: 10-15 steps with what to say, wow moments, backup plan
+- Expected Q&A table (15+ questions): Question | Answer | Evidence from Code
+- Competitor positioning matrix vs 3-4 alternatives
+- ROI calculator talking points: cost breakdown, time saved, break-even, ROI multiplier
+- Objection handling: Objection | Response | Proof Point
+Derive everything from actual capabilities in the code`,
+
+    cost_roi: `**Cost & ROI Analysis**
+- Infrastructure costs: Service | Provider | Tier | Monthly Cost | Usage Metric
+- API & third-party costs: API | Pricing | Calls/Month | Cost/Month
+- LLM token cost model: tokens per operation, model pricing, cost per interaction, monthly projection
+- Total cost of ownership, Optimization opportunities
+- Business value: time saved, labor equivalent, revenue impact
+- ROI calculation: Activity | Manual Hours | With App | Savings
+- Break-even analysis at what usage level system pays for itself`,
+
+    security_review: `**Security Architecture Review**
+- Security architecture overview with trust boundary diagram (\`graph TB\`)
+- Attack surface: Surface | Entry Point | Protocol | Auth | Data Exposed | Risk
+- OWASP Top 10 (2021): per item — Status (Pass/Fail/Partial), Evidence (file:line), Recommendation
+- Secrets management audit, Input validation & output encoding
+- API security, Dependency security (CVEs, outdated packages)
+- Cryptographic review: algorithms, key management, TLS, tokens
+- Findings: ID | Severity | Category | Finding | File:Line | Recommendation | Effort
+- Remediation roadmap: Immediate, 30-day, 90-day`,
+
+    threat_model: `**Threat Model (STRIDE)**
+- System decomposition: Data Flow Diagram (Mermaid) with trust boundaries
+- STRIDE per component (all 6 categories): Threat Category | Threat | Attack Scenario | Likelihood | Impact | Risk | Mitigation | Gap
+- Attack trees (Mermaid) for top 5 threats
+- Trust boundary analysis, Threat prioritization with DREAD scores
+- Mitigation recommendations for High/Critical
+- Residual risk register: Threat | Residual Risk | Accepted By | Review Date`,
+
+    compliance: `**Compliance Mapping**
+- SOC 2 Trust Services Criteria CC1-CC9: Criteria | Requirement | Evidence | Status | Gap
+- GDPR Article Mapping (5,6,12-20,25,28,30,32-35,44-49): Article | Requirement | Implementation | Status | Remediation
+- ISO 27001 Annex A Controls A.5-A.8: Control ID | Name | Implementation | Evidence | Gap
+- Gap summary: Critical Gaps | Moderate Gaps
+- Evidence collection guide per control: artifact, location, how to demonstrate to auditors`,
+
+    dpia: `**Data Privacy Impact Assessment (DPIA)**
+- Processing description, Personal data inventory: Data Element | Category | Source | Storage | Retention | Legal Basis | Encryption
+- Data flow map (Mermaid) showing personal data entry, flow, storage, exit, cross-border transfers
+- Necessity & proportionality, Risk assessment (1-5 scale)
+- Data subject rights: Right | GDPR Article | Implementation | Mechanism | Gap
+- Third-party processors, Mitigation measures, DPO recommendation, Consultation requirements`,
+
+    incident_response: `**Incident Response Plan**
+- Classification: Severity | Definition | Example | Response Time | Escalation
+- Response team roles, Detection & monitoring signals
+- 5 Response playbooks (Compromised Creds, Data Breach, Service Compromise, DoS, Supply Chain): detection → containment → investigation → recovery → post-incident
+- Communication templates, Evidence checklist, Recovery procedures, Post-incident review template
+Specific to actual tech stack and deployment model`,
+
+    governance: `**IT Governance Framework**
+- Governance structure: RACI matrix, roles, review cadence
+- Policy framework: InfoSec, Access Control, Change Mgmt, Data Mgmt, Incident Mgmt
+- Risk management framework: 5x5 matrix, appetite, treatment options
+- Compliance management, Performance metrics: Domain | KPI | Target | Measurement | Frequency
+- Continuous improvement: review cycles, maturity model`,
+
+    change_mgmt: `**Change Management & Release Policy**
+- Change classification: Type | Definition | Approval | Lead Time
+- Change request process — Mermaid flowchart of actual CI/CD pipeline
+- Approval gates, CI/CD as change control
+- Release management: cadence, readiness, go/no-go
+- Rollback procedures, Emergency change process
+- Audit trail, Metrics: change success rate, MTTD, MTTR`,
+
+    risk_register: `**Risk Register & Audit Trail Policy**
+- Risk methodology (5x5 matrix), Risk register: ID | Category | Risk | Likelihood | Impact | Score | Owner | Controls | Treatment | Status
+- Treatment plans, Key Risk Indicators, Heat map
+- Audit trail: Current logging inventory | Required events | Log format | Retention | Monitoring & alerting`,
+
+    runbook: `**Deployment & Operations Runbook**
+- System overview with architecture diagram (Mermaid), health endpoints
+- Environment setup: prerequisites, step-by-step local dev commands, env vars
+- Deployment procedures: standard, hotfix, rollback (each with verification)
+- Monitoring: health checks, key metrics, thresholds, log locations
+- Troubleshooting playbooks: app won't start, high latency, integration failures, DB issues, auth problems
+- Disaster recovery: RTO/RPO, DR procedures, testing schedule
+- Capacity planning, Deploy script matrix`,
+
+    kt_onboarding: `**Knowledge Transfer & Developer Onboarding**
+- What this does, who uses it, key outcomes
+- Day-1 setup: bash commands from clone to running, first-run verification
+- Architecture overview with diagram + key decisions and WHY
+- Codebase tour: Top 10 files IN ORDER with why each matters
+- Folder cheat-sheet: Folder | If you're working on…
+- Coding standards from actual code conventions
+- Development workflow, Key patterns, Common tasks ("How do I add X?"), Debug recipes, Test strategy`,
+
+    code_quality: `**Code Quality & Principal Engineer Review**
+- SOLID Audit: Principle | Grade (A+ to F) | Evidence | Improvement
+- Design patterns: Pattern | Location (file:function) | Quality
+- Code smells: Smell | Where (file:line) | Severity | Suggested Fix | Effort
+- Complexity analysis (files >500 lines, functions >50 lines, cyclomatic hotspots)
+- Maintainability scorecard (12 dimensions, 1-5): Readability, Documentation, Test Coverage, Modularity, Tooling, Observability, Performance, Security, Scalability, Deployability, Error Handling, API Design
+- Scalability assessment, Testability assessment
+- Top-10 recommended improvements prioritized by impact × effort`,
+
+    dependency_report: `**Reverse-Engineering & Dependency Report**
+- For EVERY dependency: Library | Version | Why (from actual code usage) | Alternatives | Pros | Cons | Upgrade Risk
+- Dependency graph (\`graph TD\`) showing clusters
+- Transitive risk analysis, CVEs, end-of-life packages
+- Version pinning strategy, Vendor lock-in assessment
+- License compliance: Library | License | Commercial Use | Copyleft Risk`,
+
+    api_reference: `**API Reference Document**
+For EVERY endpoint: Summary, Auth, Rate Limits, Request (headers, params, body JSON schema, curl example), Response (success + errors with examples), Business logic notes
+Plus: Webhooks, Authentication guide, Error reference catalogue`,
+
+    testing_qa: `**Testing & QA Strategy Document**
+- Test pyramid: Unit | Integration | E2E — current count, target, framework for each
+- Test matrix: Feature | Unit Tests | Integration Tests | E2E Tests | Manual | Status
+- Coverage analysis: Module | Line Coverage | Branch Coverage | Untested Critical Paths
+- Test data strategy: how test data is created, seeded, cleaned up, isolated between tests
+- E2E test scenarios: for each major user workflow — preconditions, steps, assertions, edge cases
+- Performance test plan: load profile, target throughput, latency SLOs, tools, baseline benchmarks
+- Security test plan: SAST/DAST tools, fuzzing, pen test scope, vulnerability scan schedule
+- CI integration: which tests run on PR, on merge, nightly; flaky test handling
+- Mocking & stubbing strategy: what is mocked vs real, test doubles inventory
+- Test environment requirements: table of env configs per test type
+- Quality gates: what must pass before merge, before deploy, before release
+- Regression test suite: critical path smoke tests with expected execution time`,
+
+    sla_observability: `**SLA/SLO/SLI & Observability Strategy**
+- Service Level Indicators (SLIs): table: SLI | Definition | Measurement Method | Data Source | Current Value
+- Service Level Objectives (SLOs): table: SLO | SLI | Target | Window | Error Budget | Current Status
+- SLA commitments (if applicable): table: SLA | Metric | Guarantee | Penalty | Measurement
+- Error budget policy: how error budget is calculated, burn rate alerts, what happens when budget is exhausted
+- Monitoring architecture — \`graph TB\` showing: app → metrics collector → time-series DB → dashboards → alerting → on-call
+- Dashboard inventory: table: Dashboard | Purpose | Key Panels | Audience | URL
+- Alert rules: table: Alert | Condition | Threshold | Severity | Channel | Runbook Link
+- Log aggregation: log format, structured logging fields, log levels, retention, search
+- Distributed tracing: trace propagation, span naming, sampling rate, trace analysis
+- Health check endpoints: table: Endpoint | Type (liveness/readiness/startup) | Checks | Timeout
+- Incident detection flow — \`flowchart\` showing: metric spike → alert fires → PagerDuty → triage → runbook
+- Capacity signals: which metrics predict capacity exhaustion, auto-scaling triggers
+- Cost of observability: storage, ingestion, tooling costs per month`,
+
+    tech_debt: `**Technical Debt Register**
+- Debt inventory: table: ID | Category | Description | Location (file:line) | Severity (Critical/High/Med/Low) | Business Impact | Remediation Effort | Interest (ongoing cost of NOT fixing)
+- Categories: Architecture Debt, Code Debt, Test Debt, Documentation Debt, Infrastructure Debt, Dependency Debt, Design Debt
+- Debt heat map — which modules carry the most debt (table: Module | Debt Items | Aggregate Severity | Refactoring Priority)
+- Root cause analysis: how each debt item was introduced (time pressure, knowledge gap, scope change, evolution)
+- Remediation roadmap: Sprint 1 (quick wins) | 30-day | 90-day | Backlog — with effort estimates and business justification
+- Impact on velocity: how debt slows current development (developer friction, bug rate, onboarding time)
+- Debt-to-value ratio: technical debt cost vs feature delivery capacity
+- Prevention strategies: coding standards, review checklists, architecture fitness functions
+- Tracking methodology: how to keep this register current (triggers for adding/closing items)
+- Connection to Code Quality Review: link each debt item to the relevant SOLID violation, code smell, or pattern issue`,
+
+    migration_guide: `**Migration & Upgrade Guide**
+- Current version inventory: table: Component | Current Version | Latest Available | End-of-Life Date | Upgrade Urgency
+- Language/runtime upgrade path: step-by-step guide for major version upgrades (e.g., Python 3.11 → 3.13)
+- Framework upgrade: breaking changes, deprecated APIs, migration scripts needed
+- Database migration: schema change strategy, zero-downtime migration patterns, rollback procedures, data backfill
+- Dependency upgrade matrix: table: Library | Current | Target | Breaking Changes | Migration Steps | Risk
+- Cloud service migration: moving between service tiers, regions, or providers — with impact analysis
+- Data migration: ETL pipeline, validation, reconciliation, rollback plan
+- Configuration migration: env var changes, config file format changes, feature flag transitions
+- API versioning strategy: how API consumers are migrated between versions, deprecation timeline
+- Blue-green / canary deployment for major upgrades — \`flowchart\` showing rollout strategy
+- Rollback plan: for each migration step — what to do if it fails, data recovery, service restoration
+- Testing checklist: what to verify after each migration step
+- Communication plan: stakeholder notification, maintenance window, status updates`,
+
+    accessibility: `**Accessibility Compliance Document (WCAG 2.1)**
+- WCAG 2.1 Level AA audit: table: Criterion | Level | Description | Status (Pass/Fail/Partial/N-A) | Evidence | Remediation
+- Perceivable (1.x): text alternatives, time-based media, adaptable content, distinguishable (color contrast, text resize)
+- Operable (2.x): keyboard accessible, enough time, seizures, navigable, input modalities
+- Understandable (3.x): readable, predictable, input assistance (error identification, labels, prevention)
+- Robust (4.x): compatible with assistive technologies, parsing, name-role-value
+- Automated scan results: tool used (axe, Lighthouse, WAVE), total issues by severity, top issues
+- Manual testing checklist: screen reader testing (VoiceOver/NVDA), keyboard-only navigation, zoom to 200%, high contrast mode
+- Color contrast audit: table: Element | Foreground | Background | Ratio | Required | Pass?
+- Form accessibility: label associations, error messages, focus management, ARIA attributes
+- Dynamic content: live regions, focus management after DOM changes, SPA navigation announcements
+- Remediation priority: table: Issue | Impact | Affected Users | Fix Effort | Priority
+- Testing tools & methodology: which tools, which browsers, which assistive technologies
+- Accessibility statement: template for public-facing statement`,
+
+    user_docs: `**User & Admin Documentation**
+## User Guide:
+- Getting started: first-time setup, account creation, initial configuration
+- Feature-by-feature guide: for each user-facing feature — purpose, step-by-step usage, screenshots/diagrams, tips, common mistakes
+- Workflows: top 5 user workflows end-to-end with decision points
+- FAQ: 15+ questions with answers derived from actual feature behavior
+- Troubleshooting: table: Problem | Cause | Solution — common user-facing issues
+- Keyboard shortcuts / power user features (if applicable)
+- Glossary: domain-specific terms used in the UI
+
+## Admin Guide:
+- System configuration: all admin-configurable settings with descriptions, defaults, effects
+- User management: roles, permissions, provisioning, deprovisioning
+- Integration setup: how to configure each external integration (API keys, OAuth, webhooks)
+- Monitoring & health: what admins should watch, how to interpret health dashboards
+- Backup & restore procedures (user-facing steps)
+- Scaling & performance tuning: knobs admins can adjust
+- Audit & compliance: how to pull audit logs, generate compliance reports
+- Upgrade procedures: how to apply updates, maintenance windows`,
+
+    service_catalog: `**Service Catalog & API Contracts**
+- Service inventory: table: Service | Owner | Repository | Language | Runtime | Port | Health Endpoint | Dependencies | SLO
+- Service relationship map — \`graph TB\` showing all services with communication patterns (sync/async, protocol, auth)
+- Per-service card: purpose, team owner, on-call rotation, runbook link, deployment frequency, MTTR
+- API contracts per service boundary:
+  - OpenAPI/AsyncAPI spec summary: endpoints, schemas, versioning
+  - Contract testing: consumer-driven contract tests, Pact/contract test coverage
+  - Breaking change policy: what constitutes a breaking change, deprecation timeline, consumer notification
+- Event catalog (if event-driven): table: Event | Producer | Consumers | Schema | Retry Policy | DLQ
+- Shared libraries & SDKs: table: Library | Purpose | Services Using | Version | Maintainer
+- Service communication patterns — \`sequenceDiagram\` for top 3 cross-service flows
+- Service mesh / API gateway configuration: routing rules, rate limits, circuit breakers, retries
+- Data ownership: table: Data Entity | Owning Service | Read Access | Write Access | Sync Mechanism
+- Versioning strategy: how services version their APIs (URL path, header, query param)
+- Service scorecard: table: Service | Uptime | Deploy Freq | Test Coverage | Tech Debt | Overall Health`,
+  };
+
+  let steps = selectedDocs.map((doc, i) => {
+    const section = docSections[doc.id] || doc.name;
+    return `### STEP ${i + 1}: ${doc.name}\n${section}`;
+  }).join('\n\n');
+
+  let prompt = `You are a **Senior Principal AI Architect** at a top-tier technology firm (Microsoft / Google / Anthropic calibre). You have been engaged to produce a comprehensive suite of enterprise documents for a production codebase.
+
+I will provide you with the COMPLETE source code. Analyse every file, every function, every import, every config value. Then generate the documents listed below **sequentially** — after each document I will say "NEXT" and you produce the next one.
+
+---
+
+## PROJECT CONTEXT
+
+| Field | Value |
+|-------|-------|
+| **Project Name** | ${name} |
+| **Organization** | ${org} |
+| **Primary Language** | ${lang} |
+| **Framework** | ${framework} |
+| **Database** | ${db} |
+| **Cloud Provider** | ${cloud} |
+| **Deployment Target** | ${deploy} |
+| **CI/CD** | ${cicd} |
+| **Business Domain** | ${domain} |
+| **Target Users** | ${users} |
+| **Compliance Frameworks** | ${compliance} |
+| **Repository** | ${repo} |`;
+
+  if (context) {
+    prompt += `\n| **Additional Context** | ${context} |`;
+  }
+
+  prompt += `
+
+---
+
+## QUALITY STANDARDS
+
+1. **Every claim references a real file, function, or config value** from the code — no generic descriptions
+2. **Every flow or architecture section MUST include a Mermaid diagram** (\`\`\`mermaid fenced):
+   - \`sequenceDiagram\` for request flows (with \`autonumber\`)
+   - \`graph TB/LR\` for architecture & component relationships
+   - \`erDiagram\` for database schemas
+   - \`flowchart\` for pipelines and decision trees
+   - \`stateDiagram-v2\` for lifecycle flows
+   - \`classDiagram\` for class hierarchies
+3. **Tables for structured data** — use Markdown tables throughout
+4. **Cross-reference** between documents — use consistent component names, risk IDs, requirement IDs
+5. **Tone**: Engineering whitepaper quality — exhaustive, specific, production-grade
+6. **Minimum 10 Mermaid diagrams** across the full document set
+
+---
+
+## DOCUMENTS TO GENERATE (${selectedDocs.length} total)
+
+${steps}
+
+---
+
+## CROSS-REFERENCING RULES
+
+- Each document references relevant sections of previous ones
+- Use consistent identifiers across all documents
+- After all documents: produce a **Traceability Matrix**: Requirement → Component → Security Finding → Compliance Control → Risk
+
+---
+
+## HOW TO PROCEED
+
+1. I will now paste the complete source code below
+2. Analyse it thoroughly before generating anything
+3. When I say **"CONTEXT COMPLETE"**, begin with **Step 1**
+4. After each document, I will say **"NEXT"** — then produce the next step
+5. After the final step, produce the **Traceability Matrix**
+
+---
+
+**SOURCE CODE FOLLOWS BELOW:**
+
+[PASTE YOUR COMPLETE SOURCE CODE HERE — group files by layer: Config → Core → API → Infrastructure]`;
+
+  document.getElementById('genText').textContent = prompt;
+  document.getElementById('genOutput').classList.add('visible');
+  document.getElementById('copyGenBtn').style.display = 'inline-flex';
+
+  const words = prompt.split(/\s+/).length;
+  document.getElementById('wordCount').textContent = words.toLocaleString() + ' words';
+
+  document.getElementById('genOutput').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function copyGenerated() {
+  const text = document.getElementById('genText').textContent;
+  const btn = document.getElementById('copyGenBtn');
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy to Clipboard'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+function toggleCard(header) {
+  header.closest('.prompt-card').classList.toggle('open');
+}
+
+function copyPrompt(btn) {
+  const text = btn.previousElementSibling.textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy Prompt'; btn.classList.remove('copied'); }, 2000);
+  });
+}
+
+document.querySelectorAll('.toc-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.toc-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const cat = btn.dataset.cat;
+    document.querySelectorAll('.prompt-card').forEach(card => {
+      card.style.display = (cat === 'all' || card.dataset.cat === cat) ? '' : 'none';
+    });
+    document.querySelectorAll('.category-header').forEach(el => {
+      el.style.display = (cat === 'all' || el.id === 'cat-' + cat) ? '' : 'none';
+    });
+    document.querySelectorAll('.category-desc').forEach(el => {
+      if (cat === 'all') { el.style.display = ''; return; }
+      const prev = el.previousElementSibling;
+      el.style.display = (prev && prev.id === 'cat-' + cat) ? '' : 'none';
+    });
+  });
+});
+
+initDocGrid();
+</script>
