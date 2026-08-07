@@ -57,3 +57,9 @@ Azure DevOps path (Sunny Portal on this agent app):
 
 ## 6) Status
 Send `task status` or `5`
+
+## Updated Portal Screenshots
+
+![Dashboard](screenshots/dashboard.png)
+![Tasks](screenshots/tasks.png)
+![Quick Actions](screenshots/quick-actions.png)

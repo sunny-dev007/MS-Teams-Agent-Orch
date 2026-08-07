@@ -3,31 +3,81 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal</title>
-    <link rel="stylesheet" href="/web/portal.css">
+    <title>AI Agent Dashboard</title>
+    <link rel="stylesheet" href="portal.css">
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body>
-    <header>
-        <h1>Welcome to the AI Agent Portal</h1>
+    <header class="header">
+        <h1>AI Agent Dashboard</h1>
     </header>
-    <main>
-        <section>
+    <nav class="sidebar">
+        <ul>
+            <li><a href="#status"><i class="fas fa-info-circle"></i> Status</a></li>
+            <li><a href="#tasks"><i class="fas fa-tasks"></i> Tasks</a></li>
+            <li><a href="#actions"><i class="fas fa-bolt"></i> Quick Actions</a></li>
+            <li><a href="#help"><i class="fas fa-question-circle"></i> Help</a></li>
+        </ul>
+    </nav>
+    <main class="main-content">
+        <section id="status" class="dashboard-section">
             <h2>Agent Status</h2>
-            <p>All systems operational.</p>
+            <div class="card">
+                <p>Status: <span id="agent-status">Loading...</span></p>
+            </div>
         </section>
-        <section>
-            <h2>Capabilities Overview</h2>
-            <ul>
-                <li>Read and summarize emails</li>
-                <li>Schedule meetings</li>
-                <li>Browse repositories</li>
-                <li>Develop and review code</li>
-                <li>Deploy to production</li>
-            </ul>
+        <section id="tasks" class="dashboard-section">
+            <h2>Recent Tasks</h2>
+            <div class="card">
+                <ul id="task-list">
+                    <li>Loading tasks...</li>
+                </ul>
+            </div>
+        </section>
+        <section id="actions" class="dashboard-section">
+            <h2>Quick Actions</h2>
+            <div class="card">
+                <button onclick="performAction('check_email')">Check Email</button>
+                <button onclick="performAction('schedule_meeting')">Schedule Meeting</button>
+            </div>
+        </section>
+        <section id="help" class="dashboard-section">
+            <h2>Help</h2>
+            <div class="card">
+                <p>Need assistance? Visit our <a href="#">documentation</a>.</p>
+            </div>
         </section>
     </main>
-    <footer>
-        <p>&copy; 2023 AI Agent</p>
+    <footer class="footer">
+        <p>&copy; 2023 AI Agent Platform</p>
     </footer>
+    <script>
+        // Example JavaScript to load agent status and tasks
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('agent-status').textContent = data.status;
+                });
+
+            fetch('/api/tasks')
+                .then(response => response.json())
+                .then(data => {
+                    const taskList = document.getElementById('task-list');
+                    taskList.innerHTML = '';
+                    data.forEach(task => {
+                        const li = document.createElement('li');
+                        li.textContent = `${task.task_id}: ${task.status}`;
+                        taskList.appendChild(li);
+                    });
+                });
+        });
+
+        function performAction(action) {
+            console.log(`Performing action: ${action}`);
+            // Implement action logic here
+        }
+    </script>
 </body>
 </html>
