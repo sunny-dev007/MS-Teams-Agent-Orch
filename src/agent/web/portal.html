@@ -4,100 +4,44 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp AI Agent Portal</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f9;
-            color: #333;
-        }
-        header {
-            background-color: #009688;
-            color: white;
-            padding: 10px 20px;
-            text-align: center;
-        }
-        nav {
-            display: flex;
-            justify-content: center;
-            background-color: #00796b;
-            padding: 10px;
-        }
-        nav a {
-            color: white;
-            margin: 0 15px;
-            text-decoration: none;
-            font-weight: bold;
-        }
-        main {
-            padding: 20px;
-        }
-        .dashboard {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: space-around;
-        }
-        .card {
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin: 10px;
-            padding: 20px;
-            width: 300px;
-            text-align: center;
-        }
-        .card h3 {
-            margin-top: 0;
-        }
-        footer {
-            background-color: #009688;
-            color: white;
-            text-align: center;
-            padding: 10px 0;
-            position: fixed;
-            width: 100%;
-            bottom: 0;
-        }
-        @media (max-width: 600px) {
-            .dashboard {
-                flex-direction: column;
-                align-items: center;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="portal.css">
 </head>
 <body>
     <header>
         <h1>WhatsApp AI Agent Portal</h1>
+        <nav>
+            <ul>
+                <li><a href="#status">Agent Status</a></li>
+                <li><a href="#tasks">Task Summary</a></li>
+                <li><a href="#actions">Quick Actions</a></li>
+                <li><a href="#docs">Documentation</a></li>
+            </ul>
+        </nav>
     </header>
-    <nav>
-        <a href="#dashboard">Dashboard</a>
-        <a href="#tasks">Tasks</a>
-        <a href="#quick-actions">Quick Actions</a>
-    </nav>
     <main>
-        <section id="dashboard" class="dashboard">
-            <div class="card">
-                <h3>Agent Status</h3>
-                <p>All systems operational.</p>
-            </div>
-            <div class="card">
-                <h3>Recent Activity</h3>
-                <p>No recent tasks.</p>
-            </div>
+        <section id="status">
+            <h2>Agent Status</h2>
+            <p>Current status of the AI agents and system health.</p>
+            <!-- Dynamic content will be injected here -->
         </section>
-        <section id="tasks" class="dashboard">
-            <div class="card">
-                <h3>Task Overview</h3>
-                <p>Manage your tasks efficiently.</p>
-            </div>
+        <section id="tasks">
+            <h2>Task Summary</h2>
+            <p>Overview of recent tasks and their outcomes.</p>
+            <!-- Dynamic content will be injected here -->
         </section>
-        <section id="quick-actions" class="dashboard">
-            <div class="card">
-                <h3>Quick Actions</h3>
-                <p>Perform actions quickly.</p>
-            </div>
+        <section id="actions">
+            <h2>Quick Actions</h2>
+            <p>Perform common tasks quickly.</p>
+            <!-- Dynamic content will be injected here -->
+        </section>
+        <section id="docs">
+            <h2>Documentation</h2>
+            <ul>
+                <li><a href="docs/architecture.md">Architecture Docs</a></li>
+                <li><a href="docs/setup-guide.md">Setup Guide</a></li>
+                <li><a href="docs/api-reference.md">API Reference</a></li>
+                <li><a href="docs/developer-guide.md">Developer Guide</a></li>
+            </ul>
         </section>
     </main>
     <footer>
