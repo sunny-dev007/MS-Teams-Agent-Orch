@@ -3,81 +3,105 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Agent Dashboard</title>
-    <link rel="stylesheet" href="portal.css">
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <title>WhatsApp AI Agent Portal</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        header {
+            background-color: #009688;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+        }
+        nav {
+            display: flex;
+            justify-content: center;
+            background-color: #00796b;
+            padding: 10px;
+        }
+        nav a {
+            color: white;
+            margin: 0 15px;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        main {
+            padding: 20px;
+        }
+        .dashboard {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+        }
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin: 10px;
+            padding: 20px;
+            width: 300px;
+            text-align: center;
+        }
+        .card h3 {
+            margin-top: 0;
+        }
+        footer {
+            background-color: #009688;
+            color: white;
+            text-align: center;
+            padding: 10px 0;
+            position: fixed;
+            width: 100%;
+            bottom: 0;
+        }
+        @media (max-width: 600px) {
+            .dashboard {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+    </style>
 </head>
 <body>
-    <header class="header">
-        <h1>AI Agent Dashboard</h1>
+    <header>
+        <h1>WhatsApp AI Agent Portal</h1>
     </header>
-    <nav class="sidebar">
-        <ul>
-            <li><a href="#status"><i class="fas fa-info-circle"></i> Status</a></li>
-            <li><a href="#tasks"><i class="fas fa-tasks"></i> Tasks</a></li>
-            <li><a href="#actions"><i class="fas fa-bolt"></i> Quick Actions</a></li>
-            <li><a href="#help"><i class="fas fa-question-circle"></i> Help</a></li>
-        </ul>
+    <nav>
+        <a href="#dashboard">Dashboard</a>
+        <a href="#tasks">Tasks</a>
+        <a href="#quick-actions">Quick Actions</a>
     </nav>
-    <main class="main-content">
-        <section id="status" class="dashboard-section">
-            <h2>Agent Status</h2>
+    <main>
+        <section id="dashboard" class="dashboard">
             <div class="card">
-                <p>Status: <span id="agent-status">Loading...</span></p>
+                <h3>Agent Status</h3>
+                <p>All systems operational.</p>
+            </div>
+            <div class="card">
+                <h3>Recent Activity</h3>
+                <p>No recent tasks.</p>
             </div>
         </section>
-        <section id="tasks" class="dashboard-section">
-            <h2>Recent Tasks</h2>
+        <section id="tasks" class="dashboard">
             <div class="card">
-                <ul id="task-list">
-                    <li>Loading tasks...</li>
-                </ul>
+                <h3>Task Overview</h3>
+                <p>Manage your tasks efficiently.</p>
             </div>
         </section>
-        <section id="actions" class="dashboard-section">
-            <h2>Quick Actions</h2>
+        <section id="quick-actions" class="dashboard">
             <div class="card">
-                <button onclick="performAction('check_email')">Check Email</button>
-                <button onclick="performAction('schedule_meeting')">Schedule Meeting</button>
-            </div>
-        </section>
-        <section id="help" class="dashboard-section">
-            <h2>Help</h2>
-            <div class="card">
-                <p>Need assistance? Visit our <a href="#">documentation</a>.</p>
+                <h3>Quick Actions</h3>
+                <p>Perform actions quickly.</p>
             </div>
         </section>
     </main>
-    <footer class="footer">
-        <p>&copy; 2023 AI Agent Platform</p>
+    <footer>
+        <p>&copy; 2023 WhatsApp AI Agent</p>
     </footer>
-    <script>
-        // Example JavaScript to load agent status and tasks
-        document.addEventListener('DOMContentLoaded', function() {
-            fetch('/api/status')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('agent-status').textContent = data.status;
-                });
-
-            fetch('/api/tasks')
-                .then(response => response.json())
-                .then(data => {
-                    const taskList = document.getElementById('task-list');
-                    taskList.innerHTML = '';
-                    data.forEach(task => {
-                        const li = document.createElement('li');
-                        li.textContent = `${task.task_id}: ${task.status}`;
-                        taskList.appendChild(li);
-                    });
-                });
-        });
-
-        function performAction(action) {
-            console.log(`Performing action: ${action}`);
-            // Implement action logic here
-        }
-    </script>
 </body>
 </html>
