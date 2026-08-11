@@ -4,48 +4,109 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>WhatsApp AI Agent Portal</title>
-    <link rel="stylesheet" href="portal.css">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f9;
+            color: #333;
+        }
+        header {
+            background-color: #0078d4;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+        }
+        .container {
+            padding: 20px;
+        }
+        .section {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .section h2 {
+            margin-top: 0;
+        }
+        .dashboard, .tasks, .quick-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .card {
+            flex: 1 1 calc(33.333% - 20px);
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+        .card h3 {
+            margin: 0 0 10px;
+        }
+        .card p {
+            margin: 0;
+        }
+        @media (max-width: 768px) {
+            .card {
+                flex: 1 1 100%;
+            }
+        }
+    </style>
 </head>
 <body>
     <header>
         <h1>WhatsApp AI Agent Portal</h1>
-        <nav>
-            <ul>
-                <li><a href="#status">Agent Status</a></li>
-                <li><a href="#tasks">Task Summary</a></li>
-                <li><a href="#actions">Quick Actions</a></li>
-                <li><a href="#docs">Documentation</a></li>
-            </ul>
-        </nav>
     </header>
-    <main>
-        <section id="status">
-            <h2>Agent Status</h2>
-            <p>Current status of the AI agents and system health.</p>
-            <!-- Dynamic content will be injected here -->
-        </section>
-        <section id="tasks">
-            <h2>Task Summary</h2>
-            <p>Overview of recent tasks and their outcomes.</p>
-            <!-- Dynamic content will be injected here -->
-        </section>
-        <section id="actions">
+    <div class="container">
+        <div class="section dashboard">
+            <h2>Dashboard</h2>
+            <div class="card">
+                <h3>Agent Status</h3>
+                <p>All systems operational</p>
+            </div>
+            <div class="card">
+                <h3>Active Tasks</h3>
+                <p>5 tasks in progress</p>
+            </div>
+            <div class="card">
+                <h3>Completed Tasks</h3>
+                <p>20 tasks completed</p>
+            </div>
+        </div>
+        <div class="section tasks">
+            <h2>Tasks</h2>
+            <div class="card">
+                <h3>Task 1</h3>
+                <p>Description of task 1</p>
+            </div>
+            <div class="card">
+                <h3>Task 2</h3>
+                <p>Description of task 2</p>
+            </div>
+            <div class="card">
+                <h3>Task 3</h3>
+                <p>Description of task 3</p>
+            </div>
+        </div>
+        <div class="section quick-actions">
             <h2>Quick Actions</h2>
-            <p>Perform common tasks quickly.</p>
-            <!-- Dynamic content will be injected here -->
-        </section>
-        <section id="docs">
-            <h2>Documentation</h2>
-            <ul>
-                <li><a href="docs/architecture.md">Architecture Docs</a></li>
-                <li><a href="docs/setup-guide.md">Setup Guide</a></li>
-                <li><a href="docs/api-reference.md">API Reference</a></li>
-                <li><a href="docs/developer-guide.md">Developer Guide</a></li>
-            </ul>
-        </section>
-    </main>
-    <footer>
-        <p>&copy; 2023 WhatsApp AI Agent</p>
-    </footer>
+            <div class="card">
+                <h3>Action 1</h3>
+                <p>Perform action 1</p>
+            </div>
+            <div class="card">
+                <h3>Action 2</h3>
+                <p>Perform action 2</p>
+            </div>
+            <div class="card">
+                <h3>Action 3</h3>
+                <p>Perform action 3</p>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
