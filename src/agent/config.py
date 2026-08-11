@@ -2,11 +2,33 @@
 
 import os
 from pathlib import Path
+from typing import Annotated
 
 from pydantic import SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from agent.core.sqlite_paths import ensure_sqlite_file, to_aiosqlite_url
+
+
+def _parse_csv_or_json_list(value) -> list[str]:
+    """Accept App Service plain CSV/UUID or JSON array env values."""
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(v).strip() for v in value if str(v).strip()]
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("["):
+            import json
+
+            try:
+                parsed = json.loads(text)
+                if isinstance(parsed, list):
+                    return [str(v).strip() for v in parsed if str(v).strip()]
+            except json.JSONDecodeError:
+                pass
+        return [part.strip() for part in text.split(",") if part.strip()]
+    return []
 
 
 def _azure_data_dir() -> Path | None:
@@ -51,7 +73,9 @@ class Settings(BaseSettings):
     # Teams / Copilot Studio channel (additive — WhatsApp unchanged)
     enable_teams_copilot_channel: bool = True
     copilot_api_key: SecretStr = SecretStr("")
-    allowed_teams_user_ids: list[str] = []
+    # NoDecode: pydantic-settings otherwise JSON-parses list env vars and crashes on a plain UUID/CSV
+    # (that crash took down the whole App Service, including WhatsApp).
+    allowed_teams_user_ids: Annotated[list[str], NoDecode] = []
 
     @property
     def effective_api_key(self) -> str:
@@ -106,23 +130,12 @@ class Settings(BaseSettings):
     @field_validator("allowed_teams_user_ids", mode="before")
     @classmethod
     def _parse_teams_allowlist(cls, value):
-        if value is None or value == "":
-            return []
-        if isinstance(value, list):
-            return [str(v).strip() for v in value if str(v).strip()]
-        if isinstance(value, str):
-            text = value.strip()
-            if text.startswith("["):
-                import json
+        return _parse_csv_or_json_list(value)
 
-                try:
-                    parsed = json.loads(text)
-                    if isinstance(parsed, list):
-                        return [str(v).strip() for v in parsed if str(v).strip()]
-                except json.JSONDecodeError:
-                    pass
-            return [part.strip() for part in text.split(",") if part.strip()]
-        return value
+    @field_validator("allowed_phone_numbers", mode="before")
+    @classmethod
+    def _parse_phone_allowlist(cls, value):
+        return _parse_csv_or_json_list(value)
 
     @field_validator("database_url", mode="before")
     @classmethod

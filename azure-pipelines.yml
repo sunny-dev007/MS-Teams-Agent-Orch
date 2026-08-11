@@ -63,7 +63,7 @@ stages:
               set -euo pipefail
               python -m pip install --upgrade pip
               pip install -r requirements.txt
-              pip install "pydantic-settings>=2.5"
+              pip install "pydantic-settings>=2.9"
               pip install pytest pytest-asyncio httpx
               pip install .
               python -c "from pydantic_settings import BaseSettings; print('pydantic-settings OK')"
@@ -97,11 +97,27 @@ stages:
               PYTHONPATH=src python - <<'PY'
               from agent.main import app
               paths = set(app.openapi().get("paths") or {})
-              required = ("/webhooks/whatsapp", "/webhooks/gmail", "/health", "/portal")
+              required = (
+                  "/webhooks/whatsapp",
+                  "/webhooks/gmail",
+                  "/health",
+                  "/portal",
+                  "/api/channels/copilot/health",
+                  "/api/channels/copilot/message",
+              )
               missing = [p for p in required if p not in paths]
               if missing:
                   raise SystemExit(f"main.py missing routes {missing}; agent rewrite blocked")
               print("Route mount guard OK", required)
+              # Plain UUID must not crash Settings (App Service ALLOWED_TEAMS_USER_IDS format).
+              import os
+              from agent.config import Settings
+
+              os.environ["ALLOWED_TEAMS_USER_IDS"] = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+              parsed = Settings().allowed_teams_user_ids
+              if parsed != ["aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"]:
+                  raise SystemExit(f"ALLOWED_TEAMS_USER_IDS plain UUID parse failed: {parsed!r}")
+              print("Teams allowlist env parse guard OK")
               PY
               PYTHONPATH=src python -m pytest tests/ -v --tb=short -q
             displayName: "Run tests"
@@ -246,15 +262,29 @@ stages:
                   --resource-group "$(resourceGroup)" \
                   --name "$(appName)" || true
 
-                echo "Waiting for /health (Oryx antenv build may take 10-20 min on B1)..."
+                echo "Waiting for /health then Copilot channel (Oryx antenv build may take 10-20 min on B1)..."
                 for i in $(seq 1 80); do
                   CODE=$(curl -sS --max-time 15 -o /tmp/health.json -w "%{http_code}" \
                     "https://$(appName).azurewebsites.net/health" || echo 000)
-                  echo "attempt $i -> HTTP $CODE"
+                  echo "attempt $i -> /health HTTP $CODE"
                   if [ "$CODE" = "200" ]; then
                     cat /tmp/health.json
                     echo
-                    exit 0
+                    # Dual-channel must be live — /health alone can pass on a stale build without Copilot routes.
+                    for j in $(seq 1 20); do
+                      CCODE=$(curl -sS --max-time 15 -o /tmp/copilot_health.json -w "%{http_code}" \
+                        "https://$(appName).azurewebsites.net/api/channels/copilot/health" || echo 000)
+                      echo "copilot attempt $j -> HTTP $CCODE"
+                      if [ "$CCODE" = "200" ]; then
+                        cat /tmp/copilot_health.json
+                        echo
+                        exit 0
+                      fi
+                      sleep 10
+                    done
+                    echo "Copilot /api/channels/copilot/health did not return 200 after /health OK"
+                    cat /tmp/copilot_health.json 2>/dev/null || true
+                    exit 1
                   fi
                   if [ "$CODE" = "403" ]; then
                     az webapp start \
