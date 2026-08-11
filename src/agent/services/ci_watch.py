@@ -456,11 +456,11 @@ def format_ci_status_notification(watch: dict[str, Any], result: CiTerminalResul
 
 
 async def _send_whatsapp(phone: str, text: str) -> None:
-    from agent.services.whatsapp import send_message
+    from agent.services.channel_notify import send_channel_message
 
     if not phone or not text:
         return
-    await send_message(phone, text)
+    await send_channel_message(phone, text)
 
 
 async def notify_watch_finished(watch: dict[str, Any], result: CiTerminalResult) -> None:

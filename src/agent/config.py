@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     # After CI/test failure, ask on WhatsApp and let the test_fixer agent repair
     enable_ci_test_fix_agent: bool = True
 
+    # Teams / Copilot Studio channel (additive — WhatsApp unchanged)
+    enable_teams_copilot_channel: bool = True
+    copilot_api_key: SecretStr = SecretStr("")
+    allowed_teams_user_ids: list[str] = []
+
     @property
     def effective_api_key(self) -> str:
         key = self.azure_openai_api_key.get_secret_value()
@@ -97,6 +102,27 @@ class Settings(BaseSettings):
     workspace_dir: str = "./workspaces"
     log_level: str = "INFO"
     allowed_phone_numbers: list[str] = []
+
+    @field_validator("allowed_teams_user_ids", mode="before")
+    @classmethod
+    def _parse_teams_allowlist(cls, value):
+        if value is None or value == "":
+            return []
+        if isinstance(value, list):
+            return [str(v).strip() for v in value if str(v).strip()]
+        if isinstance(value, str):
+            text = value.strip()
+            if text.startswith("["):
+                import json
+
+                try:
+                    parsed = json.loads(text)
+                    if isinstance(parsed, list):
+                        return [str(v).strip() for v in parsed if str(v).strip()]
+                except json.JSONDecodeError:
+                    pass
+            return [part.strip() for part in text.split(",") if part.strip()]
+        return value
 
     @field_validator("database_url", mode="before")
     @classmethod

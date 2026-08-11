@@ -7,15 +7,21 @@ logger = get_logger(__name__)
 
 
 async def handle_whatsapp_message(parsed: dict) -> None:
+    """Backward-compatible WhatsApp entry — delegates to channel handler."""
+    await handle_channel_message(parsed, source="whatsapp")
+
+
+async def handle_channel_message(parsed: dict, source: str = "whatsapp") -> None:
     phone = parsed["phone"]
     message = (parsed["message"] or "").strip()
+    channel_source = source or "whatsapp"
 
     # Fast-path: greetings/help — always allowed.
     if is_simple_greeting(message) or message.lower() in {"help", "menu", "?", "commands"}:
         try:
             from agent.core.persona import GREETING_REPLY, HELP_MENU
             from agent.core.session import get_session
-            from agent.services.whatsapp import send_message
+            from agent.services.channel_notify import send_channel_message
             from agent.workflow.gates import should_block_new_task
             from agent.workflow.resume_context import format_session_status
 
@@ -30,7 +36,7 @@ async def handle_whatsapp_message(parsed: dict) -> None:
                     if message.lower() in {"help", "menu", "?", "commands"}
                     else GREETING_REPLY
                 )
-            await send_message(phone, text)
+            await send_channel_message(phone, text)
             return
         except Exception:
             logger.exception("Fast-path reply failed")
@@ -38,16 +44,16 @@ async def handle_whatsapp_message(parsed: dict) -> None:
     # Block only deploy gates — repo wizard replies (1, 2, repo names) must reach the graph.
     try:
         from agent.core.session import get_session
-        from agent.services.whatsapp import send_message
+        from agent.services.channel_notify import send_channel_message
         from agent.workflow.gates import should_block_new_task
         from agent.workflow.resume_context import format_session_status, is_resume_status_message
 
         session = await get_session(phone)
         if should_block_new_task(session):
-            await send_message(phone, format_session_status(session))
+            await send_channel_message(phone, format_session_status(session))
             return
         if is_resume_status_message(message):
-            await send_message(
+            await send_channel_message(
                 phone,
                 format_session_status(session)
                 if session.get("awaiting")
@@ -58,12 +64,18 @@ async def handle_whatsapp_message(parsed: dict) -> None:
         logger.exception("Session guard failed — continuing with graph")
 
     task_id = str(uuid.uuid4())[:8]
-    logger.info("Processing task %s from %s (msg=%s)", task_id, phone, message[:80])
+    logger.info(
+        "Processing task %s from %s source=%s (msg=%s)",
+        task_id,
+        phone,
+        channel_source,
+        message[:80],
+    )
 
     try:
-        from agent.services.whatsapp import send_message
+        from agent.services.channel_notify import send_channel_message
 
-        await send_message(phone, "Got it, Sunny — working on it…")
+        await send_channel_message(phone, "Got it, Sunny — working on it…")
     except Exception:
         logger.exception("Failed instant ack for task %s", task_id)
 
@@ -72,14 +84,14 @@ async def handle_whatsapp_message(parsed: dict) -> None:
 
         await run_graph(
             task_id=task_id,
-            source="whatsapp",
+            source=channel_source,
             user_message=message,
             whatsapp_phone=phone,
         )
     except Exception as exc:
         logger.exception("Task %s failed", task_id)
         try:
-            from agent.services.whatsapp import send_message
+            from agent.services.channel_notify import send_channel_message
 
             detail = str(exc)
             if "unable to open database file" in detail.lower():
@@ -89,7 +101,7 @@ async def handle_whatsapp_message(parsed: dict) -> None:
                 )
             else:
                 msg = f"Something went wrong with task {task_id}. Please try again."
-            await send_message(phone, msg)
+            await send_channel_message(phone, msg)
         except Exception:
             logger.exception("Failed error reply for task %s", task_id)
 

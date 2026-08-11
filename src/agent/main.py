@@ -17,6 +17,7 @@ from agent.api.health import router as health_router
 from agent.api.portal import router as portal_router
 from agent.api.tasks import router as tasks_router
 from agent.api.whatsapp import router as whatsapp_router
+from agent.api.copilot import router as copilot_router
 from agent.core.logging import setup_logging
 from agent.models.db import init_db
 
@@ -94,3 +95,4 @@ app.include_router(health_router)
 app.include_router(whatsapp_router)
 app.include_router(gmail_router)
 app.include_router(tasks_router)
+app.include_router(copilot_router)

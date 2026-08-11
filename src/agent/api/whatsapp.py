@@ -1,7 +1,17 @@
-import re
-
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 
+from agent.api.channel_gates import (
+    APPROVE_PATTERN,
+    FIX_TESTS_PATTERN,
+    PROCEED_PATTERN,
+    PR_AI_PATTERN,
+    PR_MANUAL_PATTERN,
+    PR_READY_PATTERN,
+    REJECT_PATTERN,
+    SKIP_CI_FIX_PATTERN,
+    route_inbound_message,
+    task_id_from_match,
+)
 from agent.config import settings
 from agent.core.logging import get_logger
 from agent.core.security import is_phone_allowed, verify_whatsapp_signature
@@ -11,50 +21,8 @@ logger = get_logger(__name__)
 
 router = APIRouter(prefix="/webhooks", tags=["whatsapp"])
 
-# Final deployment approval phrases (optional task id)
-PROCEED_PATTERN = re.compile(
-    r"(?i)^(?:"
-    r"proceed|approve\s+plan|start\s+(?:dev|development)|go\s+ahead(?:\s+with\s+plan)?"
-    r")(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
-)
-PR_AI_PATTERN = re.compile(
-    r"(?i)^(?:1|ai(?:\s+review)?|review\s+with\s+ai)(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
-)
-PR_MANUAL_PATTERN = re.compile(
-    r"(?i)^(?:2|manual(?:\s+review)?|review\s+manually)(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
-)
-PR_READY_PATTERN = re.compile(
-    r"(?i)^(?:"
-    r"pr\s+(?:ready|approved|done)|manual\s+(?:approved|done)"
-    r")(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
-)
-APPROVE_PATTERN = re.compile(
-    r"(?i)^(?:"
-    r"approve(?:\s+deploy(?:ment)?)?(?:\s+([A-Za-z0-9_-]+))?"
-    r"|final\s+approval(?:\s+(?:for\s+)?deploy(?:ment)?)?(?:\s+([A-Za-z0-9_-]+))?"
-    r"|deploy(?:\s+now)?(?:\s+([A-Za-z0-9_-]+))?"
-    r")[\s!.]*$"
-)
-REJECT_PATTERN = re.compile(r"(?i)^reject(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$")
-FIX_TESTS_PATTERN = re.compile(
-    r"(?i)^(?:"
-    r"fix\s+tests?|fix\s+ci|repair\s+tests?|yes\s+fix|resolve(?:\s+it)?"
-    r")(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
-)
-SKIP_CI_FIX_PATTERN = re.compile(
-    r"(?i)^(?:"
-    r"skip(?:\s+fix)?|ignore(?:\s+failure)?|no\s+fix|leave\s+it"
-    r")(?:\s+([A-Za-z0-9_-]+))?[\s!.]*$"
-)
-
-
-def _task_id_from_match(match: re.Match | None) -> str | None:
-    if not match:
-        return None
-    for group in match.groups():
-        if group:
-            return group
-    return None
+# Re-export for existing tests / callers
+_task_id_from_match = task_id_from_match
 
 
 @router.get("/whatsapp")
@@ -92,257 +60,13 @@ async def receive_message(request: Request, background_tasks: BackgroundTasks):
     message = parsed["message"].strip()
     logger.info("Received message from %s: %s", parsed["phone"], message[:100])
 
-    from agent.core.session import get_session
-    from agent.workflow.gates import (
-        GATE_CI_FIX,
-        GATE_DEPLOY,
-        GATE_MANUAL_PR,
-        GATE_PIPELINE_WATCH,
-        GATE_PLAN,
-        GATE_PR_MODE,
-        effective_awaiting,
-        is_conversation_awaiting,
-        is_workflow_gate,
-        session_has_pr,
-    )
-    from agent.workflow.resume_context import (
-        format_gate_hint,
-        format_no_pending_task,
-        format_session_cleared,
-        format_session_status,
-        is_cancel_session_message,
-        is_restart_session_message,
-        is_resume_status_message,
-    )
-
-    session = await get_session(parsed["phone"])
-
-    proceed_match = PROCEED_PATTERN.match(message)
-    reject_match = REJECT_PATTERN.match(message)
-    approve_match = APPROVE_PATTERN.match(message)
-    pr_ai_match = PR_AI_PATTERN.match(message)
-    pr_manual_match = PR_MANUAL_PATTERN.match(message)
-    pr_ready_match = PR_READY_PATTERN.match(message)
-    fix_tests_match = FIX_TESTS_PATTERN.match(message)
-    skip_ci_fix_match = SKIP_CI_FIX_PATTERN.match(message)
-
-    # After App Service recycle, SQLite may still show plan_approval without pr_url.
-    # Recover from durable gate / checkpoint / Task / AzDO before routing.
-    needs_recover = bool(
-        pr_ai_match
-        or pr_manual_match
-        or proceed_match
-        or fix_tests_match
-        or skip_ci_fix_match
-        or (
-            session.get("awaiting")
-            in (GATE_PLAN, GATE_PR_MODE, GATE_CI_FIX, GATE_PIPELINE_WATCH)
-            and session.get("data")
-        )
-    )
-    if needs_recover:
-        try:
-            from agent.workflow.gate_recover import recover_session_for_gates
-
-            session = await recover_session_for_gates(session)
-        except Exception:
-            logger.exception("Gate recovery failed for %s", parsed["phone"])
-
-    awaiting = session.get("awaiting")
-    session_data = dict(session.get("data") or {})
-    session_provider = session.get("provider") or ""
-    gate = effective_awaiting(session)
-    has_pr = session_has_pr(session_data)
-    logger.info(
-        "Gate route phone=%s msg=%r awaiting=%s gate=%s has_pr=%s task=%s",
+    await route_inbound_message(
         parsed["phone"],
-        message[:40],
-        awaiting,
-        gate,
-        has_pr,
-        session_data.get("pending_task_id"),
+        message,
+        schedule=background_tasks.add_task,
+        graph_payload=parsed,
+        source="whatsapp",
     )
-
-    # Cancel / fresh start — always honored (only these clear full session memory).
-    if is_cancel_session_message(message):
-        tid = session_data.get("pending_task_id") or ""
-        background_tasks.add_task(_clear_and_notify, parsed["phone"], tid, awaiting or "")
-        return {"status": "ok"}
-
-    if is_restart_session_message(message):
-        tid = session_data.get("pending_task_id") or ""
-        background_tasks.add_task(_clear_and_restart, parsed["phone"], message, tid, awaiting or "")
-        return {"status": "ok"}
-
-    if is_resume_status_message(message):
-        status_session = {**session, "awaiting": gate}
-        background_tasks.add_task(
-            _send_gate_hint,
-            parsed["phone"],
-            format_session_status(status_session) if gate else format_no_pending_task(),
-        )
-        return {"status": "ok"}
-
-    # CI test-fixer gate — ask Sunny before repairing failed Run tests.
-    if gate == GATE_CI_FIX or (fix_tests_match and session_data.get("ci_build_id")):
-        if fix_tests_match or (
-            message.lower().strip() in ("yes", "y", "ok", "okay", "fix") and gate == GATE_CI_FIX
-        ):
-            tid = _task_id_from_match(fix_tests_match) or session_data.get("pending_task_id")
-            background_tasks.add_task(
-                _run_ci_test_fixer, parsed["phone"], session_data, session_provider, tid
-            )
-            return {"status": "ok"}
-        if skip_ci_fix_match or reject_match:
-            background_tasks.add_task(
-                _skip_ci_test_fix, parsed["phone"], session_data, session_provider
-            )
-            return {"status": "ok"}
-        if gate == GATE_CI_FIX:
-            background_tasks.add_task(
-                _send_gate_hint,
-                parsed["phone"],
-                format_gate_hint(GATE_CI_FIX, session_data, session_provider),
-            )
-            return {"status": "ok"}
-
-    if gate == GATE_PIPELINE_WATCH:
-        background_tasks.add_task(
-            _send_gate_hint,
-            parsed["phone"],
-            format_gate_hint(GATE_PIPELINE_WATCH, session_data, session_provider),
-        )
-        return {"status": "ok"}
-
-    # PR review choice (1 / 2 / AI REVIEW) once a PR exists — even if gate stuck on plan.
-    if (pr_ai_match or pr_manual_match) and (gate == GATE_PR_MODE or has_pr):
-        mode = "ai" if pr_ai_match else "manual"
-        tid = _task_id_from_match(pr_ai_match or pr_manual_match)
-        if gate != GATE_PR_MODE or not has_pr:
-            background_tasks.add_task(
-                _heal_pr_mode_and_resume,
-                parsed["phone"],
-                session_data,
-                session_provider,
-                mode,
-                tid,
-            )
-        else:
-            background_tasks.add_task(
-                _resume_gate,
-                GATE_PR_MODE,
-                "approved",
-                parsed["phone"],
-                tid,
-                pr_review_mode=mode,
-            )
-        return {"status": "ok"}
-
-    # Bare 1/2 while still on plan with a coding task — never re-prompt plan approval.
-    if (pr_ai_match or pr_manual_match) and gate == GATE_PLAN and session_data.get("pending_task_id"):
-        background_tasks.add_task(
-            _send_gate_hint,
-            parsed["phone"],
-            "No pull request is ready for review yet for task "
-            f"`{session_data.get('pending_task_id')}`.\n\n"
-            "If development is still running, wait for the *PR opened* message, "
-            "then reply *1* for AI review.\n"
-            "Or reply *stop* to cancel.",
-        )
-        return {"status": "ok"}
-
-    # Stale Proceed/Approve while PR is waiting for review mode choice
-    if (proceed_match or approve_match) and gate == GATE_PR_MODE:
-        background_tasks.add_task(
-            _send_gate_hint,
-            parsed["phone"],
-            format_gate_hint(GATE_PR_MODE, session_data, session_provider),
-        )
-        return {"status": "ok"}
-
-    # Plan PROCEED — only when still on plan (no PR yet).
-    if proceed_match and gate in (GATE_PLAN, None, ""):
-        tid = _task_id_from_match(proceed_match) or session_data.get("pending_task_id")
-        if gate == GATE_PLAN or tid:
-            background_tasks.add_task(
-                _resume_gate, GATE_PLAN, "approved", parsed["phone"], tid
-            )
-            return {"status": "ok"}
-        background_tasks.add_task(
-            _send_gate_hint,
-            parsed["phone"],
-            "To continue the plan, reply *PROCEED <task_id>* "
-            "(use the id from the Implementation plan message).\n"
-            "Or say *check my repos* to start fresh.",
-        )
-        return {"status": "ok"}
-
-    if gate == GATE_PLAN:
-        if reject_match:
-            background_tasks.add_task(
-                _resume_gate, GATE_PLAN, "rejected", parsed["phone"], _task_id_from_match(reject_match)
-            )
-        elif approve_match and (
-            message.lower().strip() in ("approve", "approved") or "plan" in message.lower()
-        ):
-            tid = _task_id_from_match(approve_match) or session_data.get("pending_task_id")
-            background_tasks.add_task(
-                _resume_gate, GATE_PLAN, "approved", parsed["phone"], tid
-            )
-        else:
-            background_tasks.add_task(
-                _send_gate_hint,
-                parsed["phone"],
-                format_gate_hint(GATE_PLAN, session_data, session_provider),
-            )
-    elif gate == GATE_PR_MODE:
-        background_tasks.add_task(
-            _send_gate_hint,
-            parsed["phone"],
-            format_gate_hint(GATE_PR_MODE, session_data, session_provider),
-        )
-    elif gate == GATE_MANUAL_PR:
-        if pr_ready_match:
-            background_tasks.add_task(
-                _resume_gate,
-                GATE_MANUAL_PR,
-                "approved",
-                parsed["phone"],
-                _task_id_from_match(pr_ready_match),
-            )
-        else:
-            background_tasks.add_task(
-                _send_gate_hint,
-                parsed["phone"],
-                format_gate_hint(GATE_MANUAL_PR, session_data, session_provider),
-            )
-    elif is_conversation_awaiting(awaiting):
-        from agent.core.background import handle_whatsapp_message
-        background_tasks.add_task(handle_whatsapp_message, parsed)
-    elif approve_match and gate in (GATE_DEPLOY, "approval", None):
-        background_tasks.add_task(
-            _resume_with_approval,
-            _task_id_from_match(approve_match),
-            "approved",
-            parsed["phone"],
-        )
-    elif reject_match and gate in (GATE_DEPLOY, "approval", None):
-        background_tasks.add_task(
-            _resume_with_approval,
-            _task_id_from_match(reject_match),
-            "rejected",
-            parsed["phone"],
-        )
-    elif is_workflow_gate(gate):
-        background_tasks.add_task(
-            _send_gate_hint,
-            parsed["phone"],
-            format_gate_hint(gate, session_data, session_provider),
-        )
-    else:
-        from agent.core.background import handle_whatsapp_message
-        background_tasks.add_task(handle_whatsapp_message, parsed)
-
     return {"status": "ok"}
 
 
@@ -396,41 +120,41 @@ async def _pending_deploy_context(phone: str, task_id: str) -> dict[str, str]:
 
 async def _clear_and_notify(phone: str, task_id: str, awaiting: str) -> None:
     from agent.core.session import clear_session
-    from agent.services.whatsapp import send_message
+    from agent.services.channel_notify import send_channel_message
     from agent.workflow.resume_context import format_session_cleared
 
     await clear_session(phone)
     try:
-        await send_message(phone, format_session_cleared(had_task_id=task_id, had_gate=awaiting))
+        await send_channel_message(phone, format_session_cleared(had_task_id=task_id, had_gate=awaiting))
     except Exception:
         logger.exception("Failed cancel notify for %s", phone)
 
 
 async def _clear_and_restart(phone: str, message: str, task_id: str, awaiting: str) -> None:
     from agent.core.session import clear_session
-    from agent.services.whatsapp import send_message
+    from agent.services.channel_notify import send_channel_message
     from agent.workflow.resume_context import format_session_cleared
 
     await clear_session(phone)
     try:
         if task_id or awaiting:
-            await send_message(
+            await send_channel_message(
                 phone,
                 format_session_cleared(had_task_id=task_id, had_gate=awaiting) + "\n\n_Starting fresh…_",
             )
     except Exception:
         logger.exception("Failed restart notify for %s", phone)
 
-    from agent.core.background import handle_whatsapp_message
+    from agent.core.background import handle_channel_message
 
-    await handle_whatsapp_message({"phone": phone, "message": message})
+    await handle_channel_message({"phone": phone, "message": message}, source="whatsapp")
 
 
 async def _send_gate_hint(phone: str, text: str) -> None:
-    from agent.services.whatsapp import send_message
+    from agent.services.channel_notify import send_channel_message
 
     try:
-        await send_message(phone, text)
+        await send_channel_message(phone, text)
     except Exception:
         logger.exception("Failed to send gate hint to %s", phone)
 
@@ -442,7 +166,7 @@ async def _run_ci_test_fixer(
     explicit_task_id: str | None,
 ) -> None:
     """Sunny approved AI repair of failed CI tests — run test_fixer, keep context."""
-    from agent.services.whatsapp import send_message
+    from agent.services.channel_notify import send_channel_message
     from agent.specialists.notifier_agent import run_notifier
     from agent.specialists.test_fixer import run_test_fixer
 
@@ -451,11 +175,11 @@ async def _run_ci_test_fixer(
         or str(session_data.get("pending_task_id") or "")
     )
     if not task_id:
-        await send_message(phone, "No task id for CI fix. Reply *STOP* or *check my repos*.")
+        await send_channel_message(phone, "No task id for CI fix. Reply *STOP* or *check my repos*.")
         return
 
     try:
-        await send_message(
+        await send_channel_message(
             phone,
             f"*Sunny's AI Agent* — Test fixer started (`{task_id}`)\n\n"
             "I'm reading the pipeline failure logs and preparing a focused fix. "
@@ -475,11 +199,11 @@ async def _run_ci_test_fixer(
         result = await run_test_fixer(state)
         result = await run_notifier(result)
         text = result.get("notification_text") or "Test fixer finished."
-        await send_message(phone, text)
+        await send_channel_message(phone, text)
     except Exception:
         logger.exception("CI test fixer failed for task %s", task_id)
         try:
-            await send_message(
+            await send_channel_message(
                 phone,
                 f"Test fixer hit an unexpected error for `{task_id}`.\n"
                 "Reply *FIX TESTS* to retry, *SKIP*, or *STOP*.",
@@ -494,7 +218,7 @@ async def _skip_ci_test_fix(
     session_provider: str,
 ) -> None:
     """Leave CI failure as-is but keep task memory until STOP."""
-    from agent.services.whatsapp import send_message
+    from agent.services.channel_notify import send_channel_message
     from agent.workflow.gates import persist_deploy_gate, persist_pr_mode_gate, session_has_pr
     from agent.workflow.resume_context import format_gate_hint
 
@@ -511,7 +235,7 @@ async def _skip_ci_test_fix(
                     **data,
                 },
             )
-            await send_message(
+            await send_channel_message(
                 phone,
                 f"OK — skipped AI test repair for `{tid}`.\n\n"
                 + format_gate_hint("pr_review_mode", data, provider),
@@ -521,7 +245,7 @@ async def _skip_ci_test_fix(
                 phone,
                 {"task_id": tid, "repo_provider": provider, **data},
             )
-            await send_message(
+            await send_channel_message(
                 phone,
                 f"OK — skipped AI test repair for `{tid}`.\n\n"
                 "You can still *APPROVE* / *REJECT* deploy, or *STOP* to clear.",
@@ -537,7 +261,7 @@ async def _skip_ci_test_fix(
                 data=data,
                 merge_data=False,
             )
-            await send_message(
+            await send_channel_message(
                 phone,
                 f"OK — left the CI failure as-is for `{tid}`.\n\n"
                 "Task context is still remembered. Reply *STOP* to clear, "
@@ -583,7 +307,7 @@ async def _resume_gate(
     *,
     pr_review_mode: str | None = None,
 ) -> None:
-    from agent.services.whatsapp import send_message
+    from agent.services.channel_notify import send_channel_message
     from agent.workflow.gates import GATE_MANUAL_PR, GATE_PLAN, GATE_PR_MODE, clear_workflow_session
     from agent.workflow.resume_context import format_resume_ack, format_resume_failed
 
@@ -591,11 +315,11 @@ async def _resume_gate(
     if not task_id:
         from agent.workflow.resume_context import format_no_pending_task
 
-        await send_message(phone, format_no_pending_task())
+        await send_channel_message(phone, format_no_pending_task())
         return
 
     try:
-        await send_message(
+        await send_channel_message(
             phone,
             format_resume_ack(
                 gate, task_id, approval, pr_review_mode=pr_review_mode
@@ -618,18 +342,18 @@ async def _resume_gate(
             await clear_workflow_session(phone)
     except Exception:
         logger.exception("Failed gate resume task %s gate=%s", task_id, gate)
-        await send_message(phone, format_resume_failed(task_id))
+        await send_channel_message(phone, format_resume_failed(task_id))
 
 
 async def _resume_with_approval(
     explicit_task_id: str | None, approval: str, phone: str
 ) -> None:
-    from agent.services.whatsapp import send_message
+    from agent.services.channel_notify import send_channel_message
 
     task_id = await _resolve_task_id(phone, explicit_task_id)
     if not task_id:
         try:
-            await send_message(
+            await send_channel_message(
                 phone,
                 "I don't have a pending coding task to approve.\n\n"
                 "Reply *APPROVE <task_id>* using the id from the approval message "
@@ -653,7 +377,7 @@ async def _resume_with_approval(
         blocked = await check_deploy_blocked(ctx, task_id=task_id)
         if blocked.busy:
             try:
-                await send_message(phone, blocked.wait_message())
+                await send_channel_message(phone, blocked.wait_message())
             except Exception:
                 logger.exception("Failed to send CI-busy reply for task %s", task_id)
             return
@@ -667,7 +391,7 @@ async def _resume_with_approval(
         acquired = await try_acquire_deploy(lock_key, task_id)
         if not acquired:
             try:
-                await send_message(
+                await send_channel_message(
                     phone,
                     "A deploy for this repository is already in progress.\n"
                     "Please wait until it finishes, then try *Approve* again.",
@@ -678,13 +402,13 @@ async def _resume_with_approval(
 
     try:
         if approval == "approved":
-            await send_message(
+            await send_channel_message(
                 phone,
                 f"Got it, Sunny — final approval received for `{task_id}`.\n"
                 "CI is clear. Merging to main and deploying live…",
             )
         else:
-            await send_message(
+            await send_channel_message(
                 phone,
                 f"Got it — rejecting changes for `{task_id}`.",
             )

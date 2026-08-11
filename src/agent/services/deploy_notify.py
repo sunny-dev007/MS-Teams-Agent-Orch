@@ -15,11 +15,11 @@ async def send_deploy_progress(phone: str, text: str) -> None:
     if not phone or not text:
         return
     try:
-        from agent.services.whatsapp import send_message
+        from agent.services.channel_notify import send_channel_message
 
-        await send_message(phone, text)
+        await send_channel_message(phone, text)
     except Exception:
-        logger.exception("Failed deploy progress WhatsApp to %s", phone)
+        logger.exception("Failed deploy progress message to %s", phone)
 
 
 def user_facing_deploy_error(exc: BaseException | str, *, step: str = "deployment") -> str:

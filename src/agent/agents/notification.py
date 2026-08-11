@@ -1,6 +1,6 @@
 from agent.agents.state import AgentState
 from agent.core.logging import get_logger
-from agent.services.whatsapp import WhatsAppAuthError, send_message
+from agent.services.whatsapp import WhatsAppAuthError
 
 logger = get_logger(__name__)
 
@@ -101,7 +101,9 @@ async def notify(state: AgentState) -> AgentState:
     )
 
     try:
-        await send_message(phone, text)
+        from agent.services.channel_notify import send_channel_message
+
+        await send_channel_message(phone, text)
     except WhatsAppAuthError:
         logger.error(
             "Cannot notify WhatsApp for task %s: access token expired/invalid.",
@@ -109,7 +111,7 @@ async def notify(state: AgentState) -> AgentState:
         )
     except Exception:
         logger.exception(
-            "Failed to send WhatsApp notification for task %s", state.get("task_id")
+            "Failed to send notification for task %s", state.get("task_id")
         )
 
     return state
