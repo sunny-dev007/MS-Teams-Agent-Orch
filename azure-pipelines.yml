@@ -234,21 +234,37 @@ stages:
                   --name "$(appName)" \
                   --query publishingPassword -o tsv)
 
-                HTTP=$(curl -sS -w "%{http_code}" -o /tmp/kudu_deploy.json \
-                  -X POST \
-                  -u "${KUDU_USER}:${KUDU_PASS}" \
-                  "https://$(appName).scm.azurewebsites.net/api/zipdeploy?isAsync=true" \
-                  --data-binary @"$ZIP" \
-                  -H "Content-Type: application/octet-stream" \
-                  --max-time 600)
+                # Kudu returns 409 when a prior Oryx/zipdeploy is still running (common after restart).
+                HTTP=""
+                for attempt in $(seq 1 12); do
+                  HTTP=$(curl -sS -w "%{http_code}" -o /tmp/kudu_deploy.json \
+                    -X POST \
+                    -u "${KUDU_USER}:${KUDU_PASS}" \
+                    "https://$(appName).scm.azurewebsites.net/api/zipdeploy?isAsync=true" \
+                    --data-binary @"$ZIP" \
+                    -H "Content-Type: application/octet-stream" \
+                    --max-time 600 || echo 000)
 
-                echo "Kudu zipdeploy HTTP ${HTTP}"
-                head -c 2000 /tmp/kudu_deploy.json 2>/dev/null || true
-                echo
-                case "$HTTP" in
-                  200|202|204) echo "Zip accepted — Oryx build runs on App Service." ;;
-                  *) echo "Kudu async zipdeploy failed"; exit 1 ;;
-                esac
+                  echo "Kudu zipdeploy attempt ${attempt} HTTP ${HTTP}"
+                  head -c 2000 /tmp/kudu_deploy.json 2>/dev/null || true
+                  echo
+                  case "$HTTP" in
+                    200|202|204)
+                      echo "Zip accepted — Oryx build runs on App Service."
+                      exit 0
+                      ;;
+                    409)
+                      echo "Deploy in progress — waiting before retry..."
+                      sleep 30
+                      ;;
+                    *)
+                      echo "Kudu async zipdeploy failed"
+                      exit 1
+                      ;;
+                  esac
+                done
+                echo "Kudu async zipdeploy still conflicted after retries (HTTP ${HTTP})"
+                exit 1
 
           - task: AzureCLI@2
             displayName: "Verify /health"
