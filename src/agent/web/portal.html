@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp AI Agent Portal</title>
+    <title>Agent Portal</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -31,10 +31,14 @@
         .card h2 {
             margin-top: 0;
         }
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
+        .status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .status span {
+            font-weight: bold;
         }
         footer {
             background-color: #0078d4;
@@ -49,24 +53,25 @@
 </head>
 <body>
     <header>
-        <h1>WhatsApp AI Agent Portal</h1>
+        <h1>Agent Portal</h1>
     </header>
     <main>
-        <div class="grid">
-            <div class="card">
+        <div class="card">
+            <div class="status">
                 <h2>Agent Status</h2>
-                <p>All systems operational.</p>
+                <span>Online</span>
             </div>
-            <div class="card">
-                <h2>Capabilities Overview</h2>
-                <ul>
-                    <li>Read and summarize emails</li>
-                    <li>Compose and send emails</li>
-                    <li>Schedule meetings</li>
-                    <li>Manage repositories</li>
-                    <li>Automate code changes</li>
-                </ul>
-            </div>
+            <p>All systems operational. No issues detected.</p>
+        </div>
+        <div class="card">
+            <h2>Capabilities Overview</h2>
+            <ul>
+                <li>Read and summarize emails</li>
+                <li>Compose and send emails</li>
+                <li>Schedule meetings with Google Calendar</li>
+                <li>Manage GitHub and Azure DevOps repositories</li>
+                <li>Automate code reviews and deployments</li>
+            </ul>
         </div>
     </main>
     <footer>
