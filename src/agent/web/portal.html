@@ -7,10 +7,10 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            background-color: #f4f7f9;
-            color: #333;
             margin: 0;
             padding: 0;
+            background-color: #f4f4f9;
+            color: #333;
         }
         header {
             background-color: #0078d4;
@@ -21,32 +21,44 @@
         main {
             padding: 20px;
         }
-        h1, h2, h3 {
-            color: #005a9e;
-        }
-        button {
-            background-color: #0078d4;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            cursor: pointer;
-            border-radius: 5px;
-        }
-        button:hover {
-            background-color: #005a9e;
-        }
         .status {
-            padding: 10px;
-            border-radius: 5px;
+            display: flex;
+            justify-content: space-around;
             margin-bottom: 20px;
         }
-        .status.success {
-            background-color: #d4edda;
-            color: #155724;
+        .status div {
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            padding: 15px;
+            flex: 1;
+            margin: 0 10px;
+            text-align: center;
         }
-        .status.error {
-            background-color: #f8d7da;
-            color: #721c24;
+        .status div h2 {
+            margin: 0 0 10px;
+            font-size: 1.2em;
+        }
+        .status div p {
+            margin: 0;
+            font-size: 1em;
+        }
+        footer {
+            background-color: #0078d4;
+            color: white;
+            text-align: center;
+            padding: 10px 0;
+            position: fixed;
+            width: 100%;
+            bottom: 0;
+        }
+        @media (max-width: 600px) {
+            .status {
+                flex-direction: column;
+            }
+            .status div {
+                margin: 10px 0;
+            }
         }
     </style>
 </head>
@@ -55,17 +67,20 @@
         <h1>WhatsApp AI Agent Portal</h1>
     </header>
     <main>
-        <h2>Agent Status</h2>
-        <div class="status success">All systems operational.</div>
-        <h3>Capabilities</h3>
-        <ul>
-            <li>Read and summarize emails</li>
-            <li>Schedule meetings</li>
-            <li>Manage repositories</li>
-            <li>Develop and review code</li>
-            <li>Deploy to production</li>
-        </ul>
-        <button>Refresh Status</button>
+        <section class="status">
+            <div>
+                <h2>Agent Status</h2>
+                <p id="agent-status">Loading...</p>
+            </div>
+            <div>
+                <h2>Capabilities</h2>
+                <p>Manage emails, schedule meetings, and more.</p>
+            </div>
+        </section>
     </main>
+    <footer>
+        <p>&copy; 2023 WhatsApp AI Agent</p>
+    </footer>
+    <script src="portal.js"></script>
 </body>
 </html>
