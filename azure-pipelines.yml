@@ -119,6 +119,31 @@ stages:
                   raise SystemExit(f"ALLOWED_TEAMS_USER_IDS plain UUID parse failed: {parsed!r}")
               print("Teams allowlist env parse guard OK")
               PY
+              # Catch azure-pipelines.yml parse breaks before push causes "Informational run".
+              python - <<'PY'
+              from pathlib import Path
+
+              try:
+                  import yaml
+              except ImportError:
+                  import subprocess, sys
+                  subprocess.check_call([sys.executable, "-m", "pip", "install", "pyyaml", "-q"])
+                  import yaml
+
+              path = Path("azure-pipelines.yml")
+              try:
+                  docs = list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
+              except Exception as exc:
+                  raise SystemExit(f"azure-pipelines.yml YAML parse failed: {exc}") from exc
+              if not docs or not isinstance(docs[0], dict):
+                  raise SystemExit("azure-pipelines.yml did not load as a mapping")
+              required = ("trigger", "stages", "pool")
+              missing = [k for k in required if k not in docs[0]]
+              if missing:
+                  raise SystemExit(f"azure-pipelines.yml missing keys: {missing}")
+              print("azure-pipelines.yml YAML parse guard OK")
+              PY
+              test -f infra/verify_post_deploy.sh
               PYTHONPATH=src python -m pytest tests/ -v --tb=short -q
             displayName: "Run tests"
 
@@ -266,6 +291,11 @@ stages:
                 echo "Kudu async zipdeploy still conflicted after retries (HTTP ${HTTP})"
                 exit 1
 
+          # Deploy job downloads the zip only — checkout again so verify script is available.
+          - checkout: self
+            clean: false
+            displayName: "Checkout verify scripts"
+
           - task: AzureCLI@2
             displayName: "Verify health + Copilot auth + check my repos"
             inputs:
@@ -274,114 +304,7 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                az webapp start \
-                  --resource-group "$(resourceGroup)" \
-                  --name "$(appName)" || true
-
-                echo "Waiting for /health then Copilot channel (Oryx antenv build may take 10-20 min on B1)..."
-                for i in $(seq 1 80); do
-                  CODE=$(curl -sS --max-time 15 -o /tmp/health.json -w "%{http_code}" \
-                    "https://$(appName).azurewebsites.net/health" || echo 000)
-                  echo "attempt $i -> /health HTTP $CODE"
-                  if [ "$CODE" = "200" ]; then
-                    cat /tmp/health.json
-                    echo
-                    # Dual-channel must be live — /health alone can pass on a stale build without Copilot routes.
-                    for j in $(seq 1 20); do
-                      CCODE=$(curl -sS --max-time 15 -o /tmp/copilot_health.json -w "%{http_code}" \
-                        "https://$(appName).azurewebsites.net/api/channels/copilot/health" || echo 000)
-                      echo "copilot attempt $j -> HTTP $CCODE"
-                      if [ "$CCODE" = "200" ]; then
-                        cat /tmp/copilot_health.json
-                        echo
-                        # Auth + authorization + real "check my repos" must not 500.
-                        # Keys stay in App Service settings — never bake into the repo.
-                        COPILOT_KEY=$(az webapp config appsettings list \
-                          --resource-group "$(resourceGroup)" \
-                          --name "$(appName)" \
-                          --query "[?name=='COPILOT_API_KEY'].value | [0]" -o tsv)
-                        ALLOW_RAW=$(az webapp config appsettings list \
-                          --resource-group "$(resourceGroup)" \
-                          --name "$(appName)" \
-                          --query "[?name=='ALLOWED_TEAMS_USER_IDS'].value | [0]" -o tsv)
-                        if [ -z "${COPILOT_KEY}" ]; then
-                          echo "COPILOT_API_KEY missing on App Service — cannot verify auth"
-                          exit 1
-                        fi
-                        # First allowlisted id (JSON array or CSV)
-                        USER_ID=$(ALLOW_RAW="$ALLOW_RAW" python3 - <<'PY'
-import json, os
-raw = (os.environ.get("ALLOW_RAW") or "").strip()
-ids = []
-if raw.startswith("["):
-    try:
-        ids = [str(x).strip() for x in json.loads(raw) if str(x).strip()]
-    except Exception:
-        ids = []
-if not ids:
-    ids = [p.strip().strip('"').strip("'") for p in raw.split(",") if p.strip()]
-print(ids[0] if ids else "")
-PY
-)
-                        if [ -z "${USER_ID}" ]; then
-                          echo "ALLOWED_TEAMS_USER_IDS empty — cannot verify authorization"
-                          exit 1
-                        fi
-                        BASE="https://$(appName).azurewebsites.net/api/channels/copilot/message"
-                        UNAUTH=$(curl -sS --max-time 30 -o /tmp/copilot_unauth.json -w "%{http_code}" \
-                          -X POST "$BASE" -H "Content-Type: application/json" \
-                          -d "{\"user_id\":\"${USER_ID}\",\"message\":\"ping\"}" || echo 000)
-                        echo "copilot auth missing key -> HTTP $UNAUTH"
-                        if [ "$UNAUTH" != "401" ]; then
-                          cat /tmp/copilot_unauth.json 2>/dev/null || true
-                          echo "Expected 401 without X-Copilot-Api-Key"
-                          exit 1
-                        fi
-                        FORBIDDEN=$(curl -sS --max-time 30 -o /tmp/copilot_forbidden.json -w "%{http_code}" \
-                          -X POST "$BASE" \
-                          -H "Content-Type: application/json" \
-                          -H "X-Copilot-Api-Key: ${COPILOT_KEY}" \
-                          -d '{"user_id":"not-allowlisted-user","message":"ping"}' || echo 000)
-                        echo "copilot auth bad user -> HTTP $FORBIDDEN"
-                        if [ "$FORBIDDEN" != "403" ]; then
-                          cat /tmp/copilot_forbidden.json 2>/dev/null || true
-                          echo "Expected 403 for non-allowlisted user"
-                          exit 1
-                        fi
-                        REPOS=$(curl -sS --max-time 90 -o /tmp/copilot_repos.json -w "%{http_code}" \
-                          -X POST "$BASE" \
-                          -H "Content-Type: application/json" \
-                          -H "X-Copilot-Api-Key: ${COPILOT_KEY}" \
-                          -d "{\"user_id\":\"${USER_ID}\",\"message\":\"check my repos\"}" || echo 000)
-                        echo "copilot check my repos -> HTTP $REPOS"
-                        cat /tmp/copilot_repos.json
-                        echo
-                        if [ "$REPOS" != "200" ]; then
-                          echo "check my repos must return 200 (not 500)"
-                          exit 1
-                        fi
-                        python3 - <<'PY'
-import json
-body = json.load(open("/tmp/copilot_repos.json"))
-reply = (body.get("reply") or "").strip()
-if not reply:
-    raise SystemExit("check my repos returned empty reply")
-print("check my repos reply chars=", len(reply))
-PY
-                        exit 0
-                      fi
-                      sleep 10
-                    done
-                    echo "Copilot /api/channels/copilot/health did not return 200 after /health OK"
-                    cat /tmp/copilot_health.json 2>/dev/null || true
-                    exit 1
-                  fi
-                  if [ "$CODE" = "403" ]; then
-                    az webapp start \
-                      --resource-group "$(resourceGroup)" \
-                      --name "$(appName)" || true
-                  fi
-                  sleep 15
-                done
-                echo "Health check failed after deploy (Oryx may still be building — check Kudu logs)"
-                exit 1
+                # Keep complex checks in infra/*.sh — unindented heredocs inside YAML break ADO parsing
+                # and produce "Informational run" / canceled pipelines with no stages.
+                chmod +x "$(Build.SourcesDirectory)/infra/verify_post_deploy.sh"
+                bash "$(Build.SourcesDirectory)/infra/verify_post_deploy.sh" "$(appName)" "$(resourceGroup)"
