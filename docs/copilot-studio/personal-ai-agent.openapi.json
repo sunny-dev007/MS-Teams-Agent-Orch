@@ -1,0 +1,97 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Sunny Personal AI Agent",
+    "description": "Coding / Azure DevOps / GitHub gate backend for Teams. Call PersonalAIAgent for repo work; return reply verbatim.",
+    "version": "1.0.5"
+  },
+  "host": "whatsapp-ai-agent-sunny.azurewebsites.net",
+  "basePath": "/",
+  "schemes": ["https"],
+  "consumes": ["application/json"],
+  "produces": ["application/json"],
+  "securityDefinitions": {
+    "api_key": {
+      "type": "apiKey",
+      "in": "header",
+      "name": "X-Copilot-Api-Key"
+    }
+  },
+  "security": [
+    {
+      "api_key": []
+    }
+  ],
+  "paths": {
+    "/api/channels/copilot/message": {
+      "post": {
+        "operationId": "PersonalAIAgent",
+        "summary": "PersonalAIAgent",
+        "description": "Call for check my repos, Proceed, APPROVE, FIX TESTS, stop, status, and coding or deploy gates. Show the reply field to the user as-is.",
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CopilotMessageRequest"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "schema": {
+              "$ref": "#/definitions/CopilotMessageResponse"
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "CopilotMessageRequest": {
+      "type": "object",
+      "required": ["user_id", "message"],
+      "properties": {
+        "user_id": {
+          "type": "string",
+          "x-ms-summary": "User Id",
+          "description": "Signed-in Microsoft Entra object ID"
+        },
+        "message": {
+          "type": "string",
+          "x-ms-summary": "Message",
+          "description": "Exact user message text"
+        },
+        "action": {
+          "type": "string",
+          "x-ms-summary": "Action",
+          "description": "message or status or poll",
+          "default": "message"
+        }
+      }
+    },
+    "CopilotMessageResponse": {
+      "type": "object",
+      "required": ["reply"],
+      "properties": {
+        "reply": {
+          "type": "string",
+          "x-ms-summary": "Reply",
+          "description": "Text to show the user verbatim"
+        },
+        "awaiting": {
+          "type": "string",
+          "x-ms-summary": "Awaiting",
+          "description": "Current gate name if any"
+        },
+        "task_id": {
+          "type": "string",
+          "x-ms-summary": "Task Id",
+          "description": "Pending task id if any"
+        }
+      }
+    }
+  }
+}

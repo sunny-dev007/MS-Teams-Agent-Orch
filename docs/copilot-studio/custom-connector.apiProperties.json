@@ -1,0 +1,23 @@
+{
+  "properties": {
+    "connectionParameters": {
+      "api_key": {
+        "type": "securestring",
+        "uiDefinition": {
+          "displayName": "Copilot API Key",
+          "description": "Same value as App Service COPILOT_API_KEY (sent as X-Copilot-Api-Key)",
+          "tooltip": "Paste App Service COPILOT_API_KEY",
+          "constraints": {
+            "tabIndex": 2,
+            "clearText": false,
+            "required": "true"
+          }
+        }
+      }
+    },
+    "iconBrandColor": "#0078D4",
+    "capabilities": [],
+    "publisher": "Sunny Kushwaha",
+    "stackOwner": "Sunny Personal AI Agent"
+  }
+}

@@ -12,7 +12,7 @@ A multi-agent, LLM-powered automation platform that reads emails, schedules meet
 [![Azure OpenAI](https://img.shields.io/badge/Azure_OpenAI-GPT--4o-0078d4?logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/en-us/products/ai-services/openai-service)
 [![Azure App Service](https://img.shields.io/badge/Deployed_on-Azure_App_Service-0078d4?logo=microsoftazure&logoColor=white)](https://azure.microsoft.com/en-us/products/app-service)
 
-[Architecture Docs](docs/architecture.md) · [Setup Guide](docs/setup-guide.md) · [API Reference](docs/api-reference.md) · [Developer Guide](docs/developer-guide.md)
+[Architecture Docs](docs/architecture.md) · [E2E Operations](docs/E2E-OPERATIONS.md) · [Setup Guide](docs/setup-guide.md) · [API Reference](docs/api-reference.md) · [Developer Guide](docs/developer-guide.md)
 
 </div>
 

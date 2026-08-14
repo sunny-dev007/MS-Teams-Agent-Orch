@@ -1,4 +1,4 @@
-"""WhatsApp deploy progress — always tell Sunny where merge/deploy is."""
+"""WhatsApp / Teams deploy progress — always tell Sunny where merge/deploy is."""
 
 from __future__ import annotations
 
@@ -47,53 +47,106 @@ def user_facing_deploy_error(exc: BaseException | str, *, step: str = "deploymen
     )
 
 
-def format_merging_pr(task_id: str, pr_url: str, pr_id: int | str | None) -> str:
+def format_merging_pr(
+    task_id: str,
+    pr_url: str,
+    pr_id: int | str | None,
+    *,
+    session_id: str | None = None,
+) -> str:
+    from agent.services.rich_response import detect_channel, format_result_card
+
     ref = f"PR #{pr_id}" if pr_id else "pull request"
-    lines = [
-        f"*Sunny's AI Agent* — Merging (`{task_id}`)",
-        "",
-        f"Merging {ref} into `main` now…",
-    ]
-    if pr_url:
-        lines.append(f"*Pull request:* {pr_url}")
-    lines.append("")
-    lines.append("_Next update when merge finishes or if something blocks it._")
-    return "\n".join(lines)
-
-
-def format_merge_failed(task_id: str, pr_url: str, reason: str) -> str:
-    return (
-        f"*Sunny's AI Agent* — Merge blocked (`{task_id}`)\n\n"
-        f"{reason}\n\n"
-        f"*Pull request:* {pr_url or 'N/A'}\n\n"
-        "*What to do:*\n"
-        "• Fix merge conflicts or policy issues in Azure DevOps\n"
-        f"• Reply *APPROVE {task_id}* to retry\n"
-        "• Reply *status* to see where things paused"
+    return format_result_card(
+        title=f"Merging (`{task_id}`)",
+        ok=None,
+        fields=[
+            ("Action", f"Merging {ref} into `main`"),
+            ("Pull request", pr_url or "N/A"),
+        ],
+        notes=["Next update when merge finishes or if something blocks it."],
+        channel=detect_channel(session_id),
     )
 
 
-def format_pipeline_watching(task_id: str, pipeline_url: str) -> str:
-    return (
-        f"*Sunny's AI Agent* — Merged to main (`{task_id}`)\n\n"
-        "Azure Pipeline is running now.\n"
-        "I will send a *Final evaluation* on WhatsApp when it "
-        "*succeeds*, *fails*, or is *canceled*.\n"
-        f"*Pipeline:* {pipeline_url or 'Azure Pipelines'}"
+def format_merge_failed(
+    task_id: str,
+    pr_url: str,
+    reason: str,
+    *,
+    session_id: str | None = None,
+) -> str:
+    from agent.services.rich_response import detect_channel, format_result_card
+
+    return format_result_card(
+        title=f"Merge blocked (`{task_id}`)",
+        ok=False,
+        fields=[
+            ("Pull request", pr_url or "N/A"),
+            ("Issue", reason),
+        ],
+        metrics=[("Merge", 0.0, 10.0)],
+        actions=[
+            "Fix merge conflicts or policy issues in Azure DevOps",
+            f"Reply *APPROVE {task_id}* to retry",
+            "Reply *status* to see where things paused",
+        ],
+        channel=detect_channel(session_id),
     )
 
 
-def format_deploy_step_failed(task_id: str, step: str, reason: str) -> str:
-    return (
-        f"*Sunny's AI Agent* — Deploy stopped (`{task_id}`)\n\n"
-        f"*Step:* {step}\n"
-        f"*Issue:* {reason}\n\n"
-        "*What to do:*\n"
-        f"• Reply *APPROVE {task_id}* to retry\n"
-        "• Reply *status* for pending steps\n"
-        "• Reply *stop* to clear and start fresh"
+def format_pipeline_watching(
+    task_id: str,
+    pipeline_url: str,
+    *,
+    session_id: str | None = None,
+) -> str:
+    from agent.services.rich_response import detect_channel, format_result_card
+
+    return format_result_card(
+        title=f"Merged to main (`{task_id}`)",
+        ok=True,
+        fields=[
+            ("Status", "Azure Pipeline is running now"),
+            ("Pipeline", pipeline_url or "Azure Pipelines"),
+        ],
+        metrics=[("Merge", 10.0, 10.0), ("Deploy", 3.0, 10.0)],
+        notes=[
+            "I will send a *Final evaluation* when the pipeline "
+            "*succeeds*, *fails*, or is *canceled*."
+        ],
+        actions=["Reply *status* anytime for an update"],
+        channel=detect_channel(session_id),
     )
 
 
-def format_resume_deploy_failed(task_id: str, reason: str) -> str:
-    return format_deploy_step_failed(task_id, "Resume after approval", reason)
+def format_deploy_step_failed(
+    task_id: str,
+    step: str,
+    reason: str,
+    *,
+    session_id: str | None = None,
+) -> str:
+    from agent.services.rich_response import detect_channel, format_result_card
+
+    return format_result_card(
+        title=f"Deploy stopped (`{task_id}`)",
+        ok=False,
+        fields=[
+            ("Step", step),
+            ("Issue", reason),
+        ],
+        metrics=[("Deploy", 0.0, 10.0)],
+        actions=[
+            f"Reply *APPROVE {task_id}* to retry",
+            "Reply *status* for pending steps",
+            "Reply *stop* to clear and start fresh",
+        ],
+        channel=detect_channel(session_id),
+    )
+
+
+def format_resume_deploy_failed(task_id: str, reason: str, *, session_id: str | None = None) -> str:
+    return format_deploy_step_failed(
+        task_id, "Resume after approval", reason, session_id=session_id
+    )

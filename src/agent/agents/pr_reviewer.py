@@ -96,24 +96,48 @@ def _parse_pr_review(content: str) -> dict:
 
 
 def _format_pr_review_fallback(review: dict) -> str:
-    lines = [
-        f"*PR Review Score:* {review.get('score', 'N/A')}/10",
-        f"*Result:* {review.get('result', 'approved')}",
-        f"*Summary:* {review.get('summary', '')}",
-    ]
+    from agent.services.rich_response import format_result_card, metric_bar
+
+    score_raw = review.get("score", "N/A")
+    try:
+        score_val = float(score_raw)
+        metrics = [("PR score", score_val, 10.0)]
+        score_line = metric_bar("PR score", score_val, maximum=10.0)
+    except (TypeError, ValueError):
+        metrics = None
+        score_line = f"• *PR score:* {score_raw}/10"
+
+    notes: list[str] = [f"Result: {review.get('result', 'approved')}"]
+    if review.get("summary"):
+        notes.append(str(review["summary"]))
     if review.get("strengths"):
-        lines.append("*Strengths:*")
-        lines.extend(f"  - {s}" for s in review["strengths"][:5])
+        notes.append("Strengths: " + "; ".join(str(s) for s in review["strengths"][:5]))
     if review.get("issues"):
-        lines.append("*Issues:*")
-        for issue in review["issues"][:8]:
+        for issue in review["issues"][:6]:
             if isinstance(issue, dict):
-                lines.append(
-                    f"  - [{issue.get('severity', '?')}] `{issue.get('file', '?')}`: "
+                notes.append(
+                    f"[{issue.get('severity', '?')}] `{issue.get('file', '?')}`: "
                     f"{issue.get('description', '')}"
                 )
+            else:
+                notes.append(str(issue))
     if review.get("security_notes"):
-        lines.append("*Security:* " + "; ".join(review["security_notes"][:3]))
+        notes.append("Security: " + "; ".join(review["security_notes"][:3]))
     if review.get("deployment_notes"):
-        lines.append("*Deploy notes:* " + "; ".join(review["deployment_notes"][:3]))
-    return "\n\n".join(lines)[:3500]
+        notes.append("Deploy notes: " + "; ".join(review["deployment_notes"][:3]))
+
+    text = format_result_card(
+        title="AI PR review",
+        ok=None,
+        fields=[("Result", str(review.get("result", "approved")))],
+        metrics=metrics,
+        notes=notes,
+        actions=[
+            "Reply *1* if already choosing AI review path",
+            "Reply *APPROVE <task_id>* when ready to deploy (after gates)",
+        ],
+    )
+    # Ensure score bar visible even if metrics parsing failed
+    if metrics is None:
+        text = text.replace("── *Details* ──", f"{score_line}\n\n── *Details* ──", 1)
+    return text[:3500]

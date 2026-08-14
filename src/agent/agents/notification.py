@@ -6,72 +6,76 @@ logger = get_logger(__name__)
 
 STATUS_TEMPLATES = {
     "task_started": (
-        "*Sunny's AI Agent* — Task `{task_id}` started\n\n{detail}"
+        "*Sunny's AI Agent* — Task `{task_id}` started\n`[UPDATE]`\n\n"
+        "── *Summary* ──\n{detail}"
     ),
     "development_complete": (
-        "*Sunny's AI Agent* — Development complete (`{task_id}`)\n\n"
-        "*Changes:*\n{detail}\n\nSending to reviewer..."
+        "*Sunny's AI Agent* — Development complete (`{task_id}`)\n`[OK]`\n\n"
+        "── *Changes* ──\n{detail}\n\nSending to reviewer..."
     ),
     "review_complete": (
-        "*Sunny's AI Agent* — Review complete (`{task_id}`)\n\n"
-        "*Result:* {review_result}\n"
-        "*Comments:*\n{detail}"
+        "*Sunny's AI Agent* — Review complete (`{task_id}`)\n`[UPDATE]`\n\n"
+        "── *Result* ──\n• *Review:* {review_result}\n\n"
+        "── *Comments* ──\n{detail}"
     ),
     "awaiting_plan_approval": (
-        "*Sunny's AI Agent* — Implementation plan (`{task_id}`)\n\n"
-        "*Repo:* {repo}\n\n"
+        "*Sunny's AI Agent* — Implementation plan (`{task_id}`)\n`[UPDATE]`\n\n"
+        "── *Summary* ──\n• *Repo:* {repo}\n\n"
         "{detail}\n\n"
-        "Reply *PROCEED {task_id}* to start development.\n"
-        "Reply *REJECT {task_id}* to cancel."
+        "── *Next* ──\n"
+        "• Reply *PROCEED {task_id}* to start development\n"
+        "• Reply *REJECT {task_id}* to cancel"
     ),
     "pr_created": (
-        "*Sunny's AI Agent* — PR opened (`{task_id}`)\n\n"
-        "*Pull request:* {pr_url}\n\n"
-        "How should this PR be reviewed?\n"
-        "1. *AI review* — detailed score + comments on WhatsApp\n"
-        "2. *Manual review* — you review in GitHub / Azure DevOps\n\n"
-        "Reply *1* or *AI REVIEW* / *2* or *MANUAL REVIEW*"
+        "*Sunny's AI Agent* — PR opened (`{task_id}`)\n`[OK]`\n\n"
+        "── *Summary* ──\n• *Pull request:* {pr_url}\n\n"
+        "── *Next* ──\n"
+        "• *1* / *AI REVIEW* — detailed score + comments\n"
+        "• *2* / *MANUAL REVIEW* — you review in GitHub / Azure DevOps"
     ),
     "awaiting_manual_pr": (
-        "*Sunny's AI Agent* — Manual PR review (`{task_id}`)\n\n"
-        "*Pull request:* {pr_url}\n\n"
-        "Review and approve the PR in GitHub or Azure DevOps.\n"
-        "When done, reply *PR READY {task_id}* for final deploy approval."
+        "*Sunny's AI Agent* — Manual PR review (`{task_id}`)\n`[UPDATE]`\n\n"
+        "── *Summary* ──\n• *Pull request:* {pr_url}\n\n"
+        "── *Next* ──\n"
+        "• Review and approve the PR in GitHub or Azure DevOps\n"
+        "• Reply *PR READY {task_id}* for final deploy approval"
     ),
     "pr_review_complete": (
-        "*Sunny's AI Agent* — AI PR review (`{task_id}`)\n\n"
+        "*Sunny's AI Agent* — AI PR review (`{task_id}`)\n`[UPDATE]`\n\n"
         "{detail}"
     ),
     "awaiting_approval": (
-        "*Sunny's AI Agent* — Review changes before deploy (`{task_id}`)\n\n"
-        "*Repo:* {repo}\n"
-        "*Nothing on live App Service yet*\n\n"
-        "*Proposed changes:*\n{detail}\n\n"
-        "Reply *APPROVE {task_id}* (or *final approval*) to *merge into main* "
-        "and run the real Deploy stage on App Service.\n"
-        "(Pipeline runs on `agent/*` are validate-only — Deploy stays skipped until main.)\n"
-        "Reply *REJECT {task_id}* to cancel."
+        "*Sunny's AI Agent* — Review changes before deploy (`{task_id}`)\n`[UPDATE]`\n\n"
+        "── *Summary* ──\n"
+        "• *Repo:* {repo}\n"
+        "• *Live App Service:* nothing yet (waiting for your APPROVE)\n\n"
+        "── *Proposed changes* ──\n{detail}\n\n"
+        "── *Next* ──\n"
+        "• Reply *APPROVE {task_id}* to merge into `main` and deploy\n"
+        "• Agent-branch pipelines are validate-only until main\n"
+        "• Reply *REJECT {task_id}* to cancel"
     ),
     "deploying": (
-        "*Sunny's AI Agent* — Final approval received (`{task_id}`)\n"
+        "*Sunny's AI Agent* — Final approval received (`{task_id}`)\n`[UPDATE]`\n\n"
         "Merging to main and deploying live…"
     ),
     "pipeline_watching": (
-        "*Sunny's AI Agent* — Merge complete (`{task_id}`)\n\n{detail}"
+        "*Sunny's AI Agent* — Merge complete (`{task_id}`)\n`[OK]`\n\n{detail}"
     ),
     "completed": (
-        "*Sunny's AI Agent* — Deployment completed (`{task_id}`)\n\n{detail}"
+        "*Sunny's AI Agent* — Deployment completed (`{task_id}`)\n`[OK]`\n\n{detail}"
     ),
     "failed": (
-        "*Sunny's AI Agent* — Could not complete (`{task_id}`)\n\n{detail}"
+        "*Sunny's AI Agent* — Could not complete (`{task_id}`)\n`[FAILED]`\n\n{detail}"
     ),
     "rejected": (
-        "*Sunny's AI Agent* — Rejected (`{task_id}`). Changes were not pushed."
+        "*Sunny's AI Agent* — Rejected (`{task_id}`)\n`[FAILED]`\n\n"
+        "Changes were not pushed."
     ),
-    "email_summary": "*Email digest for Sunny*\n\n{detail}",
-    "meeting_scheduled": "*Meeting scheduled*\n\n{detail}",
+    "email_summary": "*Email digest for Sunny*\n`[UPDATE]`\n\n{detail}",
+    "meeting_scheduled": "*Meeting scheduled*\n`[OK]`\n\n{detail}",
     "repo_picker": "{detail}",
-    "evaluation": "*Final evaluation*\n\n{detail}",
+    "evaluation": "*Sunny's AI Agent* — Final evaluation\n`[UPDATE]`\n\n{detail}",
     "general_response": "{detail}",
     "ack": "{detail}",
 }

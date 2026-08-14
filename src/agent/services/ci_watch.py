@@ -391,67 +391,130 @@ async def wait_for_azdo_terminal(
     )
 
 
-def format_ci_final_evaluation(watch: dict[str, Any], result: CiTerminalResult) -> str:
+def format_ci_final_evaluation(
+    watch: dict[str, Any],
+    result: CiTerminalResult,
+    *,
+    session_id: str | None = None,
+) -> str:
+    from agent.services.rich_response import detect_channel, format_result_card
+
     outcome = result.outcome
+    ok = outcome in ("succeeded", "partiallySucceeded")
     live = watch.get("live_url") or f"{settings.agent_app_url.rstrip('/')}/portal"
-    lines = [
-        "*Final evaluation*",
-        "",
-        f"1. Intent handled: `code_change` (Azure DevOps deploy)",
-        f"2. Task: `{watch.get('task_id')}`",
-        f"3. Merged to `main`: yes",
-        f"4. Pipeline result: *{outcome}*",
+    channel = detect_channel(session_id or watch.get("phone"))
+
+    fields: list[tuple[str, str]] = [
+        ("Intent", "`code_change` (Azure DevOps deploy)"),
+        ("Task", f"`{watch.get('task_id')}`"),
+        ("Merged to main", "yes"),
+        ("Pipeline result", f"*{outcome}*"),
     ]
     if result.url or watch.get("pipeline_url"):
-        lines.append(f"5. Pipeline: {result.url or watch.get('pipeline_url')}")
+        fields.append(("Pipeline", result.url or watch.get("pipeline_url") or ""))
     if watch.get("pr_url"):
-        lines.append(f"6. Pull request: {watch['pr_url']}")
-    if outcome in ("succeeded", "partiallySucceeded"):
-        lines.append(f"7. Live portal: {live}")
-        lines.append("8. Done — refresh your phone browser on /portal")
+        fields.append(("Pull request", watch["pr_url"]))
+
+    notes: list[str] = []
+    actions: list[str] = ["Reply *help* for the menu", "Send another task"]
+    if ok:
+        fields.append(("Live portal", live))
+        notes.append("Refresh your phone browser on `/portal`")
+        metrics = [("Deploy health", 10.0 if outcome == "succeeded" else 7.0, 10.0)]
     elif outcome == "canceled":
-        lines.append("7. Deployment was *canceled* — nothing new was confirmed live")
+        notes.append("Deployment was *canceled* — nothing new was confirmed live")
+        metrics = [("Deploy health", 0.0, 10.0)]
     elif outcome == "failed":
-        lines.append("7. Deployment *failed* — check the pipeline logs, then retry")
+        notes.append("Deployment *failed* — check the pipeline logs, then retry")
+        metrics = [("Deploy health", 0.0, 10.0)]
+        actions = [
+            f"Open pipeline and fix failures",
+            f"Reply *APPROVE {watch.get('task_id')}* to retry after fix",
+            "Reply *status* for pending steps",
+        ]
     elif outcome == "timeout":
-        lines.append("7. Still running when I last checked — open the pipeline link above")
+        notes.append("Still running when I last checked — open the pipeline link")
+        metrics = [("Deploy health", 5.0, 10.0)]
     else:
-        lines.append(f"7. Detail: {result.detail or outcome}")
-    lines.append("")
-    lines.append("*Next:* Reply *help* for the menu, or send another task.")
-    return "\n".join(lines)
+        notes.append(result.detail or outcome)
+        metrics = None
+
+    return format_result_card(
+        title="Final evaluation",
+        ok=ok if outcome in ("succeeded", "partiallySucceeded", "failed", "canceled") else None,
+        fields=fields,
+        metrics=metrics,
+        notes=notes,
+        actions=actions,
+        channel=channel,
+    )
 
 
-def format_ci_status_notification(watch: dict[str, Any], result: CiTerminalResult) -> str:
+def format_ci_status_notification(
+    watch: dict[str, Any],
+    result: CiTerminalResult,
+    *,
+    session_id: str | None = None,
+) -> str:
+    from agent.services.rich_response import detect_channel, format_result_card
+
     outcome = result.outcome
     live = watch.get("live_url") or f"{settings.agent_app_url.rstrip('/')}/portal"
+    channel = detect_channel(session_id or watch.get("phone"))
+    pipeline = result.url or watch.get("pipeline_url") or "N/A"
+    task_id = watch.get("task_id") or ""
+
     if outcome in ("succeeded", "partiallySucceeded"):
-        return (
-            f"*Sunny's AI Agent* — Deployment completed (`{watch.get('task_id')}`)\n\n"
-            f"*Azure Pipelines:* {outcome}\n"
-            f"*Live portal:* {live}\n"
-            f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
-            "Open on your *phone browser* and refresh."
+        return format_result_card(
+            title=f"Deployment completed (`{task_id}`)",
+            ok=True,
+            fields=[
+                ("Azure Pipelines", outcome),
+                ("Live portal", live),
+                ("Pipeline", pipeline),
+            ],
+            metrics=[("Pipeline", 10.0 if outcome == "succeeded" else 7.0, 10.0)],
+            notes=["Open on your *phone browser* and refresh."],
+            actions=["Open Live portal", "Reply *help* for the menu"],
+            channel=channel,
         )
     if outcome == "canceled":
-        return (
-            f"*Sunny's AI Agent* — Deployment canceled (`{watch.get('task_id')}`)\n\n"
-            f"*Azure Pipelines:* canceled\n"
-            f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
-            "Nothing new was confirmed live."
+        return format_result_card(
+            title=f"Deployment canceled (`{task_id}`)",
+            ok=False,
+            fields=[
+                ("Azure Pipelines", "canceled"),
+                ("Pipeline", pipeline),
+            ],
+            metrics=[("Pipeline", 0.0, 10.0)],
+            notes=["Nothing new was confirmed live."],
+            channel=channel,
         )
     if outcome == "failed":
-        return (
-            f"*Sunny's AI Agent* — Deployment failed (`{watch.get('task_id')}`)\n\n"
-            f"*Azure Pipelines:* failed\n"
-            f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
-            f"{result.detail}"
+        return format_result_card(
+            title=f"Deployment failed (`{task_id}`)",
+            ok=False,
+            fields=[
+                ("Azure Pipelines", "failed"),
+                ("Pipeline", pipeline),
+            ],
+            metrics=[("Pipeline", 0.0, 10.0)],
+            notes=[result.detail or "Check pipeline logs."],
+            actions=[
+                f"Reply *APPROVE {task_id}* to retry after fixes",
+                "Reply *status* for pending steps",
+            ],
+            channel=channel,
         )
-    return (
-        f"*Sunny's AI Agent* — Pipeline update (`{watch.get('task_id')}`)\n\n"
-        f"*Azure Pipelines:* {outcome}\n"
-        f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
-        f"{result.detail}"
+    return format_result_card(
+        title=f"Pipeline update (`{task_id}`)",
+        ok=None,
+        fields=[
+            ("Azure Pipelines", outcome),
+            ("Pipeline", pipeline),
+        ],
+        notes=[result.detail] if result.detail else None,
+        channel=channel,
     )
 
 
@@ -528,25 +591,52 @@ async def notify_watch_finished(watch: dict[str, Any], result: CiTerminalResult)
 
 
 def format_pr_validation_notification(
-    watch: dict[str, Any], result: CiTerminalResult
+    watch: dict[str, Any],
+    result: CiTerminalResult,
+    *,
+    session_id: str | None = None,
 ) -> str:
+    from agent.services.rich_response import detect_channel, format_result_card
+
     task_id = watch.get("task_id") or ""
+    channel = detect_channel(session_id or watch.get("phone"))
+    pipeline = result.url or watch.get("pipeline_url") or "N/A"
     if result.ok:
-        return (
-            f"*Sunny's AI Agent* — PR checks passed (`{task_id}`)\n\n"
-            f"*Azure Pipelines:* {result.outcome} (validate only — *not* live deploy)\n"
-            f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
-            f"*PR:* {watch.get('pr_url') or 'N/A'}\n\n"
-            "Deploy to App Service is *skipped* on the agent branch on purpose.\n"
-            "To go live: finish *AI review* (reply *1*), then *APPROVE* — "
-            "that merges to `main` and runs the real Deploy stage.\n\n"
-            "Context is kept until *STOP* or *check my repos*."
+        return format_result_card(
+            title=f"PR checks passed (`{task_id}`)",
+            ok=True,
+            fields=[
+                ("Azure Pipelines", f"{result.outcome} (validate only — *not* live deploy)"),
+                ("Pipeline", pipeline),
+                ("PR", watch.get("pr_url") or "N/A"),
+            ],
+            metrics=[("PR checks", 10.0, 10.0)],
+            notes=[
+                "Deploy to App Service is *skipped* on the agent branch on purpose.",
+                "To go live: finish *AI review* (reply *1*), then *APPROVE* — "
+                "that merges to `main` and runs the real Deploy stage.",
+                "Context is kept until *STOP* or *check my repos*.",
+            ],
+            actions=[
+                "Reply *1* or *AI REVIEW*",
+                f"Then *APPROVE {task_id}* to deploy live",
+            ],
+            channel=channel,
         )
-    return (
-        f"*Sunny's AI Agent* — PR checks update (`{task_id}`)\n\n"
-        f"*Azure Pipelines:* {result.outcome}\n"
-        f"*Pipeline:* {result.url or watch.get('pipeline_url')}\n"
-        f"{result.detail}"
+    return format_result_card(
+        title=f"PR checks update (`{task_id}`)",
+        ok=False,
+        fields=[
+            ("Azure Pipelines", result.outcome),
+            ("Pipeline", pipeline),
+        ],
+        metrics=[("PR checks", 0.0, 10.0)],
+        notes=[result.detail] if result.detail else None,
+        actions=[
+            "Reply *FIX TESTS* to repair",
+            "Reply *SKIP* or *STOP* if you want to halt",
+        ],
+        channel=channel,
     )
 
 
