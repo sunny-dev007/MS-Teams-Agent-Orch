@@ -267,7 +267,7 @@ stages:
                 exit 1
 
           - task: AzureCLI@2
-            displayName: "Verify /health"
+            displayName: "Verify health + Copilot auth + check my repos"
             inputs:
               azureSubscription: "$(azureSubscription)"
               scriptType: bash
@@ -294,6 +294,80 @@ stages:
                       if [ "$CCODE" = "200" ]; then
                         cat /tmp/copilot_health.json
                         echo
+                        # Auth + authorization + real "check my repos" must not 500.
+                        # Keys stay in App Service settings — never bake into the repo.
+                        COPILOT_KEY=$(az webapp config appsettings list \
+                          --resource-group "$(resourceGroup)" \
+                          --name "$(appName)" \
+                          --query "[?name=='COPILOT_API_KEY'].value | [0]" -o tsv)
+                        ALLOW_RAW=$(az webapp config appsettings list \
+                          --resource-group "$(resourceGroup)" \
+                          --name "$(appName)" \
+                          --query "[?name=='ALLOWED_TEAMS_USER_IDS'].value | [0]" -o tsv)
+                        if [ -z "${COPILOT_KEY}" ]; then
+                          echo "COPILOT_API_KEY missing on App Service — cannot verify auth"
+                          exit 1
+                        fi
+                        # First allowlisted id (JSON array or CSV)
+                        USER_ID=$(ALLOW_RAW="$ALLOW_RAW" python3 - <<'PY'
+import json, os
+raw = (os.environ.get("ALLOW_RAW") or "").strip()
+ids = []
+if raw.startswith("["):
+    try:
+        ids = [str(x).strip() for x in json.loads(raw) if str(x).strip()]
+    except Exception:
+        ids = []
+if not ids:
+    ids = [p.strip().strip('"').strip("'") for p in raw.split(",") if p.strip()]
+print(ids[0] if ids else "")
+PY
+)
+                        if [ -z "${USER_ID}" ]; then
+                          echo "ALLOWED_TEAMS_USER_IDS empty — cannot verify authorization"
+                          exit 1
+                        fi
+                        BASE="https://$(appName).azurewebsites.net/api/channels/copilot/message"
+                        UNAUTH=$(curl -sS --max-time 30 -o /tmp/copilot_unauth.json -w "%{http_code}" \
+                          -X POST "$BASE" -H "Content-Type: application/json" \
+                          -d "{\"user_id\":\"${USER_ID}\",\"message\":\"ping\"}" || echo 000)
+                        echo "copilot auth missing key -> HTTP $UNAUTH"
+                        if [ "$UNAUTH" != "401" ]; then
+                          cat /tmp/copilot_unauth.json 2>/dev/null || true
+                          echo "Expected 401 without X-Copilot-Api-Key"
+                          exit 1
+                        fi
+                        FORBIDDEN=$(curl -sS --max-time 30 -o /tmp/copilot_forbidden.json -w "%{http_code}" \
+                          -X POST "$BASE" \
+                          -H "Content-Type: application/json" \
+                          -H "X-Copilot-Api-Key: ${COPILOT_KEY}" \
+                          -d '{"user_id":"not-allowlisted-user","message":"ping"}' || echo 000)
+                        echo "copilot auth bad user -> HTTP $FORBIDDEN"
+                        if [ "$FORBIDDEN" != "403" ]; then
+                          cat /tmp/copilot_forbidden.json 2>/dev/null || true
+                          echo "Expected 403 for non-allowlisted user"
+                          exit 1
+                        fi
+                        REPOS=$(curl -sS --max-time 90 -o /tmp/copilot_repos.json -w "%{http_code}" \
+                          -X POST "$BASE" \
+                          -H "Content-Type: application/json" \
+                          -H "X-Copilot-Api-Key: ${COPILOT_KEY}" \
+                          -d "{\"user_id\":\"${USER_ID}\",\"message\":\"check my repos\"}" || echo 000)
+                        echo "copilot check my repos -> HTTP $REPOS"
+                        cat /tmp/copilot_repos.json
+                        echo
+                        if [ "$REPOS" != "200" ]; then
+                          echo "check my repos must return 200 (not 500)"
+                          exit 1
+                        fi
+                        python3 - <<'PY'
+import json
+body = json.load(open("/tmp/copilot_repos.json"))
+reply = (body.get("reply") or "").strip()
+if not reply:
+    raise SystemExit("check my repos returned empty reply")
+print("check my repos reply chars=", len(reply))
+PY
                         exit 0
                       fi
                       sleep 10

@@ -14,7 +14,7 @@ logger = get_logger(__name__)
 class ConversationSession(Base):
     __tablename__ = "conversation_sessions"
 
-    phone: Mapped[str] = mapped_column(String(32), primary_key=True)
+    phone: Mapped[str] = mapped_column(String(128), primary_key=True)
     awaiting: Mapped[str | None] = mapped_column(String(64), nullable=True)
     provider: Mapped[str | None] = mapped_column(String(32), nullable=True)
     data_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)

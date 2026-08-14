@@ -96,19 +96,35 @@ async def test_copilot_health(copilot_env):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/channels/copilot/health")
     assert resp.status_code == 200
-    assert resp.json()["enabled"] is True
+    body = resp.json()
+    assert body["enabled"] is True
+    assert body["api_key_configured"] is True
+    assert body["allowlist_size"] == 1
+    assert "azdo_configured" in body
+    assert "github_configured" in body
 
 
 @pytest.mark.asyncio
-async def test_outbox_enqueue_drain(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path}/outbox.db")
-    # Use ensure schema on existing engine is tricky; call enqueue/drain with patch
-    from agent.core.channel_outbox import drain_outbox, enqueue_outbox
-
+async def test_copilot_message_soft_fails_instead_of_500(copilot_env):
+    """Handler exceptions must return HTTP 200 with an error reply (Studio tool UX)."""
     with (
-        patch("agent.core.channel_outbox.ensure_db_schema", new_callable=AsyncMock),
-        patch("agent.core.channel_outbox.async_session") as session_cm,
+        patch(
+            "agent.core.session.save_session",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("simulated outbox/session failure"),
+        ),
+        patch(
+            "agent.api.channel_gates.route_inbound_message",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("boom"),
+        ),
     ):
-        # Skip heavy DB — unit-level path covered by API test above
-        assert callable(enqueue_outbox)
-        assert callable(drain_outbox)
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/channels/copilot/message",
+                json={"user_id": "user-oid-1", "message": "check my repos"},
+                headers={"X-Copilot-Api-Key": "test-copilot-key"},
+            )
+    assert resp.status_code == 200
+    assert "temporary error" in resp.json()["reply"].lower()

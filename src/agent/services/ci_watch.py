@@ -35,7 +35,7 @@ class PendingCiWatch(Base):
     __tablename__ = "pending_ci_watches"
 
     task_id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    phone: Mapped[str] = mapped_column(String(32), nullable=False)
+    phone: Mapped[str] = mapped_column(String(128), nullable=False)
     provider: Mapped[str] = mapped_column(String(32), nullable=False, default="azure_devops")
     project: Mapped[str] = mapped_column(String(128), nullable=False, default="")
     repo_name: Mapped[str] = mapped_column(String(256), nullable=False, default="")

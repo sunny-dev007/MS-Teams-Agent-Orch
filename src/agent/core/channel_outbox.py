@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Integer, String, Text, func, select
+from sqlalchemy import Boolean, DateTime, Integer, String, Text, func, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from agent.core.logging import get_logger
@@ -37,28 +37,44 @@ async def enqueue_outbox(session_id: str, text: str) -> None:
 
 
 async def drain_outbox(session_id: str, *, limit: int = 20) -> list[str]:
-    """Return undelivered messages oldest-first and mark them delivered."""
+    """Return undelivered messages oldest-first and mark them delivered.
+
+    Uses a bulk UPDATE by id (not ORM row dirty-tracking) so concurrent Copilot
+    polls cannot raise StaleDataError / HTTP 500 when two drains race.
+    """
     if not session_id:
         return []
-    await ensure_db_schema()
-    async with async_session() as db:
-        rows = (
+    try:
+        await ensure_db_schema()
+        async with async_session() as db:
+            rows = (
+                await db.execute(
+                    select(ChannelOutbox)
+                    .where(
+                        ChannelOutbox.session_id == session_id,
+                        ChannelOutbox.delivered.is_(False),
+                    )
+                    .order_by(ChannelOutbox.id.asc())
+                    .limit(limit)
+                )
+            ).scalars().all()
+            if not rows:
+                return []
+            texts = [row.text for row in rows]
+            ids = [row.id for row in rows]
             await db.execute(
-                select(ChannelOutbox)
+                update(ChannelOutbox)
                 .where(
-                    ChannelOutbox.session_id == session_id,
+                    ChannelOutbox.id.in_(ids),
                     ChannelOutbox.delivered.is_(False),
                 )
-                .order_by(ChannelOutbox.id.asc())
-                .limit(limit)
+                .values(delivered=True)
             )
-        ).scalars().all()
-        texts: list[str] = []
-        for row in rows:
-            texts.append(row.text)
-            row.delivered = True
-        await db.commit()
-        return texts
+            await db.commit()
+            return texts
+    except Exception:
+        logger.exception("drain_outbox failed for session=%s", session_id)
+        return []
 
 
 async def peek_outbox_count(session_id: str) -> int:

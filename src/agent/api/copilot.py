@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from typing import Any, Literal
 
@@ -54,14 +55,26 @@ async def _safe_job(func, args, kwargs) -> None:
         logger.exception("Copilot scheduled job failed: %s", getattr(func, "__name__", func))
 
 
-async def _run_scheduled_jobs(jobs: list[tuple]) -> None:
-    """Fire background work like WhatsApp BackgroundTasks; brief wait for quick replies."""
-    import asyncio
+async def _run_scheduled_jobs(jobs: list[tuple], session_id: str) -> list[str]:
+    """Fire background work; wait briefly and collect outbox so Teams gets real content."""
+    from agent.core.channel_outbox import drain_outbox, peek_outbox_count
 
     for func, args, kwargs in jobs:
         asyncio.create_task(_safe_job(func, args, kwargs))
-    # Let fast gate hints / acks land in the outbox before responding.
-    await asyncio.sleep(0.5)
+
+    pending: list[str] = []
+    # Repo picker / gate hints usually land within a few seconds.
+    for _ in range(16):
+        await asyncio.sleep(0.4)
+        batch = await drain_outbox(session_id)
+        if batch:
+            pending.extend(batch)
+            # Keep waiting a bit if more is still arriving
+            if await peek_outbox_count(session_id) == 0 and pending:
+                break
+        elif pending:
+            break
+    return pending
 
 
 @router.post("/message", response_model=CopilotMessageResponse)
@@ -77,12 +90,34 @@ async def copilot_message(
         raise HTTPException(status_code=403, detail="Teams user not allowlisted")
 
     session_id = teams_session_id(body.user_id)
+    try:
+        return await _handle_copilot_message(body, session_id)
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Copilot message failed session=%s", session_id)
+        # Never return raw 500 to Copilot Studio — it surfaces as tool failure.
+        return CopilotMessageResponse(
+            reply=(
+                "*Sunny's AI Agent* — temporary error while processing your request.\n\n"
+                "Please retry in a few seconds (say *status* or *check my repos* again).\n"
+                "If it keeps failing, the App Service logs will show the details."
+            ),
+            awaiting=None,
+            task_id=None,
+            pending_updates=[],
+            session_id=session_id,
+        )
+
+
+async def _handle_copilot_message(
+    body: CopilotMessageRequest, session_id: str
+) -> CopilotMessageResponse:
     from agent.core.channel_outbox import drain_outbox
     from agent.core.session import get_session, save_session
     from agent.workflow.gates import effective_awaiting
     from agent.workflow.resume_context import format_no_pending_task, format_session_status
 
-    # Persist Teams metadata for context continuity
     try:
         await save_session(
             session_id,
@@ -138,9 +173,10 @@ async def copilot_message(
         },
         source="teams",
     )
-    await _run_scheduled_jobs(jobs)
+    pending = await _run_scheduled_jobs(jobs, session_id)
+    # One more drain for late messages
+    pending.extend(await drain_outbox(session_id))
 
-    pending = await drain_outbox(session_id)
     session = await get_session(session_id)
     gate = effective_awaiting(session)
     data = session.get("data") or {}
@@ -177,8 +213,14 @@ async def copilot_message(
 
 @router.get("/health")
 async def copilot_channel_health() -> dict[str, Any]:
+    """Liveness + light auth/config probes for Copilot / ops checks."""
+    azdo_configured = bool(settings.azdo_org_url and settings.azdo_pat.get_secret_value())
+    github_configured = bool(settings.github_token.get_secret_value())
     return {
         "enabled": bool(settings.enable_teams_copilot_channel),
         "api_key_configured": bool(settings.copilot_api_key.get_secret_value()),
         "allowlist_size": len(settings.allowed_teams_user_ids or []),
+        "azdo_configured": azdo_configured,
+        "github_configured": github_configured,
+        "openai_configured": bool(settings.effective_api_key),
     }
