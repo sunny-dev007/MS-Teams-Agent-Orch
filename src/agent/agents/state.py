@@ -82,3 +82,8 @@ class AgentState(TypedDict, total=False):
     notification_text: str
     messages: Annotated[list[BaseMessage], add_messages]
     error: str
+
+    # Release Agent Fabric (optional correlation)
+    release_id: str
+    doc_url: str
+    app_url: str

@@ -44,6 +44,15 @@ _MEETING_RE = re.compile(
     r"(schedule|set\s*up|setup|book).*(meeting|call|calendar)|meeting.*(schedule|set\s*up|book)",
     re.IGNORECASE,
 )
+_RELEASE_NOTES_RE = re.compile(
+    r"(release\s*notes|write\s+(?:the\s+)?docs?|publish\s+(?:to\s+)?sharepoint|"
+    r"documentation\s+agent|create\s+(?:a\s+)?(?:release\s+)?document)",
+    re.IGNORECASE,
+)
+_RUN_QA_RE = re.compile(
+    r"(run\s+qa|start\s+qa|qa\s+agent|playwright|test\s+(?:this\s+)?(?:release|deploy))",
+    re.IGNORECASE,
+)
 
 
 def is_simple_greeting(message: str) -> bool:
@@ -179,6 +188,11 @@ async def plan(state: AgentState) -> AgentState:
         return {**state, "intent": "browse_repos", "planned_by": AGENT_NAME}
     if user_msg.strip() == "5" or _STATUS_RE.match(user_msg):
         return {**state, "intent": "task_status", "planned_by": AGENT_NAME}
+    # Release Agent Fabric intents — always routable; specialists no-op when flags off.
+    if _RELEASE_NOTES_RE.search(user_msg):
+        return {**state, "intent": "publish_release_notes", "planned_by": AGENT_NAME}
+    if _RUN_QA_RE.search(user_msg):
+        return {**state, "intent": "run_qa", "planned_by": AGENT_NAME}
 
     t0 = time.perf_counter()
     try:

@@ -70,6 +70,19 @@ class Settings(BaseSettings):
     # After CI/test failure, ask on WhatsApp and let the test_fixer agent repair
     enable_ci_test_fix_agent: bool = True
 
+    # Release Agent Fabric (additive — defaults OFF so prod Dev/WhatsApp stay unchanged)
+    enable_docs_agent: bool = False
+    enable_qa_agent: bool = False
+    enable_release_handoff: bool = False
+
+    # Microsoft Graph (Docs Agent) — app-only client credentials
+    ms_graph_tenant_id: str = ""
+    ms_graph_client_id: str = ""
+    ms_graph_client_secret: SecretStr = SecretStr("")
+    ms_graph_sharepoint_site_id: str = ""
+    ms_graph_sharepoint_hostname: str = ""  # e.g. contoso.sharepoint.com
+    ms_graph_sharepoint_site_path: str = ""  # e.g. /sites/Engineering
+
     # Teams / Copilot Studio channel (additive — WhatsApp unchanged)
     enable_teams_copilot_channel: bool = True
     copilot_api_key: SecretStr = SecretStr("")

@@ -579,6 +579,22 @@ async def notify_watch_finished(watch: dict[str, Any], result: CiTerminalResult)
                     )
                 except Exception:
                     logger.exception("Failed saving post-CI session memory for %s", phone)
+                # Release Agent Fabric — optional emit (ENABLE_RELEASE_HANDOFF default false)
+                try:
+                    from agent.services.release_handoff import emit_release_handoff
+
+                    await emit_release_handoff(
+                        phone=phone,
+                        pr_id=watch.get("pr_id") or watch.get("pr_number"),
+                        pipeline_id=watch.get("pipeline_id") or watch.get("definition_id"),
+                        build_id=result.build_id or watch.get("build_id"),
+                        commit_sha=watch.get("commit_sha") or "",
+                        app_url=settings.agent_app_url,
+                        title="Post-merge CI succeeded",
+                        summary=format_ci_final_evaluation(watch, result)[:1500],
+                    )
+                except Exception:
+                    logger.exception("Release handoff emit skipped after CI success")
         await mark_ci_watch_notified(task_id)
         await clear_ci_watch(task_id)
         logger.info(

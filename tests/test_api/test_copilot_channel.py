@@ -102,6 +102,9 @@ async def test_copilot_health(copilot_env):
     assert body["allowlist_size"] == 1
     assert "azdo_configured" in body
     assert "github_configured" in body
+    assert "fabric" in body
+    assert body["fabric"]["docs_agent_enabled"] is False
+    assert body["fabric"]["qa_agent_enabled"] is False
 
 
 @pytest.mark.asyncio

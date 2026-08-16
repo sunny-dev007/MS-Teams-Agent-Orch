@@ -216,6 +216,8 @@ async def copilot_channel_health() -> dict[str, Any]:
     """Liveness + light auth/config probes for Copilot / ops checks."""
     azdo_configured = bool(settings.azdo_org_url and settings.azdo_pat.get_secret_value())
     github_configured = bool(settings.github_token.get_secret_value())
+    from agent.services import ms_graph
+
     return {
         "enabled": bool(settings.enable_teams_copilot_channel),
         "api_key_configured": bool(settings.copilot_api_key.get_secret_value()),
@@ -223,4 +225,12 @@ async def copilot_channel_health() -> dict[str, Any]:
         "azdo_configured": azdo_configured,
         "github_configured": github_configured,
         "openai_configured": bool(settings.effective_api_key),
+        # Release Agent Fabric — flags default false on prod
+        "fabric": {
+            "docs_agent_enabled": bool(settings.enable_docs_agent),
+            "qa_agent_enabled": bool(settings.enable_qa_agent),
+            "release_handoff_enabled": bool(settings.enable_release_handoff),
+            "graph_configured": ms_graph.graph_configured(),
+            "docs_agent_ready": ms_graph.docs_agent_ready(),
+        },
     }

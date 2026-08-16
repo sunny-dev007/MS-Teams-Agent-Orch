@@ -20,6 +20,7 @@ def _register_models() -> None:
     from agent.core import session as _session_models  # noqa: F401
     from agent.core import channel_outbox as _outbox_models  # noqa: F401
     from agent.models import task as _task_models  # noqa: F401
+    from agent.models import release_event as _release_models  # noqa: F401
     from agent.services import ci_watch as _ci_watch_models  # noqa: F401
 
 
