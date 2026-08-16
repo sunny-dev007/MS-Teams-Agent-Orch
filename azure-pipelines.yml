@@ -200,6 +200,10 @@ stages:
         displayName: "Deploy whatsapp-ai-agent-sunny"
         timeoutInMinutes: 45
         steps:
+          - checkout: self
+            clean: false
+            displayName: "Checkout prepare + verify scripts"
+
           - download: current
             artifact: drop
             displayName: "Download drop artifact"
@@ -212,75 +216,11 @@ stages:
               scriptLocation: inlineScript
               inlineScript: |
                 set -euo pipefail
-                # Keep site running — avoid long stop/start outages.
-                # Azure often returns HTTP Conflict when another deploy/settings
-                # update is in flight (common if CI + manual run overlap).
-                # Retry only these known keys — never wipe MS_GRAPH_* / ENABLE_* fabric settings.
-                set_oryx_settings() {
-                  az webapp config appsettings set \
-                    --resource-group "$(resourceGroup)" \
-                    --name "$(appName)" \
-                    --settings \
-                      SCM_DO_BUILD_DURING_DEPLOYMENT=true \
-                      ENABLE_ORYX_BUILD=true \
-                      ORYX_DISABLE_OUTPUT_COPY_COMPRESSION=true \
-                      WEBSITES_PORT=8000 \
-                      WEBSITES_CONTAINER_START_TIME_LIMIT=1800 \
-                      SCM_COMMAND_IDLE_TIMEOUT=1800 \
-                      GIT_PYTHON_REFRESH=quiet \
-                      DATABASE_URL=sqlite+aiosqlite:////home/site/data/agent.db \
-                      WORKSPACE_DIR=/home/site/data/workspaces \
-                    --output none
-                }
-                set_startup() {
-                  az webapp config set \
-                    --resource-group "$(resourceGroup)" \
-                    --name "$(appName)" \
-                    --always-on true \
-                    --startup-file "bash infra/startup.sh" \
-                    --output none
-                }
-                for attempt in $(seq 1 8); do
-                  if set_oryx_settings; then
-                    echo "Oryx app settings OK (attempt ${attempt})"
-                    break
-                  fi
-                  echo "App settings update conflict/busy — retry ${attempt}/8..."
-                  if [ "$attempt" -eq 8 ]; then
-                    echo "Failed to set Oryx app settings after retries"
-                    exit 1
-                  fi
-                  sleep 20
-                done
-                # Remove host PYTHONPATH that pointed at incompatible .python_packages
-                az webapp config appsettings delete \
-                  --resource-group "$(resourceGroup)" \
-                  --name "$(appName)" \
-                  --setting-names PYTHONPATH \
-                  || true
-                for attempt in $(seq 1 6); do
-                  if set_startup; then
-                    echo "Startup config OK (attempt ${attempt})"
-                    break
-                  fi
-                  echo "Config set conflict/busy — retry ${attempt}/6..."
-                  if [ "$attempt" -eq 6 ]; then
-                    echo "Failed to set startup file after retries"
-                    exit 1
-                  fi
-                  sleep 15
-                done
-                # Sanity: fabric Graph settings must remain if previously configured
-                # (this step never writes MS_GRAPH_* — Conflict must not clear them).
-                GRAPH_ID=$(az webapp config appsettings list \
-                  --resource-group "$(resourceGroup)" \
-                  --name "$(appName)" \
-                  --query "[?name=='MS_GRAPH_CLIENT_ID'].value | [0]" -o tsv || true)
-                if [ -n "${GRAPH_ID}" ]; then
-                  echo "MS_GRAPH_CLIENT_ID still present (fabric settings preserved)"
-                else
-                  echo "##vso[task.logissue type=warning]MS_GRAPH_CLIENT_ID not set — Docs Agent Graph config missing (non-fatal for Dev/WhatsApp)"
-                fi
+                # Idempotent prepare: skip when already configured; Always On Conflict is non-fatal.
+                # Never writes MS_GRAPH_* or fabric ENABLE_DOCS/QA/HANDOFF flags.
+                chmod +x "$(Build.SourcesDirectory)/infra/prepare_app_service.sh"
+                bash "$(Build.SourcesDirectory)/infra/prepare_app_service.sh" \
+                  "$(resourceGroup)" "$(appName)"
 
           - task: AzureCLI@2
             displayName: "ZIP deploy async (Kudu — no site-start wait)"
@@ -334,11 +274,6 @@ stages:
                 done
                 echo "Kudu async zipdeploy still conflicted after retries (HTTP ${HTTP})"
                 exit 1
-
-          # Deploy job downloads the zip only — checkout again so verify script is available.
-          - checkout: self
-            clean: false
-            displayName: "Checkout verify scripts"
 
           - task: AzureCLI@2
             displayName: "Verify health + Copilot auth + check my repos"
