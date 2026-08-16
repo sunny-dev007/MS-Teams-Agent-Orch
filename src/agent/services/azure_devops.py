@@ -235,6 +235,89 @@ async def get_pull_request(project: str, repo_id: str, pr_id: int) -> dict:
         return resp.json()
 
 
+async def get_pull_request_commits(project: str, repo_id: str, pr_id: int) -> list[dict]:
+    url = _project_api(
+        project,
+        f"git/repositories/{repo_id}/pullrequests/{pr_id}/commits?api-version=7.1",
+    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers=_headers(), timeout=30)
+        if resp.status_code >= 400:
+            logger.error("AzDO PR commits failed: %s %s", resp.status_code, resp.text[:300])
+            return []
+        return resp.json().get("value") or []
+
+
+async def get_pull_request_threads(project: str, repo_id: str, pr_id: int) -> list[dict]:
+    """PR discussion threads (review comments)."""
+    url = _project_api(
+        project,
+        f"git/repositories/{repo_id}/pullrequests/{pr_id}/threads?api-version=7.1",
+    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, headers=_headers(), timeout=30)
+        if resp.status_code >= 400:
+            logger.error("AzDO PR threads failed: %s %s", resp.status_code, resp.text[:300])
+            return []
+        return resp.json().get("value") or []
+
+
+async def get_pull_request_changes(project: str, repo_id: str, pr_id: int) -> list[dict]:
+    """Changed files on the latest PR iteration (best-effort)."""
+    # Resolve latest iteration
+    iter_url = _project_api(
+        project,
+        f"git/repositories/{repo_id}/pullrequests/{pr_id}/iterations?api-version=7.1",
+    )
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(iter_url, headers=_headers(), timeout=30)
+        if resp.status_code >= 400:
+            logger.error("AzDO PR iterations failed: %s %s", resp.status_code, resp.text[:300])
+            return []
+        iterations = resp.json().get("value") or []
+        if not iterations:
+            return []
+        latest = max(iterations, key=lambda i: int(i.get("id") or 0))
+        it_id = latest.get("id")
+        ch_url = _project_api(
+            project,
+            f"git/repositories/{repo_id}/pullrequests/{pr_id}/iterations/{it_id}/changes"
+            f"?api-version=7.1",
+        )
+        ch = await client.get(ch_url, headers=_headers(), timeout=60)
+        if ch.status_code >= 400:
+            logger.error("AzDO PR changes failed: %s %s", ch.status_code, ch.text[:300])
+            return []
+        change_entries = ch.json().get("changeEntries") or ch.json().get("value") or []
+        return change_entries if isinstance(change_entries, list) else []
+
+
+async def find_pull_request_across_repos(
+    project: str,
+    pr_id: int,
+    *,
+    preferred_repo: str | None = None,
+) -> tuple[dict, dict] | None:
+    """Locate PR by id; returns (repo, pr) or None."""
+    repos = await list_repositories(project)
+    preferred = (preferred_repo or settings.azdo_demo_repo or "").strip().lower()
+    ordered = sorted(
+        repos,
+        key=lambda r: 0 if (r.get("name") or "").lower() == preferred else 1,
+    )
+    for repo in ordered:
+        rid = repo.get("id")
+        if not rid:
+            continue
+        try:
+            pr = await get_pull_request(project, rid, pr_id)
+            if pr and pr.get("pullRequestId"):
+                return repo, pr
+        except Exception:
+            continue
+    return None
+
+
 async def find_active_pr_for_branch(
     project: str,
     repo_id: str,

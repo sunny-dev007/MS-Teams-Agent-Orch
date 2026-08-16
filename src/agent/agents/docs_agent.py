@@ -3,8 +3,9 @@
 Feature: Release Agent Fabric. No-op / clear message when ENABLE_DOCS_AGENT is false.
 
 Publishing strategy (most reliable first):
-1. Upload HTML file to the site Documents library under /ReleaseNotes/
-2. Fall back to Site Pages API when available
+1. Enrich from Azure DevOps PR (commits, files, comments) + LLM draft
+2. Upload HTML file to the site Documents library under /ReleaseNotes/
+3. Fall back to Site Pages API when available
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from agent.models.release_event import (
     upsert_release_event,
 )
 from agent.services import ms_graph
+from agent.services.release_notes_builder import build_release_notes_document
 
 logger = get_logger(__name__)
 
@@ -49,6 +51,7 @@ def _extract_ids(message: str) -> dict[str, str | None]:
 
 
 def _page_html(event: dict[str, Any], title: str) -> str:
+    """Minimal fallback when no PR id is available."""
     artifacts = event.get("artifacts") or []
     art_lines = "".join(
         f"<li>{html.escape(str(a.get('type', 'artifact')))}: "
@@ -116,7 +119,6 @@ async def _upload_html_to_drive(
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
     safe = re.sub(r"[^A-Za-z0-9_-]+", "-", title)[:60].strip("-") or "release-notes"
     filename = f"{safe}-{stamp}.html"
-    # Ensure folder exists (ignore if already there)
     try:
         await ms_graph.graph_request(
             "POST",
@@ -144,10 +146,9 @@ async def _upload_html_to_drive(
             resp.raise_for_status()
         item = resp.json()
 
-    web_url = item.get("webUrl") or ""
     return {
         "page_id": item.get("id"),
-        "web_url": web_url,
+        "web_url": item.get("webUrl") or "",
         "site_id": site_id,
         "method": "drive_html",
         "filename": filename,
@@ -158,14 +159,15 @@ async def create_sharepoint_release_page(
     *,
     title: str,
     event: dict[str, Any],
+    html_body: str | None = None,
 ) -> dict[str, Any]:
     """Create release notes in SharePoint (drive upload primary, site page fallback)."""
     site_id, site_web = await resolve_site_id()
-    html_body = _page_html(event, title)
+    body = html_body or _page_html(event, title)
 
     try:
-        result = await _upload_html_to_drive(site_id=site_id, title=title, html_body=html_body)
-        result["html_preview"] = html_body
+        result = await _upload_html_to_drive(site_id=site_id, title=title, html_body=body)
+        result["html_preview"] = body
         result["site_web"] = site_web
         return result
     except Exception:
@@ -173,16 +175,15 @@ async def create_sharepoint_release_page(
 
     safe_name = re.sub(r"[^A-Za-z0-9_-]+", "-", title)[:80].strip("-") or "release-notes"
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
-    body = {
-        "@odata.type": "#microsoft.graph.sitePage",
-        "name": f"{safe_name}-{stamp}.aspx",
-        "title": title,
-        "pageLayout": "article",
-    }
     page = await ms_graph.graph_request(
         "POST",
         f"/sites/{site_id}/pages",
-        json_body=body,
+        json_body={
+            "@odata.type": "#microsoft.graph.sitePage",
+            "name": f"{safe_name}-{stamp}.aspx",
+            "title": title,
+            "pageLayout": "article",
+        },
     )
     page_id = page.get("id")
     web_url = page.get("webUrl") or site_web
@@ -199,7 +200,7 @@ async def create_sharepoint_release_page(
         "web_url": web_url,
         "site_id": site_id,
         "method": "site_page",
-        "html_preview": html_body,
+        "html_preview": body,
         "site_web": site_web,
     }
 
@@ -233,6 +234,8 @@ async def publish_release_notes(state: AgentState) -> AgentState:
 
     msg = state.get("user_message") or ""
     ids = _extract_ids(msg)
+    pr_id = ids.get("pr_id") or (str(state.get("pr_number")) if state.get("pr_number") else None)
+
     event = None
     if ids.get("release_id"):
         from agent.models.release_event import get_release_event
@@ -240,15 +243,15 @@ async def publish_release_notes(state: AgentState) -> AgentState:
         event = await get_release_event(str(ids["release_id"]))
     if event is None:
         event = await find_release_event(
-            pr_id=ids.get("pr_id") or (str(state.get("pr_number")) if state.get("pr_number") else None),
+            pr_id=pr_id,
             pipeline_id=ids.get("pipeline_id"),
             build_id=state.get("ci_build_id"),
         )
 
     if event is None:
-        title = f"Release notes — PR {ids.get('pr_id') or 'manual'}"
+        title = f"Release notes — PR {pr_id or 'manual'}"
         event = await upsert_release_event(
-            pr_id=ids.get("pr_id"),
+            pr_id=pr_id,
             pipeline_id=ids.get("pipeline_id"),
             commit_sha=state.get("commit_sha"),
             app_url=settings.agent_app_url,
@@ -261,21 +264,63 @@ async def publish_release_notes(state: AgentState) -> AgentState:
     else:
         title = event.get("title") or f"Release notes — PR {event.get('pr_id') or event.get('release_id')}"
 
+    html_body: str | None = None
+    evidence: dict[str, Any] = {}
+    sections: dict[str, Any] = {}
+    enrich_note = ""
+
+    if pr_id:
+        try:
+            title, html_body, evidence, sections = await build_release_notes_document(
+                pr_id=pr_id,
+                event=event,
+                project=state.get("azdo_project") or settings.azdo_demo_project,
+                repo_name=state.get("repo_name") or settings.azdo_demo_repo,
+                repo_id=state.get("azdo_repo_id"),
+            )
+            event = await upsert_release_event(
+                release_id=event["release_id"],
+                pr_id=pr_id,
+                commit_sha=evidence.get("commit_sha") or event.get("commit_sha"),
+                title=title,
+                summary=str(sections.get("executive_summary") or "")[:4000],
+                app_url=settings.agent_app_url,
+                extra={
+                    "pr_url": evidence.get("pr_url"),
+                    "repo_name": evidence.get("repo_name"),
+                    "file_count": evidence.get("file_count"),
+                },
+            )
+            enrich_note = (
+                f"*Repo:* {evidence.get('repo_name')} · "
+                f"*Files:* {evidence.get('file_count')} · "
+                f"*Commits:* {len(evidence.get('commits') or [])}\n"
+            )
+        except Exception as exc:
+            logger.exception("PR enrichment failed for PR %s — publishing basic notes", pr_id)
+            enrich_note = (
+                f"_Warning: could not fully load AzDO PR #{pr_id} ({exc}). "
+                "Published a basic template; retry after confirming AZDO_PAT access._\n"
+            )
+
     try:
-        result = await create_sharepoint_release_page(title=title, event=event)
+        result = await create_sharepoint_release_page(
+            title=title, event=event, html_body=html_body
+        )
         doc_url = result.get("web_url") or ""
         updated = await upsert_release_event(
             release_id=event["release_id"],
             status=STATUS_DOCS_PUBLISHED,
             doc_url=doc_url,
             title=title,
-            summary=event.get("summary") or msg[:2000],
+            summary=event.get("summary") or (sections.get("executive_summary") if sections else msg[:2000]),
             extra={"publish_method": result.get("method"), "filename": result.get("filename")},
         )
         note = (
-            f"*Documentation Agent* — release notes published.\n\n"
+            f"*Documentation Agent* — enterprise release notes published.\n\n"
             f"*Release:* `{updated['release_id']}`\n"
             f"*PR:* {updated.get('pr_id') or 'n/a'} · *Pipeline:* {updated.get('pipeline_id') or 'n/a'}\n"
+            f"{enrich_note}"
             f"*Method:* {result.get('method')}\n"
         )
         if doc_url:
@@ -302,6 +347,7 @@ async def publish_release_notes(state: AgentState) -> AgentState:
                 "1. API permission *Sites.ReadWrite.All* + **Admin consent**\n"
                 "2. App settings MS_GRAPH_* on App Service\n"
                 "3. Site path `/sites/EnterpriseProjectHub` exists\n"
+                "4. AZDO_PAT can read the PR in Project-NIT\n"
             ),
             "error": str(exc),
         }
