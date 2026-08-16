@@ -67,6 +67,27 @@ async def plan(state: AgentState) -> AgentState:
     if not user_msg:
         return {**state, "intent": "general", "error": "No message provided", "planned_by": AGENT_NAME}
 
+    # Release Agent Fabric — take priority over in-progress repo wizard / coding session
+    # so "write release notes for PR N" always goes to Docs Agent → SharePoint, not a code PR.
+    if _RELEASE_NOTES_RE.search(user_msg):
+        if phone:
+            try:
+                from agent.core.session import save_session
+
+                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+            except Exception:
+                logger.exception("%s failed clearing session for docs intent", AGENT_NAME)
+        return {**state, "intent": "publish_release_notes", "planned_by": AGENT_NAME}
+    if _RUN_QA_RE.search(user_msg):
+        if phone:
+            try:
+                from agent.core.session import save_session
+
+                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+            except Exception:
+                logger.exception("%s failed clearing session for qa intent", AGENT_NAME)
+        return {**state, "intent": "run_qa", "planned_by": AGENT_NAME}
+
     if phone:
         session = await get_session(phone)
         awaiting = session.get("awaiting")
@@ -188,11 +209,6 @@ async def plan(state: AgentState) -> AgentState:
         return {**state, "intent": "browse_repos", "planned_by": AGENT_NAME}
     if user_msg.strip() == "5" or _STATUS_RE.match(user_msg):
         return {**state, "intent": "task_status", "planned_by": AGENT_NAME}
-    # Release Agent Fabric intents — always routable; specialists no-op when flags off.
-    if _RELEASE_NOTES_RE.search(user_msg):
-        return {**state, "intent": "publish_release_notes", "planned_by": AGENT_NAME}
-    if _RUN_QA_RE.search(user_msg):
-        return {**state, "intent": "run_qa", "planned_by": AGENT_NAME}
 
     t0 = time.perf_counter()
     try:

@@ -91,6 +91,28 @@ async def test_planner_routes_release_notes():
 
 
 @pytest.mark.asyncio
+async def test_planner_release_notes_beats_repo_session(monkeypatch):
+    """Mid repo-wizard session must not swallow SharePoint docs intent."""
+    from agent.planner import agent as planner
+
+    async def fake_session(phone):
+        return {"awaiting": "repo_pick", "provider": "azure_devops", "data": {}}
+
+    async def fake_save(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(planner, "get_session", fake_session)
+    monkeypatch.setattr("agent.core.session.save_session", fake_save)
+    out = await planner.plan(
+        {
+            "user_message": "write release notes for PR 42",
+            "whatsapp_phone": "teams:user-1",
+        }
+    )
+    assert out["intent"] == "publish_release_notes"
+
+
+@pytest.mark.asyncio
 async def test_planner_routes_run_qa():
     from agent.planner.agent import plan
 

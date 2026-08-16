@@ -101,6 +101,40 @@ async def route_inbound_message(
     from agent.api import whatsapp as wa
 
     message = (message or "").strip()
+
+    # Fabric Docs/QA intents bypass coding gates — SharePoint notes must not become a code PR.
+    import re
+
+    if re.search(
+        r"(release\s*notes|write\s+(?:the\s+)?docs?|publish\s+(?:to\s+)?sharepoint|"
+        r"documentation\s+agent|create\s+(?:a\s+)?(?:release\s+)?document|"
+        r"run\s+qa|start\s+qa|qa\s+agent|playwright)",
+        message,
+        re.I,
+    ):
+        from agent.core.session import save_session
+
+        try:
+            await save_session(session_id, awaiting=None, clear_awaiting=True, merge_data=True)
+        except Exception:
+            logger.exception("Failed clearing gate for fabric intent session=%s", session_id)
+        payload = graph_payload or {
+            "phone": session_id,
+            "message": message,
+            "message_id": "",
+            "name": "",
+        }
+        payload = {**payload, "phone": session_id, "message": message}
+        if source == "teams":
+            from agent.core.background import handle_channel_message
+
+            schedule(handle_channel_message, payload, source)
+        else:
+            from agent.core.background import handle_whatsapp_message
+
+            schedule(handle_whatsapp_message, payload)
+        return
+
     session = await get_session(session_id)
     # Ensure Teams sessions carry channel metadata for notify paths.
     if source == "teams" or str(session_id).startswith("teams:"):
