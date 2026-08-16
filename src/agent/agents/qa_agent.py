@@ -1,6 +1,7 @@
-"""QA Agent stub — Playwright runs land in a later phase.
+"""QA Agent — HTTP smoke against release app_url + SharePoint report.
 
 Feature: Release Agent Fabric. ENABLE_QA_AGENT default false — no prod impact.
+Playwright browser suite can replace/extend http smoke later without changing Teams UX.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from agent.models.release_event import (
     find_release_event,
     upsert_release_event,
 )
+from agent.services.qa_smoke import render_qa_report_html, run_http_smoke, upload_qa_report_html
 
 logger = get_logger(__name__)
 
@@ -29,7 +31,6 @@ _RELEASE_RE = re.compile(r"\b(rel_[a-f0-9]+)\b", re.I)
 
 
 async def run_qa_smoke(state: AgentState) -> AgentState:
-    """Phase 3 will invoke Playwright; Phase 1 returns an honest stub response."""
     if not settings.enable_qa_agent:
         return {
             **state,
@@ -37,8 +38,8 @@ async def run_qa_smoke(state: AgentState) -> AgentState:
             "handled_by": AGENT_NAME,
             "notification_text": (
                 "*QA Agent* is installed but **disabled** (ENABLE_QA_AGENT=false).\n\n"
-                "When enabled it will run Playwright against the release `app_url` "
-                "and attach a report to the ReleaseEvent.\n"
+                "When enabled it runs smoke checks against the release `app_url` "
+                "and attaches a report to the ReleaseEvent.\n"
                 "Dev Agent and WhatsApp paths are unchanged."
             ),
         }
@@ -59,42 +60,102 @@ async def run_qa_smoke(state: AgentState) -> AgentState:
             build_id=state.get("ci_build_id"),
         )
 
+    app_url = (
+        state.get("app_url")
+        or (event or {}).get("app_url")
+        or settings.agent_app_url
+        or settings.sample_app_url
+    )
+
     if event is None:
         event = await upsert_release_event(
             pr_id=pr.group(1) if pr else None,
             pipeline_id=pipe.group(1) if pipe else None,
-            app_url=state.get("app_url") or settings.agent_app_url,
+            app_url=app_url,
             status=STATUS_QA_PENDING,
             requested_by=state.get("whatsapp_phone"),
             channel="teams" if str(state.get("whatsapp_phone") or "").startswith("teams:") else "whatsapp",
-            title="QA pending",
+            title="QA run",
             summary=msg[:1000],
         )
 
-    await upsert_release_event(release_id=event["release_id"], status=STATUS_QA_RUNNING)
-
-    # Phase 3: real Playwright. For now mark pending with clear next-step text.
-    updated = await upsert_release_event(
+    await upsert_release_event(
         release_id=event["release_id"],
-        status=STATUS_QA_PENDING,
-        app_url=event.get("app_url") or settings.agent_app_url,
-        summary=(event.get("summary") or "") + "\n[QA stub — Playwright not wired yet]",
+        status=STATUS_QA_RUNNING,
+        app_url=app_url,
     )
 
-    return {
-        **state,
-        "status": "completed",
-        "handled_by": AGENT_NAME,
-        "release_id": updated["release_id"],
-        "notification_text": (
-            f"*QA Agent* accepted release `{updated['release_id']}`.\n\n"
-            f"*App URL:* {updated.get('app_url') or 'n/a'}\n"
-            f"*PR:* {updated.get('pr_id') or 'n/a'} · *Pipeline:* {updated.get('pipeline_id') or 'n/a'}\n\n"
-            "_Playwright execution lands in Phase 3. Status set to "
-            f"`{STATUS_QA_PENDING}` — Docs Agent can still draft notes on request._"
-        ),
-    }
+    try:
+        report = await run_http_smoke(app_url)
+        overall = report.get("overall")
+        status = STATUS_QA_PASSED if overall == "passed" else STATUS_QA_FAILED
+        html_body = render_qa_report_html(
+            report,
+            release_id=event["release_id"],
+            pr_id=str(event.get("pr_id") or (pr.group(1) if pr else "")),
+        )
+        report_url = ""
+        try:
+            report_url = await upload_qa_report_html(
+                title=f"QA-{event['release_id']}",
+                html_body=html_body,
+            )
+        except Exception:
+            logger.exception("QA report SharePoint upload failed")
 
+        artifacts = list(event.get("artifacts") or [])
+        if report_url:
+            artifacts.append({"type": "qa_smoke_report", "url": report_url})
 
-# Silence unused import warnings for status constants used by later phases
-_ = (STATUS_QA_PASSED, STATUS_QA_FAILED)
+        updated = await upsert_release_event(
+            release_id=event["release_id"],
+            status=status,
+            app_url=app_url,
+            qa_report_url=report_url or None,
+            artifacts=artifacts,
+            summary=(
+                f"QA {overall}: {report.get('passed')}/{report.get('total')} checks passed "
+                f"against {app_url}"
+            ),
+            extra={"qa_report": report},
+        )
+
+        icon = "OK" if status == STATUS_QA_PASSED else "FAIL"
+        note = (
+            f"*QA Agent* — smoke {overall} [{icon}]\n\n"
+            f"*Release:* `{updated['release_id']}`\n"
+            f"*App URL:* {app_url}\n"
+            f"*PR:* {updated.get('pr_id') or 'n/a'} · *Pipeline:* {updated.get('pipeline_id') or 'n/a'}\n"
+            f"*Checks:* {report.get('passed')}/{report.get('total')} passed\n"
+        )
+        if report_url:
+            note += f"*Report:* {report_url}\n"
+        else:
+            note += "_Report HTML generated; SharePoint upload skipped/failed — check Graph config._\n"
+        if status == STATUS_QA_PASSED:
+            note += "\n_Next: say *write release notes for " + (
+                f"PR {updated['pr_id']}" if updated.get("pr_id") else updated["release_id"]
+            ) + "* to publish Docs with QA link._\n"
+        else:
+            failed = [c["name"] for c in (report.get("checks") or []) if not c.get("passed")]
+            note += f"\nFailed checks: {', '.join(failed) or 'unknown'}\n"
+
+        return {
+            **state,
+            "status": "completed" if status == STATUS_QA_PASSED else "failed",
+            "handled_by": AGENT_NAME,
+            "release_id": updated["release_id"],
+            "notification_text": note,
+            "qa_report_url": report_url,
+        }
+    except Exception as exc:
+        logger.exception("QA Agent failed")
+        await upsert_release_event(release_id=event["release_id"], status=STATUS_QA_FAILED)
+        return {
+            **state,
+            "status": "failed",
+            "handled_by": AGENT_NAME,
+            "release_id": event["release_id"],
+            "notification_text": f"*QA Agent* failed: {exc}",
+            "error": str(exc),
+        }
