@@ -34,6 +34,9 @@ class CopilotMessageResponse(BaseModel):
     pending_updates: list[str] = Field(default_factory=list)
     channel: str = "teams"
     session_id: str = ""
+    # Optional Adaptive Card for Copilot Studio rich rendering (Hello / Help).
+    # Studio: bind this JSON to an Adaptive Card message when present; else show reply.
+    adaptive_card: dict[str, Any] | None = None
 
 
 def _require_channel_enabled() -> None:
@@ -196,11 +199,14 @@ async def _handle_copilot_message(
             "Say **status** in a moment if you need the latest update."
         )
 
+    adaptive_card = _teams_adaptive_card_for_message(message, session)
+
     logger.info(
-        "Copilot message session=%s awaiting=%s pending=%s",
+        "Copilot message session=%s awaiting=%s pending=%s card=%s",
         session_id,
         gate,
         len(pending),
+        bool(adaptive_card),
     )
     return CopilotMessageResponse(
         reply=reply,
@@ -208,7 +214,28 @@ async def _handle_copilot_message(
         task_id=str(tid) if tid else None,
         pending_updates=pending,
         session_id=session_id,
+        adaptive_card=adaptive_card,
     )
+
+
+def _teams_adaptive_card_for_message(
+    message: str, session: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Attach Adaptive Cards for Hello / Help so Studio can render rich UI."""
+    import re
+
+    from agent.core.persona import (
+        build_greeting_adaptive_card,
+        build_help_adaptive_card,
+    )
+    from agent.planner.agent import is_simple_greeting
+
+    raw = (message or "").strip()
+    if re.match(r"^(help|menu|\?|commands)[\s!.?]*$", raw, re.I):
+        return build_help_adaptive_card()
+    if is_simple_greeting(raw):
+        return build_greeting_adaptive_card(session=session)
+    return None
 
 
 @router.get("/health")

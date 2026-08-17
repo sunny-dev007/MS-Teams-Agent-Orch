@@ -3,7 +3,7 @@
   "info": {
     "title": "Sunny Personal AI Agent",
     "description": "Coding / Azure DevOps / GitHub gate backend for Teams. Call PersonalAIAgent for repo work; return reply verbatim.",
-    "version": "1.0.5"
+    "version": "1.0.6"
   },
   "host": "whatsapp-ai-agent-sunny.azurewebsites.net",
   "basePath": "/",
@@ -79,7 +79,12 @@
         "reply": {
           "type": "string",
           "x-ms-summary": "Reply",
-          "description": "Text to show the user verbatim"
+          "description": "Markdown text to show the user verbatim (Teams-optimized for help/hello)"
+        },
+        "adaptive_card": {
+          "type": "object",
+          "x-ms-summary": "Adaptive Card",
+          "description": "Optional Adaptive Card JSON for Hello/Help. Prefer rendering this in Teams when present; otherwise show reply."
         },
         "awaiting": {
           "type": "string",

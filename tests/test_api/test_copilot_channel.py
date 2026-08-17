@@ -122,6 +122,51 @@ async def test_copilot_health(copilot_env, monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_copilot_help_returns_adaptive_card(copilot_env):
+    session = {
+        "phone": "teams:user-oid-1",
+        "awaiting": None,
+        "data": {"channel": "teams"},
+    }
+
+    async def fake_route(session_id, message, *, schedule, graph_payload=None, source="whatsapp"):
+        async def help_msg():
+            from agent.core.persona import build_help_menu
+            from agent.services.channel_notify import send_channel_message
+
+            await send_channel_message(session_id, build_help_menu(channel="teams"))
+
+        schedule(help_msg)
+
+    with (
+        patch("agent.api.channel_gates.route_inbound_message", new=fake_route),
+        patch("agent.core.session.get_session", new_callable=AsyncMock, return_value=session),
+        patch("agent.core.session.save_session", new_callable=AsyncMock),
+        patch(
+            "agent.core.channel_outbox.drain_outbox",
+            new_callable=AsyncMock,
+            return_value=["Command catalog"],
+        ),
+        patch(
+            "agent.core.channel_outbox.peek_outbox_count",
+            new_callable=AsyncMock,
+            return_value=0,
+        ),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/channels/copilot/message",
+                json={"user_id": "user-oid-1", "message": "help"},
+                headers={"X-Copilot-Api-Key": "test-copilot-key"},
+            )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("adaptive_card", {}).get("type") == "AdaptiveCard"
+    assert "FactSet" in str(data["adaptive_card"])
+
+
+@pytest.mark.asyncio
 async def test_copilot_message_soft_fails_instead_of_500(copilot_env):
     """Handler exceptions must return HTTP 200 with an error reply (Studio tool UX)."""
     with (

@@ -1,17 +1,19 @@
-"""Persona assets + professional Teams/WhatsApp greeting & help catalogs.
+"""Persona assets + channel-aware greeting & help catalogs.
 
-Formatting targets Microsoft Teams / Copilot (markdown-friendly):
-clear sections, active-agent roster from feature flags, light code ticks.
-No behavior change to coding gates — display/copy only.
+Teams: rich markdown (tables, bold prompts, minimal code ticks) + Adaptive Cards.
+WhatsApp: compact *bold* bullets (Meta formatting).
+No coding-gate behavior changes — display only.
 """
 
 from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
+
+Channel = Literal["whatsapp", "teams"]
 
 
 @lru_cache(maxsize=1)
@@ -20,16 +22,19 @@ def get_persona_prompt() -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _flag_on(enabled: bool) -> str:
-    return "`ON`" if enabled else "`OFF`"
+def _b(text: str, *, channel: Channel) -> str:
+    """Bold — Teams prefers **, WhatsApp uses *."""
+    t = (text or "").strip()
+    if not t:
+        return ""
+    return f"**{t}**" if channel == "teams" else f"*{t}*"
 
 
 def _agent_rows() -> list[tuple[str, bool, str, str]]:
     """(name, enabled, capability, try_prompt)."""
     from agent.config import settings
 
-    # Core agents are always available (not behind fabric flags)
-    rows: list[tuple[str, bool, str, str]] = [
+    return [
         (
             "Dev Agent",
             True,
@@ -51,7 +56,7 @@ def _agent_rows() -> list[tuple[str, bool, str, str]]:
         (
             "Doc Library",
             bool(settings.enable_doc_knowledge),
-            "List SharePoint / OneDrive / OneNote  `[SP]` `[OD]` `[ON]`",
+            "List SharePoint / OneDrive / OneNote — tags SP · OD · ON",
             "list my documents",
         ),
         (
@@ -85,20 +90,39 @@ def _agent_rows() -> list[tuple[str, bool, str, str]]:
             "run QA",
         ),
     ]
-    return rows
 
 
-def format_active_agents_block(*, show_off: bool = True) -> str:
-    """Professional roster of agents with ON/OFF from live settings."""
-    lines = ["*Active agents*", ""]
-    for name, enabled, capability, try_prompt in _agent_rows():
+def format_active_agents_block(
+    *,
+    channel: Channel = "whatsapp",
+    show_off: bool = True,
+) -> str:
+    """Professional roster — markdown table on Teams, bullets on WhatsApp."""
+    rows = _agent_rows()
+    if channel == "teams":
+        lines = [
+            _b("Active agents", channel=channel),
+            "",
+            "| Agent | Status | What it does | Try |",
+            "| :--- | :---: | :--- | :--- |",
+        ]
+        for name, enabled, capability, try_prompt in rows:
+            if not enabled and not show_off:
+                continue
+            status = "ON" if enabled else "OFF"
+            try_col = try_prompt if enabled else "—"
+            lines.append(f"| {name} | {status} | {capability} | {try_col} |")
+        return "\n".join(lines)
+
+    lines = [_b("Active agents", channel=channel), ""]
+    for name, enabled, capability, try_prompt in rows:
         if not enabled and not show_off:
             continue
-        status = _flag_on(enabled)
-        lines.append(f"• *{name}* — {status}")
+        status = "ON" if enabled else "OFF"
+        lines.append(f"• {_b(name, channel=channel)} — {status}")
         lines.append(f"  {capability}")
         if enabled:
-            lines.append(f"  Try: *{try_prompt}*")
+            lines.append(f"  Try: {_b(try_prompt, channel=channel)}")
     return "\n".join(lines)
 
 
@@ -106,93 +130,277 @@ def build_greeting_reply(
     *,
     session: dict[str, Any] | None = None,
     include_off_agents: bool = False,
+    channel: Channel = "whatsapp",
 ) -> str:
-    """ChatGPT-style welcome: session line + active agents + suggested next."""
+    """Welcome card: session + active agents + suggested next."""
     awaiting = (session or {}).get("awaiting") if session else None
     if awaiting:
-        session_line = f"In progress — gate `*{awaiting}*` (say *status* or *stop*)"
+        session_line = (
+            f"In progress — gate {awaiting} "
+            f"(say {_b('status', channel=channel)} or {_b('stop', channel=channel)})"
+        )
     else:
         session_line = "Clear — nothing pending"
 
-    agents = format_active_agents_block(show_off=include_off_agents)
-
+    agents = format_active_agents_block(
+        channel=channel, show_off=include_off_agents
+    )
     parts = [
-        "*Sunny's Personal AI Agent*",
+        _b("Sunny's Personal AI Agent", channel=channel),
         "",
         "Hi Sunny — ready when you are.",
         "",
-        f"*Session:* {session_line}",
+        f"{_b('Session', channel=channel)}: {session_line}",
         "",
         agents,
         "",
-        "*Suggested next*",
-        "1. *check my repos* — start a coding task",
-        "2. *list my documents* — knowledge library (`[SP]` / `[OD]` / `[ON]`)",
-        "3. *ask docs …* — query ingested documents",
-        "4. *help* — full command catalog",
+        _b("Suggested next", channel=channel),
+        f"1. {_b('check my repos', channel=channel)} — start a coding task",
+        f"2. {_b('list my documents', channel=channel)} — knowledge library (SP / OD / ON)",
+        f"3. {_b('ask docs …', channel=channel)} — query ingested documents",
+        f"4. {_b('help', channel=channel)} — full command catalog",
         "",
         "_Or ask me an Azure / GenAI / DevOps architecture question._",
     ]
     return "\n".join(parts)
 
 
-def build_help_menu(*, include_off_agents: bool = True) -> str:
-    """Full tools & prompts catalog — clean sections for Teams readability."""
+def build_help_menu(
+    *,
+    include_off_agents: bool = True,
+    channel: Channel = "whatsapp",
+) -> str:
+    """Full tools catalog — Teams uses tables + spacing; WhatsApp stays compact."""
     from agent.config import settings
 
-    kb = bool(settings.enable_doc_knowledge)
-    docs = bool(settings.enable_docs_agent)
-    qa = bool(settings.enable_qa_agent)
+    kb = "ON" if settings.enable_doc_knowledge else "OFF"
+    docs = "ON" if settings.enable_docs_agent else "OFF"
+    qa = "ON" if settings.enable_qa_agent else "OFF"
+    b = lambda t: _b(t, channel=channel)  # noqa: E731
+
+    if channel == "teams":
+        parts = [
+            b("Sunny's Personal AI Agent"),
+            b("Command catalog"),
+            "",
+            "_Tip: copy any prompt in the Try column and send it as a message._",
+            "",
+            format_active_agents_block(channel=channel, show_off=include_off_agents),
+            "",
+            "---",
+            "",
+            b("1 · Session"),
+            f"- {b('help')} / {b('menu')} — this catalog",
+            f"- {b('status')} / {b('resume')} — pending step or gate",
+            f"- {b('stop')} / {b('new task')} — clear stuck session",
+            f"- {b('hi')} / {b('hello')} — welcome + active agents",
+            "",
+            b("2 · Productivity"),
+            f"- {b('check my emails')} — Email Agent",
+            f"- {b('schedule a meeting tomorrow 3pm with a@b.com')} — Meeting Agent",
+            "",
+            b("3 · Dev Agent"),
+            f"- {b('check my repos')} — pick GitHub or Azure DevOps",
+            "- Describe a change after selecting a repo — plan then development",
+            f"- {b('PROCEED <task_id>')} — start implementation",
+            f"- {b('1')} AI review · {b('2')} manual review — after PR opens",
+            f"- {b('PR READY')} — after manual review",
+            f"- {b('APPROVE <task_id>')} / {b('REJECT <task_id>')} — deploy gate",
+            "",
+            f"{b('4 · Document Knowledge')} — {kb}",
+            "Source tags: **SP** SharePoint · **OD** OneDrive · **ON** OneNote",
+            f"- {b('list my documents')} — library with SP / OD / ON tags",
+            f"- {b('list ingested documents')} — already vectorized",
+            f"- {b('ingest 1,3')} / {b('ingest all')} — Doc Ingest → Qdrant",
+            f"- {b('ask docs <question>')} — Doc RAG (citations + related)",
+            f"- {b('summarize docs <focus>')} — Doc Insights",
+            "",
+            b("5 · Release Fabric"),
+            f"- Docs Agent ({docs}) — {b('write release notes for PR <n>')}",
+            f"- QA Agent ({qa}) — {b('run QA')} / {b('run QA for <release_id>')}",
+            "",
+            b("Typical flows"),
+            "1. **Knowledge** — list my documents → ingest 1,2 → ask docs …",
+            "2. **Coding** — check my repos → plan → PROCEED → review → APPROVE",
+            "3. **Release** — deploy → run QA … → write release notes for PR …",
+            "",
+            "Reply with any prompt above, or just tell me what you need.",
+        ]
+        return "\n".join(parts)
 
     parts = [
-        "*Sunny's Personal AI Agent*",
-        "*Command catalog*",
+        b("Sunny's Personal AI Agent"),
+        b("Command catalog"),
         "",
-        format_active_agents_block(show_off=include_off_agents),
+        format_active_agents_block(channel=channel, show_off=include_off_agents),
         "",
-        "────────────────",
-        "*1 · Session*",
-        "• *help* / *menu* / *?* — this catalog",
-        "• *status* / *resume* — pending step or gate",
-        "• *stop* / *new task* — clear stuck session",
-        "• *hi* / *hello* — welcome + active agents",
+        b("1 · Session"),
+        f"• {b('help')} / {b('menu')} — this catalog",
+        f"• {b('status')} / {b('resume')} — pending step or gate",
+        f"• {b('stop')} / {b('new task')} — clear stuck session",
         "",
-        "*2 · Productivity*",
-        "• *check my emails* / *inbox* — Email Agent",
-        "• *schedule a meeting tomorrow 3pm with a@b.com* — Meeting Agent",
+        b("2 · Productivity"),
+        f"• {b('check my emails')} — Email Agent",
+        f"• {b('schedule a meeting …')} — Meeting Agent",
         "",
-        "*3 · Dev Agent*",
-        "• *check my repos* / *browse repos* — pick GitHub or Azure DevOps",
-        "• Describe a change after selecting a repo — plan → development",
-        "• *PROCEED <task_id>* — start implementation",
-        "• *1* (AI review) / *2* (manual review) — after PR opens",
-        "• *PR READY* — after manual review",
-        "• *APPROVE <task_id>* / *REJECT <task_id>* — deploy gate",
-        "_Gates stay open across Knowledge switches unless you say *stop*._",
+        b("3 · Dev Agent"),
+        f"• {b('check my repos')} — GitHub / Azure DevOps",
+        f"• {b('PROCEED <task_id>')} → review → {b('APPROVE <task_id>')}",
         "",
-        f"*4 · Document Knowledge* — {_flag_on(kb)}",
-        "Source tags: `[SP]` SharePoint · `[OD]` OneDrive · `[ON]` OneNote",
-        "• *list my documents* — library with `[SP]` / `[OD]` / `[ON]` tags",
-        "• *list sharepoint docs* · *list onedrive* · *list onenote*",
-        "• *list ingested documents* / *kb status* — already vectorized",
-        "• *ingest 1,3* / *ingest all* — Doc Ingest → Qdrant",
-        "• *ask docs <question>* — Doc RAG (citations + related prompts)",
-        "• *summarize docs <focus>* / *doc insights* — Doc Insights",
+        f"{b('4 · Document Knowledge')} — {kb}",
+        "Tags: SP · OD · ON",
+        f"• {b('list my documents')} → {b('ingest 1,3')} → {b('ask docs …')}",
         "",
-        f"*5 · Release Fabric*",
-        f"• Docs Agent {_flag_on(docs)} — *write release notes for PR <n>*",
-        f"• QA Agent {_flag_on(qa)} — *run QA* / *run QA for <release_id>*",
+        f"{b('5 · Release Fabric')} — Docs {docs} · QA {qa}",
+        f"• {b('write release notes for PR <n>')} · {b('run QA')}",
         "",
-        "*Typical flows*",
-        "1. *Knowledge* — list my documents → ingest 1,2 → ask docs …",
-        "2. *Coding* — check my repos → plan → PROCEED → review → APPROVE",
-        "3. *Release* — deploy → run QA … → write release notes for PR …",
-        "",
-        "Reply with any prompt above, or just tell me what you need.",
+        "Say any prompt above, or tell me what you need.",
     ]
     return "\n".join(parts)
 
 
-# Backward-compatible module constants (evaluated at import; prefer builders at runtime).
-HELP_MENU = build_help_menu()
-GREETING_REPLY = build_greeting_reply()
+def build_help_adaptive_card(*, include_off_agents: bool = True) -> dict[str, Any]:
+    """Adaptive Card JSON for Copilot Studio / Teams rich rendering."""
+    from agent.config import settings
+
+    facts = []
+    for name, enabled, capability, try_prompt in _agent_rows():
+        if not enabled and not include_off_agents:
+            continue
+        status = "ON" if enabled else "OFF"
+        value = f"{status} — {try_prompt}" if enabled else f"{status} — {capability}"
+        facts.append({"title": name, "value": value})
+
+    kb = "ON" if settings.enable_doc_knowledge else "OFF"
+    body: list[dict[str, Any]] = [
+        {
+            "type": "TextBlock",
+            "size": "Large",
+            "weight": "Bolder",
+            "text": "Sunny's Personal AI Agent",
+            "wrap": True,
+        },
+        {
+            "type": "TextBlock",
+            "size": "Medium",
+            "weight": "Bolder",
+            "text": "Command catalog",
+            "spacing": "Small",
+            "wrap": True,
+        },
+        {
+            "type": "TextBlock",
+            "text": "Copy any **Try** prompt below and send it as a chat message.",
+            "isSubtle": True,
+            "wrap": True,
+            "spacing": "Small",
+        },
+        {
+            "type": "TextBlock",
+            "text": "Active agents",
+            "weight": "Bolder",
+            "spacing": "Medium",
+            "wrap": True,
+        },
+        {"type": "FactSet", "facts": facts, "spacing": "Small"},
+        {
+            "type": "TextBlock",
+            "text": "Quick prompts",
+            "weight": "Bolder",
+            "spacing": "Medium",
+            "wrap": True,
+        },
+        {
+            "type": "TextBlock",
+            "text": (
+                "• **help** · **status** · **stop**\n"
+                "• **check my emails** · **check my repos**\n"
+                f"• **list my documents** (Knowledge {kb}) — tags SP / OD / ON\n"
+                "• **ask docs &lt;question&gt;** · **summarize docs &lt;focus&gt;**\n"
+                "• **write release notes for PR &lt;n&gt;** · **run QA**"
+            ),
+            "wrap": True,
+            "spacing": "Small",
+        },
+        {
+            "type": "TextBlock",
+            "text": (
+                "**Flows:** Knowledge = list → ingest → ask docs  ·  "
+                "Coding = repos → PROCEED → APPROVE  ·  "
+                "Release = run QA → write release notes"
+            ),
+            "wrap": True,
+            "spacing": "Medium",
+            "isSubtle": True,
+        },
+    ]
+    return {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": body,
+    }
+
+
+def build_greeting_adaptive_card(
+    *,
+    session: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Adaptive Card for Hello — active agents only (ON)."""
+    awaiting = (session or {}).get("awaiting") if session else None
+    session_line = (
+        f"In progress — {awaiting}" if awaiting else "Clear — nothing pending"
+    )
+    facts = []
+    for name, enabled, capability, try_prompt in _agent_rows():
+        if not enabled:
+            continue
+        facts.append({"title": name, "value": f"ON — {try_prompt}"})
+
+    return {
+        "type": "AdaptiveCard",
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "version": "1.4",
+        "body": [
+            {
+                "type": "TextBlock",
+                "size": "Large",
+                "weight": "Bolder",
+                "text": "Sunny's Personal AI Agent",
+                "wrap": True,
+            },
+            {
+                "type": "TextBlock",
+                "text": "Hi Sunny — ready when you are.",
+                "wrap": True,
+                "spacing": "Small",
+            },
+            {
+                "type": "FactSet",
+                "facts": [{"title": "Session", "value": session_line}],
+                "spacing": "Medium",
+            },
+            {
+                "type": "TextBlock",
+                "text": "Active agents",
+                "weight": "Bolder",
+                "spacing": "Medium",
+                "wrap": True,
+            },
+            {"type": "FactSet", "facts": facts, "spacing": "Small"},
+            {
+                "type": "TextBlock",
+                "text": (
+                    "Suggested: **check my repos** · **list my documents** · "
+                    "**ask docs …** · **help**"
+                ),
+                "wrap": True,
+                "spacing": "Medium",
+            },
+        ],
+    }
+
+
+# Backward-compatible defaults (WhatsApp-style at import).
+HELP_MENU = build_help_menu(channel="whatsapp")
+GREETING_REPLY = build_greeting_reply(channel="whatsapp")

@@ -4,7 +4,9 @@ from agent.planner.agent import is_simple_greeting, plan
 from agent.core.persona import (
     GREETING_REPLY,
     HELP_MENU,
+    build_greeting_adaptive_card,
     build_greeting_reply,
+    build_help_adaptive_card,
     build_help_menu,
 )
 
@@ -27,23 +29,30 @@ def test_is_simple_greeting(message, expected):
 
 def test_persona_assets():
     assert "Sunny" in GREETING_REPLY
-    help_text = build_help_menu()
-    greet = build_greeting_reply()
-    assert "Active agents" in help_text
-    assert "Active agents" in greet
-    assert "Command catalog" in help_text
-    assert "[SP]" in help_text
-    assert "Dev Agent" in greet
-    assert "check my repos" in help_text
-    assert "ask docs" in help_text
-    assert "write release notes" in help_text
-    assert "run QA" in help_text
-    # Legacy constants still export usable text
+    help_wa = build_help_menu(channel="whatsapp")
+    help_teams = build_help_menu(channel="teams")
+    greet_teams = build_greeting_reply(channel="teams")
+    assert "Active agents" in help_wa
+    assert "Command catalog" in help_teams
+    assert "| Agent | Status |" in help_teams
+    assert "**check my repos**" in help_teams
+    assert "`ON`" not in help_teams  # no code-pill clutter on Teams
+    assert "Suggested next" in greet_teams
     assert "Sunny" in HELP_MENU
 
 
+def test_teams_adaptive_cards():
+    help_card = build_help_adaptive_card()
+    assert help_card["type"] == "AdaptiveCard"
+    assert any(b.get("type") == "FactSet" for b in help_card["body"])
+    greet_card = build_greeting_adaptive_card(session={"awaiting": None})
+    assert greet_card["type"] == "AdaptiveCard"
+
+
 def test_greeting_respects_session_gate():
-    text = build_greeting_reply(session={"awaiting": "plan_approval"})
+    text = build_greeting_reply(
+        session={"awaiting": "plan_approval"}, channel="teams"
+    )
     assert "plan_approval" in text
     assert "status" in text.lower()
 
@@ -65,17 +74,20 @@ async def test_health_deep_includes_whatsapp(client, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_planner_help_fastpath():
-    result = await plan({"user_message": "help", "task_id": "t1", "whatsapp_phone": ""})
+async def test_planner_help_fastpath_teams():
+    result = await plan(
+        {"user_message": "help", "task_id": "t1", "whatsapp_phone": "teams:u1"}
+    )
     assert result["intent"] == "general"
-    assert result["planned_by"] == "planner"
-    assert "Command catalog" in result["notification_text"]
-    assert "Active agents" in result["notification_text"]
+    assert "| Agent | Status |" in result["notification_text"]
+    assert "**help**" in result["notification_text"]
 
 
 @pytest.mark.asyncio
 async def test_planner_hello_shows_agents():
-    result = await plan({"user_message": "Hello", "task_id": "t1", "whatsapp_phone": ""})
+    result = await plan(
+        {"user_message": "Hello", "task_id": "t1", "whatsapp_phone": "teams:u1"}
+    )
     assert result["intent"] == "general"
     assert "Active agents" in result["notification_text"]
     assert "Suggested next" in result["notification_text"]
@@ -95,6 +107,6 @@ async def test_graph_uses_planner_entry():
     g = build_graph()
     assert "planner" in g.nodes
     assert "email_agent" in g.nodes
-    assert "github_agent" not in g.nodes  # github is used via repo_wizard, not a top-level node
+    assert "github_agent" not in g.nodes
     assert "repo_wizard" in g.nodes
     assert "coding_developer" in g.nodes

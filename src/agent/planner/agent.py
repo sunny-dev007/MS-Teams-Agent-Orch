@@ -254,18 +254,26 @@ async def plan(state: AgentState) -> AgentState:
                 session_snap = await get_session(phone)
             except Exception:
                 session_snap = None
+        from agent.core.channel_identity import is_teams_session
+
+        channel = "teams" if is_teams_session(phone) else "whatsapp"
         return {
             **state,
             "intent": "general",
-            "notification_text": build_greeting_reply(session=session_snap),
+            "notification_text": build_greeting_reply(
+                session=session_snap, channel=channel
+            ),
             "planned_by": AGENT_NAME,
         }
 
     if _HELP_RE.match(user_msg):
+        from agent.core.channel_identity import is_teams_session
+
+        channel = "teams" if is_teams_session(phone) else "whatsapp"
         return {
             **state,
             "intent": "general",
-            "notification_text": build_help_menu(),
+            "notification_text": build_help_menu(channel=channel),
             "planned_by": AGENT_NAME,
         }
 

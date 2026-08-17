@@ -73,13 +73,26 @@ MCP is for MCP servers, not raw REST. Only use this if you later host an MCP wra
 Your new agent already has MODE A / MODE B. Ensure it still includes:
 
 ```text
-For MODE B (coding / repos / gates), always call the PersonalAIAgent tool.
+For MODE B (coding / repos / gates / help / hello / docs), always call the PersonalAIAgent tool.
 Pass user_id = signed-in Entra object id, message = user text.
 Show the tool reply verbatim. Never invent PR URLs, plans, or deploy results.
+If the tool returns adaptive_card, render that Adaptive Card in the chat (rich formatting).
+Otherwise show the reply markdown as-is (do not wrap in code fences; do not rewrite the layout).
 If the user asks for status after a long task, call PersonalAIAgent with action=status.
 ```
 
 Turn **Search all websites** off for this agent if you only want backend + your knowledge.
+
+### Rich formatting (Hello / Help)
+
+Backend returns:
+
+| Field | Use |
+|---|---|
+| `reply` | Teams-optimized markdown (tables + bold prompts; almost no backticks) |
+| `adaptive_card` | Adaptive Card JSON for Hello / Help — preferred UI when Studio can bind it |
+
+After updating the connector OpenAPI to **1.0.6**, refresh the tool so `adaptive_card` is available as an output.
 
 ---
 
