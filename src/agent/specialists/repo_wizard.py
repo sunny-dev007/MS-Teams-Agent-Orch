@@ -150,6 +150,32 @@ class RepoWizardAgent:
                 )
 
             await save_session(phone, awaiting="code_instruction", provider=provider, data=data)
+
+            # Boards handoff: coding instruction already prepared from work item
+            pending = (data.get("pending_code_instruction") or "").strip()
+            if pending and provider == "azure_devops":
+                await clear_session(phone)
+                wid = data.get("boards_work_item_id")
+                return tag(
+                    {
+                        **state,
+                        "intent": "code_change",
+                        "user_message": pending,
+                        "repo_url": data.get("repo_url", ""),
+                        "repo_provider": "azure_devops",
+                        "azdo_project": data.get("azdo_project", ""),
+                        "azdo_repo_id": data.get("azdo_repo_id", ""),
+                        "status": "task_started",
+                        "notification_text": (
+                            f"*Boards → coding*\n"
+                            f"Work item: `#{wid}` · Repo: `{selected.get('name')}`\n\n"
+                            "Handing off to the Dev Agent (plan → PROCEED → …) "
+                            "using the work-item context."
+                        ),
+                    },
+                    AGENT_NAME,
+                )
+
             return tag(
                 {
                     **state,

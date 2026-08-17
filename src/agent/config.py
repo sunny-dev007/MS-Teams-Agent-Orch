@@ -78,6 +78,14 @@ class Settings(BaseSettings):
     enable_qa_agent: bool = False
     enable_release_handoff: bool = False
 
+    # Teams productivity agents (Outlook mail + Azure Boards) — defaults OFF
+    # Scoped to Teams signed-in user (Entra OID). WhatsApp Gmail path unchanged.
+    enable_outlook_agent: bool = False
+    enable_boards_agent: bool = False
+    outlook_mail_top: int = 10
+    boards_work_item_top: int = 15
+    azdo_boards_project: str = ""  # optional project filter for WIQL
+
     # Document Knowledge Fabric (SharePoint/OneDrive/OneNote → ingest → RAG/Insights)
     # Additive — defaults OFF; never affects WhatsApp/Dev coding path when false.
     enable_doc_knowledge: bool = False

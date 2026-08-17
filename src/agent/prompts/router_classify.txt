@@ -14,6 +14,9 @@ Classify the user's WhatsApp message into exactly one intent:
 - "ingest_docs": ingest/vectorize selected documents into the knowledge base
 - "ask_docs": QnA over ingested documents (RAG)
 - "summarize_docs": executive insights/summary over ingested documents
+- "check_outlook": Teams Outlook inbox for the signed-in user (not Gmail)
+- "list_boards": Azure Boards — pick project then list assigned action items
+- "boards_start_dev": start Dev Agent from a Boards ticket id (e.g. #42)
 - "general": general conversation or help
 
 Also extract when present (else null):

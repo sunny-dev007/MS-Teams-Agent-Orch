@@ -243,7 +243,7 @@ async def copilot_channel_health() -> dict[str, Any]:
     """Liveness + light auth/config probes for Copilot / ops checks."""
     azdo_configured = bool(settings.azdo_org_url and settings.azdo_pat.get_secret_value())
     github_configured = bool(settings.github_token.get_secret_value())
-    from agent.services import ms_graph, qdrant_store
+    from agent.services import azure_boards, ms_graph, qdrant_store
 
     return {
         "enabled": bool(settings.enable_teams_copilot_channel),
@@ -258,9 +258,13 @@ async def copilot_channel_health() -> dict[str, Any]:
             "qa_agent_enabled": bool(settings.enable_qa_agent),
             "release_handoff_enabled": bool(settings.enable_release_handoff),
             "doc_knowledge_enabled": bool(settings.enable_doc_knowledge),
+            "outlook_agent_enabled": bool(settings.enable_outlook_agent),
+            "boards_agent_enabled": bool(settings.enable_boards_agent),
             "graph_configured": ms_graph.graph_configured(),
             "docs_agent_ready": ms_graph.docs_agent_ready(),
             "doc_knowledge_ready": ms_graph.doc_knowledge_ready(),
+            "outlook_agent_ready": ms_graph.outlook_agent_ready(),
+            "boards_agent_ready": azure_boards.boards_agent_ready(),
             "qdrant_configured": qdrant_store.qdrant_configured(),
             "qdrant_ready": qdrant_store.qdrant_ready(),
             "qdrant_collection": (settings.qdrant_collection or "") if qdrant_store.qdrant_configured() else "",

@@ -36,6 +36,25 @@ def doc_knowledge_ready() -> bool:
     return bool(settings.enable_doc_knowledge and graph_configured())
 
 
+def outlook_agent_ready() -> bool:
+    return bool(settings.enable_outlook_agent and graph_configured())
+
+
+async def get_user_profile(user_id: str) -> dict[str, Any]:
+    """Fetch Entra user profile by OID or UPN (app-only User.Read.All / Directory.Read.All)."""
+    uid = (user_id or "").strip()
+    if not uid:
+        raise ValueError("user_id is required")
+    from urllib.parse import quote
+
+    # Prefer mail + UPN for Boards identity matching
+    path = (
+        f"/users/{quote(uid)}"
+        f"?$select=id,displayName,mail,userPrincipalName,givenName"
+    )
+    return await graph_request("GET", path)
+
+
 async def get_app_token() -> str:
     """Client-credentials token for application permissions."""
     now = time.time()

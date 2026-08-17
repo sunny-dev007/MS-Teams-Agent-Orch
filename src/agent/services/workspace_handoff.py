@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 WS_KNOWLEDGE = "knowledge"
 WS_DEV = "dev"
 WS_GENERAL = "general"
+WS_PRODUCTIVITY = "productivity"
 
 _HANDOFF = {
     (WS_KNOWLEDGE, WS_DEV): (
@@ -29,6 +30,22 @@ _HANDOFF = {
         "_Workspace switch:_ Dev → **Knowledge**.\n"
         "Repo/coding session context is left as-is unless a gate requires *stop*. "
         "Say *check my repos* to return to Dev."
+    ),
+    (WS_DEV, WS_PRODUCTIVITY): (
+        "_Workspace switch:_ Dev → **Productivity** (Outlook / Boards).\n"
+        "Coding gates stay open — say *status* or *stop* if needed."
+    ),
+    (WS_KNOWLEDGE, WS_PRODUCTIVITY): (
+        "_Workspace switch:_ Knowledge → **Productivity** (Outlook / Boards).\n"
+        "Say *ask docs …* anytime to return to Knowledge."
+    ),
+    (WS_PRODUCTIVITY, WS_DEV): (
+        "_Workspace switch:_ Productivity → **Dev**.\n"
+        "Say *check my outlook* or *my work items* to return."
+    ),
+    (WS_PRODUCTIVITY, WS_KNOWLEDGE): (
+        "_Workspace switch:_ Productivity → **Knowledge**.\n"
+        "Say *check my outlook* or *my work items* to return."
     ),
 }
 

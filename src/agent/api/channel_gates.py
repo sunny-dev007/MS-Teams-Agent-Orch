@@ -111,7 +111,11 @@ async def route_inbound_message(
         r"run\s+qa|start\s+qa|qa\s+agent|playwright|"
         r"list\s+(?:my\s+)?(?:documents?|docs|files)|list\s+(?:sharepoint|onedrive|onenote)|"
         r"list\s+ingested|ingest\s+(?:\d+|all)|vectorize|ask\s+docs?|ask\s+knowledge|"
-        r"summarize\s+docs?|summarise\s+docs?|doc\s+insights?|knowledge\s+base)",
+        r"summarize\s+docs?|summarise\s+docs?|doc\s+insights?|knowledge\s+base|"
+        r"check\s+(?:my\s+)?outlook|outlook\s+(?:inbox|emails?|mail)|my\s+outlook|"
+        r"my\s+work\s+items?|my\s+tickets?|my\s+action\s+items?|azure\s+boards?|"
+        r"check\s+(?:my\s+)?boards?|boards?\s+assigned\s+to\s+me|"
+        r"work\s+items?\s+assigned|fetch\s+(?:my\s+)?(?:action\s+)?items?)",
         message,
         re.I,
     ):

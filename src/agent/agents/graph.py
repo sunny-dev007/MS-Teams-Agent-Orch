@@ -25,6 +25,8 @@ from agent.specialists.email_agent import run_email, run_send_email
 from agent.specialists.evaluator_agent import run_evaluator, run_task_status
 from agent.specialists.general_agent import run_general
 from agent.specialists.notifier_agent import run_notifier
+from agent.specialists.outlook_agent import run_outlook
+from agent.specialists.boards_agent import run_boards
 from agent.specialists.pr_publisher import run_pr_publisher
 from agent.specialists.pr_reviewer import run_pr_reviewer
 from agent.specialists.qa_agent import run_qa
@@ -105,6 +107,10 @@ def _route_after_plan(state: AgentState) -> str:
         return "doc_rag_agent"
     if intent == "summarize_docs":
         return "doc_insights_agent"
+    if intent == "check_outlook":
+        return "outlook_agent"
+    if intent in ("list_boards", "boards_start_dev"):
+        return "boards_agent"
     if intent in ("code_change", "bug_fix"):
         if not state.get("repo_url"):
             return "repo_wizard"
@@ -332,6 +338,8 @@ def build_graph() -> StateGraph:
     graph.add_node("doc_ingest_agent", run_doc_ingest)
     graph.add_node("doc_rag_agent", run_doc_rag)
     graph.add_node("doc_insights_agent", run_doc_insights)
+    graph.add_node("outlook_agent", run_outlook)
+    graph.add_node("boards_agent", run_boards)
     graph.add_node("coding_architect", run_architect)
     graph.add_node("coding_developer", run_developer)
     graph.add_node("coding_reviewer", run_reviewer)
@@ -382,6 +390,8 @@ def build_graph() -> StateGraph:
         "doc_ingest_agent": "doc_ingest_agent",
         "doc_rag_agent": "doc_rag_agent",
         "doc_insights_agent": "doc_insights_agent",
+        "outlook_agent": "outlook_agent",
+        "boards_agent": "boards_agent",
         "coding_architect": "coding_architect",
         "coding_developer": "coding_developer",
         "handle_approval": "handle_approval",
@@ -405,6 +415,8 @@ def build_graph() -> StateGraph:
     graph.add_edge("doc_ingest_agent", "notify_result")
     graph.add_edge("doc_rag_agent", "notify_result")
     graph.add_edge("doc_insights_agent", "notify_result")
+    graph.add_edge("outlook_agent", "notify_result")
+    graph.add_edge("boards_agent", "notify_result")
 
     graph.add_conditional_edges("repo_wizard", _route_after_repo_wizard, {
         "notify_then_develop": "notify_then_develop",

@@ -116,7 +116,11 @@ async def test_copilot_health(copilot_env, monkeypatch):
     assert body["fabric"]["docs_agent_enabled"] is False
     assert body["fabric"]["qa_agent_enabled"] is False
     assert body["fabric"]["doc_knowledge_enabled"] is False
+    assert body["fabric"]["outlook_agent_enabled"] is False
+    assert body["fabric"]["boards_agent_enabled"] is False
     assert "doc_knowledge_ready" in body["fabric"]
+    assert "outlook_agent_ready" in body["fabric"]
+    assert "boards_agent_ready" in body["fabric"]
     assert body["fabric"]["qdrant_configured"] is False
     assert "qdrant_ready" in body["fabric"]
 

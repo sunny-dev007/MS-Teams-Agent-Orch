@@ -76,6 +76,24 @@ _SUMMARIZE_DOCS_RE = re.compile(
     re.IGNORECASE,
 )
 _DOC_PICK_NUMS_RE = re.compile(r"^\s*[\d,\s]+(?:\s*(?:and|&)\s*[\d,\s]+)*\s*$")
+# Teams productivity — Outlook + Azure Boards (bypass coding session)
+_OUTLOOK_RE = re.compile(
+    r"(check\s+(?:my\s+)?outlook|outlook\s+(?:inbox|emails?|mail)|"
+    r"my\s+outlook(?:\s+inbox)?)",
+    re.IGNORECASE,
+)
+_BOARDS_RE = re.compile(
+    r"(my\s+work\s+items?|my\s+tickets?|my\s+action\s+items?|azure\s+boards?|"
+    r"boards?\s+assigned\s+to\s+me|check\s+(?:my\s+)?boards?|"
+    r"work\s+items?\s+assigned\s+to\s+me|assigned\s+(?:to\s+)?me\s+(?:on\s+)?boards?|"
+    r"fetch\s+(?:my\s+)?(?:action\s+)?items?|list\s+(?:my\s+)?(?:action\s+)?items?)",
+    re.IGNORECASE,
+)
+_BOARDS_TICKET_RE = re.compile(
+    r"(?:^|\b)(?:#|ticket\s+|work\s*item\s+|wi\s+|start\s+|work\s+on\s+|implement\s+)"
+    r"(\d{1,7})\b|^\s*(\d{1,7})\s*$",
+    re.IGNORECASE,
+)
 
 
 def is_simple_greeting(message: str) -> bool:
@@ -141,14 +159,81 @@ async def plan(state: AgentState) -> AgentState:
     if _SUMMARIZE_DOCS_RE.search(user_msg):
         return await _clear_for_kb("summarize_docs")
 
+    # Outlook / Boards — Teams productivity lane (priority over coding session)
+    async def _clear_for_productivity(intent_name: str) -> AgentState:
+        handoff = ""
+        if phone:
+            try:
+                from agent.core.session import save_session
+                from agent.services.workspace_handoff import (
+                    WS_PRODUCTIVITY,
+                    handoff_note_for,
+                )
+
+                handoff = await handoff_note_for(phone, next_workspace=WS_PRODUCTIVITY)
+                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+            except Exception:
+                logger.exception("%s failed clearing session for %s", AGENT_NAME, intent_name)
+        out = {**state, "intent": intent_name, "planned_by": AGENT_NAME}
+        if handoff:
+            out["handoff_note"] = handoff
+        return out
+
+    if _OUTLOOK_RE.search(user_msg):
+        return await _clear_for_productivity("check_outlook")
+    if _BOARDS_RE.search(user_msg):
+        return await _clear_for_productivity("list_boards")
+
     # Bare number picks while awaiting doc_pick → ingest
     if phone:
         try:
             session = await get_session(phone)
-            if session.get("awaiting") == "doc_pick" and _DOC_PICK_NUMS_RE.match(user_msg):
+            awaiting_early = session.get("awaiting")
+            if awaiting_early == "doc_pick" and _DOC_PICK_NUMS_RE.match(user_msg):
                 return {**state, "intent": "ingest_docs", "planned_by": AGENT_NAME}
+            # Boards multi-step (project / ticket) — do not steal coding gates
+            if awaiting_early == "boards_project_pick":
+                return {
+                    **state,
+                    "intent": "list_boards",
+                    "session_awaiting": "boards_project_pick",
+                    "session_data": session.get("data") or {},
+                    "planned_by": AGENT_NAME,
+                }
+            if awaiting_early == "boards_ticket_pick" and (
+                _BOARDS_TICKET_RE.search(user_msg) or user_msg.strip().isdigit()
+            ):
+                return {
+                    **state,
+                    "intent": "boards_start_dev",
+                    "session_awaiting": "boards_ticket_pick",
+                    "session_data": session.get("data") or {},
+                    "planned_by": AGENT_NAME,
+                }
+            if awaiting_early in ("boards_project_pick", "boards_ticket_pick"):
+                return {
+                    **state,
+                    "intent": "list_boards",
+                    "session_awaiting": awaiting_early,
+                    "session_data": session.get("data") or {},
+                    "planned_by": AGENT_NAME,
+                }
+            # Seeded AzDO repo pick after Boards ticket → continue repo_wizard
+            if (
+                awaiting_early == "repo"
+                and (session.get("provider") or "").lower() == "azure_devops"
+                and (session.get("data") or {}).get("pending_code_instruction")
+            ):
+                return {
+                    **state,
+                    "intent": "browse_repos",
+                    "session_awaiting": "repo",
+                    "repo_provider": "azure_devops",
+                    "session_data": session.get("data") or {},
+                    "planned_by": AGENT_NAME,
+                }
         except Exception:
-            logger.exception("%s failed reading doc_pick session", AGENT_NAME)
+            logger.exception("%s failed reading boards/doc_pick session", AGENT_NAME)
 
     if phone:
         session = await get_session(phone)
@@ -278,6 +363,19 @@ async def plan(state: AgentState) -> AgentState:
         }
 
     if user_msg.strip() == "1" or _EMAILS_RE.match(user_msg):
+        # Teams + Outlook flag → Outlook for signed-in user; WhatsApp stays Gmail
+        from agent.config import settings
+        from agent.core.channel_identity import is_teams_session
+
+        if (
+            settings.enable_outlook_agent
+            and is_teams_session(phone)
+            and _EMAILS_RE.match(user_msg)
+        ):
+            return await _clear_for_productivity("check_outlook")
+        # Bare "1" on Teams with Outlook on → still Outlook (menu shortcut)
+        if settings.enable_outlook_agent and is_teams_session(phone) and user_msg.strip() == "1":
+            return await _clear_for_productivity("check_outlook")
         return {**state, "intent": "check_email", "planned_by": AGENT_NAME}
     if user_msg.strip() == "2" or _MEETING_RE.search(user_msg):
         return {**state, "intent": "schedule_meeting", "planned_by": AGENT_NAME}
