@@ -158,6 +158,63 @@ def with_chunk_context(
     return [f"{header}\n\n{c}" for c in chunks]
 
 
+_PAGE_RE = re.compile(r"(?im)^\s*##\s*Page\s+(\d+)\b")
+_SLIDE_RE = re.compile(r"(?im)^\s*##\s*Slide\s+(\d+)\b")
+_MD_HEADING_RE = re.compile(r"(?m)^(#{1,6})\s+(.+?)\s*$")
+_NUMBERED_SECTION_RE = re.compile(r"(?m)^(\d+(?:\.\d+){0,3})\s+([A-Z][^\n]{2,80})\s*$")
+
+
+def extract_chunk_locator(text: str) -> dict[str, Any]:
+    """Derive human citation locator from chunk text (page/slide/section).
+
+    Best-practice RAG citations should point to a retrieval-native location,
+    not invent page numbers. We only emit what the chunk itself contains.
+    """
+    body = text or ""
+    page = None
+    slide = None
+    section = ""
+
+    m_page = _PAGE_RE.search(body)
+    if m_page:
+        page = int(m_page.group(1))
+        section = f"Page {page}"
+
+    m_slide = _SLIDE_RE.search(body)
+    if m_slide:
+        slide = int(m_slide.group(1))
+        if not section:
+            section = f"Slide {slide}"
+
+    # Prefer markdown headings inside the chunk (first heading wins for locator)
+    headings = _MD_HEADING_RE.findall(body)
+    if headings:
+        # Use deepest/most specific heading near the top; prefer ## / ### over #
+        headings_sorted = sorted(headings, key=lambda h: (-len(h[0]), 0))
+        title = headings_sorted[0][1].strip()
+        # Skip generic Page/Slide headings we already captured
+        if not re.match(r"(?i)^page\s+\d+$", title) and not re.match(r"(?i)^slide\s+\d+$", title):
+            section = title if not section else f"{section} · {title}"
+
+    if not section:
+        m_num = _NUMBERED_SECTION_RE.search(body)
+        if m_num:
+            section = f"{m_num.group(1)} {m_num.group(2).strip()}"
+
+    locator = section or ""
+    if page is not None and "Page" not in locator:
+        locator = f"Page {page}" + (f" · {section}" if section and section != f"Page {page}" else "")
+    if slide is not None and "Slide" not in locator:
+        locator = f"Slide {slide}" + (f" · {section}" if section and section != f"Slide {slide}" else "")
+
+    return {
+        "page": page,
+        "slide": slide,
+        "section": section,
+        "locator": locator.strip(" ·"),
+    }
+
+
 def _hash_embedding(text: str, dims: int = 64) -> list[float]:
     """Deterministic pseudo-embedding for offline/tests — not for production quality."""
     vec = [0.0] * dims
@@ -281,10 +338,21 @@ async def build_chunk_records(
     )
     vectors = await embed_texts(embed_inputs)
     # Store raw chunk text for citations; embedding used contextualized text
-    return [
-        {"text": t, "embedding": v, "embed_text": et}
-        for t, v, et in zip(pieces, vectors, embed_inputs, strict=True)
-    ]
+    out: list[dict[str, Any]] = []
+    for t, v, et in zip(pieces, vectors, embed_inputs, strict=True):
+        loc = extract_chunk_locator(t)
+        out.append(
+            {
+                "text": t,
+                "embedding": v,
+                "embed_text": et,
+                "locator": loc.get("locator") or "",
+                "page": loc.get("page"),
+                "slide": loc.get("slide"),
+                "section": loc.get("section") or "",
+            }
+        )
+    return out
 
 
 def search_chunks(

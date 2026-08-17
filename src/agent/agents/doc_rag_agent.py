@@ -66,8 +66,10 @@ async def ask_documents(state: AgentState) -> AgentState:
     for c in cites:
         url = c.get("web_url") or ""
         link = f" — {url}" if url else ""
+        locator = (c.get("locator") or "").strip()
+        loc = f" · {locator}" if locator else ""
         cite_lines.append(
-            f"[{c.get('n')}] {c.get('title')} "
+            f"[{c.get('n')}] {c.get('title')}{loc} "
             f"({c.get('source_type')}/{c.get('doc_mode')}, score={c.get('score')}){link}"
         )
 

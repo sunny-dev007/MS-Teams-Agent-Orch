@@ -155,6 +155,21 @@ def test_with_chunk_context_prefixes_metadata():
     assert "body text" in out[0]
 
 
+def test_extract_chunk_locator_from_markdown_and_page():
+    md = "## 2.1 Two-Layer Agent Architecture\n\nAgents are pure functions."
+    loc = doc_vector.extract_chunk_locator(md)
+    assert "Two-Layer Agent Architecture" in (loc.get("locator") or "")
+
+    pdf = "## Page 3\n\nRelease gate requires QA."
+    loc2 = doc_vector.extract_chunk_locator(pdf)
+    assert loc2.get("page") == 3
+    assert "Page 3" in (loc2.get("locator") or "")
+
+    slide = "## Slide 2\n\nRollback plan"
+    loc3 = doc_vector.extract_chunk_locator(slide)
+    assert loc3.get("slide") == 2
+
+
 @pytest.mark.asyncio
 async def test_upsert_and_search(kb_db, monkeypatch):
     monkeypatch.setattr(

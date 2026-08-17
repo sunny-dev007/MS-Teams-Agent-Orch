@@ -211,6 +211,10 @@ async def upsert_document_chunks(
                     "web_url": web_url or "",
                     "owner_session": owner_session or "",
                     "text": text,
+                    "locator": (rec.get("locator") or "")[:256],
+                    "section": (rec.get("section") or "")[:256],
+                    "page": rec.get("page"),
+                    "slide": rec.get("slide"),
                 },
             }
         )
@@ -283,6 +287,10 @@ async def search(
                 "source_type": payload.get("source_type") or "",
                 "doc_mode": payload.get("doc_mode") or "",
                 "web_url": payload.get("web_url") or "",
+                "locator": payload.get("locator") or "",
+                "section": payload.get("section") or "",
+                "page": payload.get("page"),
+                "slide": payload.get("slide"),
                 "score": float(row.get("score") or 0.0),
                 "embedding": [],
             }

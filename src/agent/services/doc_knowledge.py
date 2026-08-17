@@ -29,16 +29,18 @@ logger = get_logger(__name__)
 _RAG_SYSTEM = """You are the Doc RAG Agent for Sunny's Personal AI Agent.
 
 Grounding rules (strict):
-- Answer ONLY from the provided document context. Do not invent facts.
+- Answer ONLY from the provided document context blocks. Do not invent facts.
+- Every context block is labeled [n] with a retrieval locator (section/page/slide when known).
+- Cite claims with [n] matching those blocks. Do NOT invent page numbers.
+- If a locator is present (e.g. "§ 2.1 Two-Layer Agent Architecture" or "Page 3"), you may mention it,
+  but only if it appears in that block's header.
 - If evidence is partial, say what is known vs unknown.
-- Cite every key claim with [n] matching the context blocks.
-- Prefer precise quotes or paraphrases tied to citations.
 
 Answer style (detailed + accurate):
 1) Direct answer (2–4 sentences)
 2) Supporting details (bullets; include numbers/dates/names when present)
 3) Caveats / gaps (if any)
-4) Sources used ([n] titles)
+4) Sources used ([n] title — locator)
 
 Keep Teams-readable markdown. Be thorough when the context supports it."""
 
@@ -344,8 +346,25 @@ async def retrieve_answer(
     context_blocks = []
     citations = []
     for i, h in enumerate(filtered, start=1):
+        locator = (h.get("locator") or "").strip()
+        if not locator:
+            # Derive on the fly for older Qdrant points ingested before locator payload
+            from agent.services.doc_vector import extract_chunk_locator
+
+            loc = extract_chunk_locator(h.get("text") or "")
+            locator = loc.get("locator") or ""
+            if not h.get("page"):
+                h["page"] = loc.get("page")
+            if not h.get("slide"):
+                h["slide"] = loc.get("slide")
+            if not h.get("section"):
+                h["section"] = loc.get("section") or ""
+            h["locator"] = locator
+
+        loc_hdr = f" § {locator}" if locator else ""
         context_blocks.append(
-            f"[{i}] ({h.get('source_type')}/{h.get('doc_mode')}) {h.get('title')}\n"
+            f"[{i}] {h.get('title')}{loc_hdr} "
+            f"({h.get('source_type')}/{h.get('doc_mode')})\n"
             f"{h.get('text')}"
         )
         citations.append(
@@ -357,6 +376,11 @@ async def retrieve_answer(
                 "web_url": h.get("web_url"),
                 "score": round(float(h.get("score") or 0), 4),
                 "doc_id": h.get("doc_id"),
+                "chunk_index": h.get("chunk_index"),
+                "locator": locator,
+                "section": h.get("section") or "",
+                "page": h.get("page"),
+                "slide": h.get("slide"),
             }
         )
     context = "\n\n---\n\n".join(context_blocks)
