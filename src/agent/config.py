@@ -58,10 +58,13 @@ class Settings(BaseSettings):
     # Optional stronger models for planning / PR review (e.g. gpt-4.1); falls back to deployment above
     azure_openai_planning_deployment: str = ""
     azure_openai_review_deployment: str = ""
+    # Doc Knowledge RAG / Insights — prefer high-quality Foundry chat deployment
+    azure_openai_rag_deployment: str = ""
     # Comma-separated fallback deployments when primary hits rate limits (see Azure AI Foundry)
     azure_openai_fallback_deployments: str = ""
     azure_openai_planning_fallbacks: str = ""
     azure_openai_review_fallbacks: str = ""
+    azure_openai_rag_fallbacks: str = ""
     llm_max_retries_per_deployment: int = 2
     llm_retry_base_delay_sec: float = 1.5
 
@@ -78,19 +81,25 @@ class Settings(BaseSettings):
     # Document Knowledge Fabric (SharePoint/OneDrive/OneNote → ingest → RAG/Insights)
     # Additive — defaults OFF; never affects WhatsApp/Dev coding path when false.
     enable_doc_knowledge: bool = False
-    azure_openai_embedding_deployment: str = "text-embedding-3-small"
+    # Prefer text-embedding-3-large (3072-d) when deployed in Foundry — highest RAG recall
+    azure_openai_embedding_deployment: str = "text-embedding-3-large"
     ms_graph_onedrive_user_id: str = ""  # UPN or AAD OID for OneDrive listing (optional)
     doc_knowledge_sources: str = "sharepoint,onedrive,onenote"  # csv of sources to list
     doc_knowledge_max_list: int = 25
-    doc_knowledge_chunk_chars: int = 1200
-    doc_knowledge_chunk_overlap: int = 150
-    doc_knowledge_top_k: int = 5
+    # Structure-aware chunking defaults (~450–600 tokens with ~20% overlap)
+    doc_knowledge_chunk_chars: int = 1800
+    doc_knowledge_chunk_overlap: int = 360
+    doc_knowledge_top_k: int = 8
+    doc_knowledge_fetch_k: int = 24  # over-fetch before MMR diversify
+    doc_knowledge_multi_query: bool = True
+    doc_knowledge_min_score: float = 0.15
 
     # Qdrant Cloud (optional vector backend for Doc Knowledge — defaults empty = SQLite cosine)
     # Use the *cluster* REST URL + Database API key (not only the Cloud Management key).
     qdrant_url: str = ""  # e.g. https://xxxx.aws.cloud.qdrant.io:6333
     qdrant_api_key: SecretStr = SecretStr("")
-    qdrant_collection: str = "doc_knowledge_chunks"
+    # Separate collection for 3-large dims so older small-embedding indexes stay untouched
+    qdrant_collection: str = "doc_knowledge_te3_large"
     # Prefer Qdrant when URL+key set; set false to force local SQLite vectors
     enable_qdrant: bool = True
 

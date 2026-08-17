@@ -2,10 +2,18 @@
 
 Vectors prefer Qdrant Cloud when configured; SQLite keeps catalog + chunk text
 and remains the offline cosine fallback.
+
+Retrieval quality stack:
+  1) text-embedding-3-large (Foundry)
+  2) structure-aware chunking + metadata-prefixed embeddings
+  3) multi-query expansion + over-fetch + MMR diversify
+  4) gpt-4.1 / gpt-5 RAG role for detailed grounded answers
 """
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -18,6 +26,22 @@ from agent.services.llm import invoke_llm
 
 logger = get_logger(__name__)
 
+_RAG_SYSTEM = """You are the Doc RAG Agent for Sunny's Personal AI Agent.
+
+Grounding rules (strict):
+- Answer ONLY from the provided document context. Do not invent facts.
+- If evidence is partial, say what is known vs unknown.
+- Cite every key claim with [n] matching the context blocks.
+- Prefer precise quotes or paraphrases tied to citations.
+
+Answer style (detailed + accurate):
+1) Direct answer (2–4 sentences)
+2) Supporting details (bullets; include numbers/dates/names when present)
+3) Caveats / gaps (if any)
+4) Sources used ([n] titles)
+
+Keep Teams-readable markdown. Be thorough when the context supports it."""
+
 
 async def ingest_catalog_entries(
     entries: list[dict[str, Any]],
@@ -29,6 +53,7 @@ async def ingest_catalog_entries(
         external_id = entry.get("external_id") or entry.get("item_id") or ""
         source = entry.get("source_type") or "sharepoint"
         title = entry.get("title") or "untitled"
+        doc_mode = entry.get("doc_mode") or graph_docs.infer_doc_mode(title)
         try:
             doc = await kd.upsert_document(
                 external_id=external_id,
@@ -36,7 +61,7 @@ async def ingest_catalog_entries(
                 title=title,
                 web_url=entry.get("web_url"),
                 mime_type=entry.get("mime_type"),
-                doc_mode=entry.get("doc_mode") or graph_docs.infer_doc_mode(title),
+                doc_mode=doc_mode,
                 status=kd.STATUS_INGESTING,
                 owner_session=owner_session,
                 metadata={
@@ -64,7 +89,12 @@ async def ingest_catalog_entries(
                 )
                 continue
 
-            records = await doc_vector.build_chunk_records(text)
+            records = await doc_vector.build_chunk_records(
+                text,
+                title=title,
+                source_type=source,
+                doc_mode=doc_mode,
+            )
             vector_backend = "sqlite"
             qdrant_points = 0
             store_local_embeddings = True
@@ -74,14 +104,13 @@ async def ingest_catalog_entries(
                         doc_id=doc["id"],
                         title=title,
                         source_type=source,
-                        doc_mode=doc.get("doc_mode") or "general",
+                        doc_mode=doc_mode,
                         web_url=entry.get("web_url"),
                         owner_session=owner_session,
                         records=records,
                     )
                     if qdrant_points > 0:
                         vector_backend = "qdrant"
-                        # Keep SQLite lean: text only; vectors live in Qdrant
                         store_local_embeddings = False
                 except Exception:
                     logger.exception(
@@ -114,6 +143,7 @@ async def ingest_catalog_entries(
                     "pick": entry.get("pick"),
                     "vector_backend": vector_backend,
                     "qdrant_points": qdrant_points,
+                    "embedding_deployment": settings.azure_openai_embedding_deployment,
                 },
             )
             results.append(
@@ -135,27 +165,64 @@ async def ingest_catalog_entries(
     return results
 
 
-async def _retrieve_hits(
-    question: str,
-    *,
-    owner_session: str | None = None,
-    doc_ids: list[str] | None = None,
-) -> tuple[list[dict[str, Any]], str]:
-    """Return (hits, backend_name). Prefers Qdrant; falls back to SQLite cosine."""
-    q_emb = (await doc_vector.embed_texts([question]))[0]
+async def _expand_queries(question: str) -> list[str]:
+    """Generate alternate retrieval queries for better recall (multi-query RAG)."""
+    q = (question or "").strip()
+    if not q:
+        return []
+    queries = [q]
+    if not settings.doc_knowledge_multi_query:
+        return queries
+    try:
+        resp = await invoke_llm(
+            [
+                SystemMessage(
+                    content=(
+                        "Generate 2 short alternate search queries for enterprise document retrieval. "
+                        "Keep the same intent; vary keywords/synonyms. "
+                        'Return JSON only: {"queries":["...","..."]}'
+                    )
+                ),
+                HumanMessage(content=q),
+            ],
+            temperature=0.2,
+            role="rag",
+        )
+        raw = (getattr(resp, "content", None) or str(resp) or "").strip()
+        start, end = raw.find("{"), raw.rfind("}") + 1
+        data = json.loads(raw[start:end] if start != -1 and end > 0 else raw)
+        for alt in (data.get("queries") or [])[:2]:
+            s = str(alt).strip()
+            if s and s.lower() not in {x.lower() for x in queries}:
+                queries.append(s)
+    except Exception:
+        logger.exception("Multi-query expansion failed — using original question only")
+        # Lightweight heuristic expansions without LLM
+        cleaned = re.sub(r"[^\w\s]", " ", q)
+        if cleaned.strip() and cleaned.strip().lower() != q.lower():
+            queries.append(cleaned.strip())
+    return queries[:3]
 
+
+async def _search_one(
+    query_embedding: list[float],
+    *,
+    owner_session: str | None,
+    doc_ids: list[str] | None,
+    limit: int,
+) -> tuple[list[dict[str, Any]], str]:
     if qdrant_store.qdrant_configured():
         try:
             hits = await qdrant_store.search(
-                q_emb,
-                top_k=settings.doc_knowledge_top_k,
+                query_embedding,
+                top_k=limit,
                 owner_session=None,
                 doc_ids=doc_ids,
             )
             if not hits and owner_session:
                 hits = await qdrant_store.search(
-                    q_emb,
-                    top_k=settings.doc_knowledge_top_k,
+                    query_embedding,
+                    top_k=limit,
                     owner_session=owner_session,
                     doc_ids=doc_ids,
                 )
@@ -172,13 +239,49 @@ async def _retrieve_hits(
         corpus = await kd.load_chunks_with_embeddings(doc_ids=doc_ids)
     if not corpus:
         return [], "none"
-
     with_vectors = [c for c in corpus if c.get("embedding")]
     if not with_vectors:
         return [], "sqlite_no_vectors"
-
-    hits = doc_vector.search_chunks(q_emb, with_vectors, top_k=settings.doc_knowledge_top_k)
+    hits = doc_vector.search_chunks(query_embedding, with_vectors, top_k=limit)
     return hits, "sqlite"
+
+
+async def _retrieve_hits(
+    question: str,
+    *,
+    owner_session: str | None = None,
+    doc_ids: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """Multi-query retrieve → merge → MMR diversify."""
+    queries = await _expand_queries(question)
+    fetch_k = max(
+        int(settings.doc_knowledge_top_k or 8),
+        int(settings.doc_knowledge_fetch_k or 24),
+    )
+    top_k = int(settings.doc_knowledge_top_k or 8)
+    merged: dict[str, dict[str, Any]] = {}
+    backend = "none"
+
+    embeddings = await doc_vector.embed_texts(queries)
+    for emb in embeddings:
+        hits, backend = await _search_one(
+            emb,
+            owner_session=owner_session,
+            doc_ids=doc_ids,
+            limit=fetch_k,
+        )
+        for h in hits:
+            key = f"{h.get('doc_id')}:{h.get('chunk_index')}:{hash((h.get('text') or '')[:120])}"
+            prev = merged.get(key)
+            if prev is None or float(h.get("score") or 0) > float(prev.get("score") or 0):
+                merged[key] = h
+
+    if not merged:
+        return [], backend
+
+    ranked = sorted(merged.values(), key=lambda r: float(r.get("score") or 0), reverse=True)
+    diversified = doc_vector.mmr_select(ranked[:fetch_k], top_k=top_k)
+    return diversified, backend
 
 
 async def retrieve_answer(
@@ -208,22 +311,25 @@ async def retrieve_answer(
         return {
             "answer": (
                 "Documents are ingested but no matching chunks were retrieved. "
-                "If you just enabled Qdrant, re-run *ingest* so vectors are upserted. "
-                f"(backend={backend})"
+                "If you just enabled Qdrant or switched embedding models, re-run *ingest* "
+                f"so vectors are upserted. (backend={backend})"
             ),
             "citations": [],
             "hits": [],
             "vector_backend": backend,
         }
 
-    floor = 0.05 if backend == "sqlite" else 0.0
-    filtered = [h for h in hits if float(h.get("score") or 0) > floor] or hits[:3]
+    min_score = float(settings.doc_knowledge_min_score or 0.0)
+    # Qdrant cosine scores are typically higher; apply softer floor there
+    floor = min_score if backend == "sqlite" else max(0.0, min_score * 0.5)
+    filtered = [h for h in hits if float(h.get("score") or 0) >= floor] or hits[:4]
 
     context_blocks = []
     citations = []
     for i, h in enumerate(filtered, start=1):
         context_blocks.append(
-            f"[{i}] ({h.get('source_type')}/{h.get('doc_mode')}) {h.get('title')}\n{h.get('text')}"
+            f"[{i}] ({h.get('source_type')}/{h.get('doc_mode')}) {h.get('title')}\n"
+            f"{h.get('text')}"
         )
         citations.append(
             {
@@ -237,19 +343,17 @@ async def retrieve_answer(
             }
         )
     context = "\n\n---\n\n".join(context_blocks)
-    system = (
-        "You are the Doc RAG Agent for Sunny's Personal AI Agent. "
-        "Answer ONLY from the provided document context. "
-        "If the answer is not in context, say you don't have enough ingested evidence. "
-        "Cite sources as [n]. Keep Teams-friendly length (short paragraphs + bullets)."
-    )
     messages = [
-        SystemMessage(content=system),
+        SystemMessage(content=_RAG_SYSTEM),
         HumanMessage(
-            content=f"Question:\n{question}\n\nContext:\n{context}\n\nAnswer with citations."
+            content=(
+                f"Question:\n{question}\n\n"
+                f"Document context:\n{context}\n\n"
+                "Write a detailed, citation-grounded answer."
+            )
         ),
     ]
-    resp = await invoke_llm(messages, role="default")
+    resp = await invoke_llm(messages, temperature=0.15, role="rag")
     answer = (getattr(resp, "content", None) or str(resp) or "").strip()
     return {
         "answer": answer,
@@ -283,7 +387,7 @@ async def summarize_insights(
             for c in rag.get("citations") or []
         )
         evidence = "\n\n".join(
-            f"### {h.get('title')}\n{h.get('text')}" for h in (rag.get("hits") or [])[:8]
+            f"### {h.get('title')}\n{h.get('text')}" for h in (rag.get("hits") or [])[:10]
         )
     else:
         context = "\n".join(
@@ -296,8 +400,13 @@ async def summarize_insights(
 
     system = (
         "You are the Doc Insights Agent. Produce executive insights from ingested enterprise docs. "
-        "Structure: 1) Key themes 2) Risks/gaps 3) Recommended actions 4) Open questions. "
-        "Teams-friendly markdown. Do not invent facts beyond the evidence."
+        "Structure:\n"
+        "1) Executive summary\n"
+        "2) Key themes (detailed)\n"
+        "3) Risks / gaps\n"
+        "4) Recommended actions\n"
+        "5) Open questions\n"
+        "Teams-friendly markdown. Do not invent facts beyond the evidence. Cite document titles."
     )
     prompt = (
         f"Focus: {focus or 'overall corpus health'}\n\n"
@@ -305,7 +414,8 @@ async def summarize_insights(
     )
     resp = await invoke_llm(
         [SystemMessage(content=system), HumanMessage(content=prompt)],
-        role="default",
+        temperature=0.2,
+        role="rag",
     )
     summary = (getattr(resp, "content", None) or str(resp) or "").strip()
     return {

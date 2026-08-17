@@ -39,7 +39,16 @@ def qdrant_ready() -> bool:
 
 
 def _base_url() -> str:
-    return (settings.qdrant_url or "").rstrip("/")
+    raw = (settings.qdrant_url or "").strip().rstrip("/")
+    if not raw:
+        return ""
+    # Cloud endpoints often omit :6333 — REST API listens there by default
+    if raw.startswith("https://") and ":6333" not in raw and ":443" not in raw:
+        # If path-less host without port, append 6333
+        host = raw[len("https://") :]
+        if "/" not in host and ":" not in host:
+            return f"{raw}:6333"
+    return raw
 
 
 def _headers() -> dict[str, str]:

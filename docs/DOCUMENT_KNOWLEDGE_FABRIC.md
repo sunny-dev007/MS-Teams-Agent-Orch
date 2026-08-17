@@ -36,7 +36,7 @@ Teams message
 ```bash
 az webapp config appsettings set -g ai-agent-rg -n whatsapp-ai-agent-sunny --settings \
   ENABLE_DOC_KNOWLEDGE=false \
-  AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small \
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-large \
   DOC_KNOWLEDGE_SOURCES=sharepoint,onedrive,onenote \
   MS_GRAPH_ONEDRIVE_USER_ID=  # optional UPN/OID for OneDrive
 ```
@@ -53,7 +53,7 @@ Beyond Docs write scopes, listing/reading needs:
 | OneDrive (user) | `Files.Read.All` + set `MS_GRAPH_ONEDRIVE_USER_ID` |
 | OneNote pages | `Notes.Read.All` (or Sites-scoped Notes where available) |
 
-Also ensure an Azure OpenAI **embedding** deployment exists (`text-embedding-3-small` or similar).
+Also ensure Azure OpenAI **embedding** `text-embedding-3-large` and RAG chat `gpt-4.1` (or `gpt-5`) are deployed in Foundry.
 
 ## Verify
 
@@ -78,14 +78,25 @@ curl -sS https://whatsapp-ai-agent-sunny.azurewebsites.net/api/channels/copilot/
 | **Qdrant Cloud** (preferred when configured) | Vector upsert + semantic search for RAG |
 | **SQLite cosine** | Automatic fallback if Qdrant URL/key missing or search fails |
 
+### Quality stack (Foundry + Qdrant)
+
+| Piece | Recommended (on `suchi-m5s861xi-eastus`) |
+|---|---|
+| Embedding | `text-embedding-3-large` (3072-d) |
+| RAG / Insights LLM | `gpt-4.1` with fallbacks `gpt-5,gpt-4o` |
+| Chunking | Structure-aware (headings → paragraphs → sentences), ~1800 chars, ~20% overlap |
+| Retrieval | Multi-query expansion + over-fetch (`fetch_k=24`) + MMR diversify (`top_k=8`) |
+| Qdrant collection | `doc_knowledge_te3_large` (auto-created; Cosine) |
+
+Re-run **ingest** after changing embedding model or collection name.
+
 ### Qdrant setup (important)
 
-The screenshot **Cloud Management Key** manages your Qdrant account.  
 For ingest/RAG you need the **cluster REST endpoint** + a **Database API key**:
 
 1. Qdrant Cloud → **Clusters** → open your cluster  
-2. Copy **Cluster URL** (e.g. `https://xxxx.aws.cloud.qdrant.io:6333`)  
-3. **Data Access Control** → create/copy a **Database API key** (not only Management)  
+2. Copy **Cluster URL** (append `:6333` if missing)  
+3. **Data Access Control** → Database API key  
 4. Set App Service (never commit secrets to git):
 
 ```bash
@@ -94,11 +105,13 @@ az webapp config appsettings set -g ai-agent-rg -n whatsapp-ai-agent-sunny --set
   ENABLE_QDRANT=true \
   QDRANT_URL="https://YOUR-CLUSTER.aws.cloud.qdrant.io:6333" \
   QDRANT_API_KEY="***" \
-  QDRANT_COLLECTION=doc_knowledge_chunks \
-  AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+  QDRANT_COLLECTION=doc_knowledge_te3_large \
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-large \
+  AZURE_OPENAI_RAG_DEPLOYMENT=gpt-4.1 \
+  AZURE_OPENAI_RAG_FALLBACKS=gpt-5,gpt-4o,gpt-4.1-mini \
+  AZURE_OPENAI_PLANNING_DEPLOYMENT=gpt-4.1
 ```
 
-On first ingest the agent auto-creates collection `doc_knowledge_chunks` (Cosine, size = embedding dims).  
-If you previously ingested with SQLite-only vectors, **re-run ingest** after enabling Qdrant.
+On first ingest the agent auto-creates the Qdrant collection (Cosine, size = embedding dims).
 
 Health: `fabric.qdrant_configured` / `fabric.qdrant_ready` on `/api/channels/copilot/health`.

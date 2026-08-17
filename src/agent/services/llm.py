@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 # Sensible defaults aligned with typical Azure AI Foundry deployments.
 _DEFAULT_PLANNING_FALLBACKS = ("gpt-4.1", "gpt-4o", "gpt-4", "gpt-5")
 _DEFAULT_REVIEW_FALLBACKS = ("gpt-4.1", "gpt-4o", "gpt-4", "gpt-5")
+_DEFAULT_RAG_FALLBACKS = ("gpt-4.1", "gpt-5", "gpt-4o", "gpt-4", "gpt-4.1-mini")
 _DEFAULT_FALLBACKS = ("gpt-4o", "gpt-4.1", "gpt-4", "gpt-5", "gpt-4.1-mini")
 
 _RATE_LIMIT_RE = re.compile(
@@ -46,6 +47,21 @@ def deployment_chain(*, role: str = "default") -> list[str]:
         fallbacks = _parse_deployments(settings.azure_openai_review_fallbacks)
         if not fallbacks:
             fallbacks = list(_DEFAULT_REVIEW_FALLBACKS)
+    elif role == "rag" and settings.azure_openai_rag_deployment:
+        primary = settings.azure_openai_rag_deployment
+        fallbacks = _parse_deployments(settings.azure_openai_rag_fallbacks)
+        if not fallbacks:
+            fallbacks = list(_DEFAULT_RAG_FALLBACKS)
+    elif role == "rag":
+        # Prefer planning-quality model when dedicated RAG deployment unset
+        primary = (
+            settings.azure_openai_rag_deployment
+            or settings.azure_openai_planning_deployment
+            or settings.azure_openai_deployment
+        )
+        fallbacks = _parse_deployments(settings.azure_openai_rag_fallbacks)
+        if not fallbacks:
+            fallbacks = list(_DEFAULT_RAG_FALLBACKS)
     elif role == "review":
         fallbacks = _parse_deployments(settings.azure_openai_review_fallbacks)
         if not fallbacks:

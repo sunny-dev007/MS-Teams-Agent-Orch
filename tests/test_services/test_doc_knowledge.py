@@ -123,6 +123,38 @@ def test_chunk_and_cosine():
     assert doc_vector.cosine_similarity(a, b) > doc_vector.cosine_similarity(a, c)
 
 
+def test_structure_aware_chunking_keeps_headings():
+    text = (
+        "# Release Policy\n\n"
+        + ("QA sign-off is mandatory before production. " * 20)
+        + "\n\n## Rollback\n\n"
+        + ("Use the previous container image if health fails. " * 20)
+    )
+    chunks = doc_vector.chunk_text(text, chunk_chars=400, overlap=80)
+    assert len(chunks) >= 2
+    joined = "\n".join(chunks)
+    assert "Release Policy" in joined or "Rollback" in joined
+
+
+def test_mmr_diversifies_same_doc_duplicates():
+    cands = [
+        {"doc_id": "a", "text": "alpha one", "score": 0.9, "embedding": []},
+        {"doc_id": "a", "text": "alpha two", "score": 0.88, "embedding": []},
+        {"doc_id": "b", "text": "beta unique", "score": 0.8, "embedding": []},
+    ]
+    picked = doc_vector.mmr_select(cands, top_k=2, lambda_mult=0.5)
+    assert len(picked) == 2
+    assert {p["doc_id"] for p in picked} == {"a", "b"}
+
+
+def test_with_chunk_context_prefixes_metadata():
+    out = doc_vector.with_chunk_context(
+        ["body text"], title="Policy", source_type="sharepoint", doc_mode="policy"
+    )
+    assert out[0].startswith("Document: Policy")
+    assert "body text" in out[0]
+
+
 @pytest.mark.asyncio
 async def test_upsert_and_search(kb_db, monkeypatch):
     monkeypatch.setattr(
