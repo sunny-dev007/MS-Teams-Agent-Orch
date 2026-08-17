@@ -19,23 +19,20 @@ async def handle_channel_message(parsed: dict, source: str = "whatsapp") -> None
     # Fast-path: greetings/help — always allowed.
     if is_simple_greeting(message) or message.lower() in {"help", "menu", "?", "commands"}:
         try:
-            from agent.core.persona import GREETING_REPLY, HELP_MENU
+            from agent.core.persona import build_greeting_reply, build_help_menu
             from agent.core.session import get_session
             from agent.services.channel_notify import send_channel_message
             from agent.workflow.gates import should_block_new_task
             from agent.workflow.resume_context import format_session_status
 
             session = await get_session(phone)
-            if should_block_new_task(session) and message.lower() in {"help", "menu", "?", "commands"}:
-                text = HELP_MENU + "\n\n---\n\n" + format_session_status(session)
-            elif session.get("awaiting") and message.lower() in {"help", "menu", "?", "commands"}:
-                text = HELP_MENU + "\n\n---\n\n" + format_session_status(session)
+            is_help = message.lower() in {"help", "menu", "?", "commands"}
+            if is_help:
+                text = build_help_menu()
+                if should_block_new_task(session) or session.get("awaiting"):
+                    text = text + "\n\n────────────────\n\n" + format_session_status(session)
             else:
-                text = (
-                    HELP_MENU
-                    if message.lower() in {"help", "menu", "?", "commands"}
-                    else GREETING_REPLY
-                )
+                text = build_greeting_reply(session=session)
             await send_channel_message(phone, text)
             return
         except Exception:

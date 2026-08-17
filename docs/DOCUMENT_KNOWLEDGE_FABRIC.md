@@ -23,7 +23,8 @@ Additive feature for Teams (and WhatsApp): **list → select → ingest/vectoriz
 
 Example: `1. [SP] *developer-guide.md* (guide / WhatsApp-MultiAgent-Context)`
 
-Say `help` for the full tools & quick-prompts catalog (all agents).
+Say `help` for the full tools & quick-prompts catalog (all agents with `ON`/`OFF`).
+Say `hello` for the welcome card: session status, *Active agents*, and suggested next steps.
 
 ```
 Teams message

@@ -28,7 +28,11 @@ class GeneralAgent:
                     SystemMessage(
                         content=(
                             get_persona_prompt()
-                            + "\n\nAnswer concisely for WhatsApp. Prefer bullets over long paragraphs."
+                            + "\n\nFormat for Teams/WhatsApp: short sections, bold headings, "
+                            "bullets. If the user only greets you, list Active agents "
+                            "(Dev, Email, Meeting, Doc Library/RAG/Insights, Docs, QA) "
+                            "with what each can do and one example prompt — do not invent "
+                            "session history. Prefer *help* for the full catalog."
                         )
                     ),
                     HumanMessage(content=state.get("user_message", "Hello")),

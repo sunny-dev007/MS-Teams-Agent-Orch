@@ -11,7 +11,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from agent.agents.state import AgentState
 from agent.core.logging import get_logger
-from agent.core.persona import GREETING_REPLY, HELP_MENU
+from agent.core.persona import build_greeting_reply, build_help_menu
 from agent.core.session import get_session
 from agent.services.llm import invoke_llm
 
@@ -248,10 +248,16 @@ async def plan(state: AgentState) -> AgentState:
             return {**state, **updates}
 
     if is_simple_greeting(user_msg):
+        session_snap = None
+        if phone:
+            try:
+                session_snap = await get_session(phone)
+            except Exception:
+                session_snap = None
         return {
             **state,
             "intent": "general",
-            "notification_text": GREETING_REPLY,
+            "notification_text": build_greeting_reply(session=session_snap),
             "planned_by": AGENT_NAME,
         }
 
@@ -259,7 +265,7 @@ async def plan(state: AgentState) -> AgentState:
         return {
             **state,
             "intent": "general",
-            "notification_text": HELP_MENU,
+            "notification_text": build_help_menu(),
             "planned_by": AGENT_NAME,
         }
 

@@ -1,7 +1,12 @@
 import pytest
 
 from agent.planner.agent import is_simple_greeting, plan
-from agent.core.persona import GREETING_REPLY, HELP_MENU
+from agent.core.persona import (
+    GREETING_REPLY,
+    HELP_MENU,
+    build_greeting_reply,
+    build_help_menu,
+)
 
 
 @pytest.mark.parametrize(
@@ -22,13 +27,25 @@ def test_is_simple_greeting(message, expected):
 
 def test_persona_assets():
     assert "Sunny" in GREETING_REPLY
-    assert "Email Agent" in HELP_MENU
-    assert "Document Knowledge Fabric" in HELP_MENU
-    assert "[SP]=SharePoint" in HELP_MENU
-    assert "check my repos" in HELP_MENU
-    assert "ask docs" in HELP_MENU
-    assert "write release notes" in HELP_MENU
-    assert "run QA" in HELP_MENU
+    help_text = build_help_menu()
+    greet = build_greeting_reply()
+    assert "Active agents" in help_text
+    assert "Active agents" in greet
+    assert "Command catalog" in help_text
+    assert "[SP]" in help_text
+    assert "Dev Agent" in greet
+    assert "check my repos" in help_text
+    assert "ask docs" in help_text
+    assert "write release notes" in help_text
+    assert "run QA" in help_text
+    # Legacy constants still export usable text
+    assert "Sunny" in HELP_MENU
+
+
+def test_greeting_respects_session_gate():
+    text = build_greeting_reply(session={"awaiting": "plan_approval"})
+    assert "plan_approval" in text
+    assert "status" in text.lower()
 
 
 @pytest.mark.asyncio
@@ -52,7 +69,16 @@ async def test_planner_help_fastpath():
     result = await plan({"user_message": "help", "task_id": "t1", "whatsapp_phone": ""})
     assert result["intent"] == "general"
     assert result["planned_by"] == "planner"
-    assert "Personal AI Agent" in result["notification_text"]
+    assert "Command catalog" in result["notification_text"]
+    assert "Active agents" in result["notification_text"]
+
+
+@pytest.mark.asyncio
+async def test_planner_hello_shows_agents():
+    result = await plan({"user_message": "Hello", "task_id": "t1", "whatsapp_phone": ""})
+    assert result["intent"] == "general"
+    assert "Active agents" in result["notification_text"]
+    assert "Suggested next" in result["notification_text"]
 
 
 @pytest.mark.asyncio
