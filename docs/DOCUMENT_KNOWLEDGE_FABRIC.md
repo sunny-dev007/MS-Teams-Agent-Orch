@@ -29,7 +29,7 @@ Teams message
 - `ENABLE_DOC_KNOWLEDGE=false` by default (App Service / CI must not auto-enable).
 - Agents registered always; flag off → `status: skipped` message (no Graph/LLM side effects).
 - Routing never enters `coding_architect` / `repo_wizard` for knowledge intents.
-- Binary Office/PDF: metadata-only stub in v1 (title/mode searchable). Prefer `.md` / `.txt` / `.html` for full-text RAG.
+- Binary Office/PDF: extracted via `doc_extract` (DOCX/PPTX/XLSX/PDF/CSV/MD). Legacy `.doc/.ppt/.xls` are rejected gracefully — re-save as modern formats. Never UTF-8-decode ZIP bytes into Qdrant.
 
 ## App Service settings
 

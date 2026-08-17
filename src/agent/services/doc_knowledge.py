@@ -73,7 +73,19 @@ async def ingest_catalog_entries(
                 },
             )
             text, extract_status = await graph_docs.fetch_document_text(entry)
-            if not text.strip():
+            bad_status = (
+                not text.strip()
+                or extract_status.startswith("rejected_")
+                or extract_status.startswith("unsupported_")
+                or extract_status.endswith("_empty")
+                or extract_status.startswith("extract_error_")
+                or extract_status in ("empty", "missing_item_id", "missing_onenote_id")
+            )
+            # Legacy OLE notice is informative but not useful RAG corpus
+            if extract_status == "unsupported_legacy_ole":
+                bad_status = True
+            if bad_status:
+                reason = extract_status or "empty"
                 await kd.upsert_document(
                     doc_id=doc["id"],
                     external_id=external_id,
@@ -81,11 +93,16 @@ async def ingest_catalog_entries(
                     title=title,
                     status=kd.STATUS_FAILED,
                     extract_status=extract_status or "empty",
-                    error="No extractable text",
+                    error=f"No extractable text ({reason})",
                     owner_session=owner_session,
                 )
                 results.append(
-                    {"id": doc["id"], "title": title, "status": "failed", "reason": "empty"}
+                    {
+                        "id": doc["id"],
+                        "title": title,
+                        "status": "failed",
+                        "reason": reason,
+                    }
                 )
                 continue
 

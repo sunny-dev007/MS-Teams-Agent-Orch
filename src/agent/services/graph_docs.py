@@ -1,6 +1,8 @@
 """Graph document listing + content fetch for Document Knowledge Fabric.
 
 Lists SharePoint site drive, optional OneDrive (user), and OneNote pages.
+Binary Office/PDF content is extracted via agent.services.doc_extract
+(DOCX/PPTX/XLSX/PDF/CSV/MD) — never UTF-8-decode ZIP bytes into Qdrant.
 Does not mutate live Docs/QA upload paths.
 """
 
@@ -12,7 +14,7 @@ from typing import Any
 
 from agent.config import settings
 from agent.core.logging import get_logger
-from agent.services import ms_graph
+from agent.services import doc_extract, ms_graph
 
 logger = get_logger(__name__)
 
@@ -25,6 +27,7 @@ _TEXT_EXTS = {
     ".md",
     ".markdown",
     ".csv",
+    ".tsv",
     ".json",
     ".xml",
     ".html",
@@ -38,7 +41,7 @@ _TEXT_EXTS = {
     ".cs",
     ".java",
 }
-_OFFICE_HINTS = {".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".pdf"}
+_OFFICE_EXTS = {".docx", ".pptx", ".xlsx", ".pdf", ".doc", ".ppt", ".xls"}
 
 
 class _HTMLTextExtractor(HTMLParser):
@@ -140,16 +143,17 @@ def _drive_item_to_catalog(item: dict[str, Any], *, source: str) -> dict[str, An
 
 
 async def list_sharepoint_files(*, site_id: str, limit: int) -> list[dict[str, Any]]:
-    # Recent files under site default drive (root + one level of children via search-like listing)
     items = await ms_graph.graph_paginate(
         f"/sites/{site_id}/drive/root/children",
-        params={"$top": min(limit, 50), "$select": "id,name,webUrl,size,file,folder,lastModifiedDateTime,parentReference"},
+        params={
+            "$top": min(limit, 50),
+            "$select": "id,name,webUrl,size,file,folder,lastModifiedDateTime,parentReference",
+        },
         max_pages=2,
     )
     out: list[dict[str, Any]] = []
     for it in items:
         if it.get("folder") is not None and not it.get("file"):
-            # Expand one folder level for better UX (ReleaseNotes, Docs, etc.)
             folder_id = it.get("id")
             if not folder_id:
                 continue
@@ -265,29 +269,28 @@ async def list_knowledge_catalog(*, limit: int | None = None) -> list[dict[str, 
     if SOURCE_ONENOTE in sources and site_id:
         catalog.extend(await list_onenote_pages(site_id=site_id, limit=per))
 
-    # Stable order: source then title
     catalog.sort(key=lambda r: (r.get("source_type") or "", (r.get("title") or "").lower()))
-    # Assign selection keys 1..N
     for i, row in enumerate(catalog[:cap], start=1):
         row["pick"] = i
     return catalog[:cap]
 
 
-def _is_extractable(entry: dict[str, Any]) -> bool:
-    ext = (entry.get("extension") or "").lower()
-    mime = (entry.get("mime_type") or "").lower()
+def _is_downloadable(entry: dict[str, Any]) -> bool:
     if entry.get("source_type") == SOURCE_ONENOTE:
-        return True
-    if ext in _TEXT_EXTS or mime.startswith("text/") or "json" in mime or "xml" in mime:
-        return True
-    if ext in _OFFICE_HINTS or "officedocument" in mime or "pdf" in mime:
-        return False  # binary office — metadata-only ingest with stub note
-    return mime.startswith("text/")
+        return False
+    return True
 
 
 async def fetch_document_text(entry: dict[str, Any]) -> tuple[str, str]:
-    """Download extractable text. Returns (text, extract_status)."""
+    """Download + extract text. Returns (text, extract_status).
+
+    Never UTF-8-decodes Office/PDF ZIP/binary into the vector store.
+    """
     source = entry.get("source_type")
+    title = entry.get("title") or "untitled"
+    mime = entry.get("mime_type") or ""
+    ext = entry.get("extension") or ""
+
     if source == SOURCE_ONENOTE:
         content_url = entry.get("content_url") or ""
         if not content_url:
@@ -300,31 +303,26 @@ async def fetch_document_text(entry: dict[str, Any]) -> tuple[str, str]:
         )
         return html_to_text(raw.decode("utf-8", errors="replace")), "html_extracted"
 
-    if not _is_extractable(entry):
-        # Metadata-only placeholder so RAG still knows the doc exists
-        stub = (
-            f"Document title: {entry.get('title')}\n"
-            f"Source: {source}\n"
-            f"Mode: {entry.get('doc_mode')}\n"
-            f"URL: {entry.get('web_url')}\n"
-            f"Note: Binary Office/PDF content extraction is not enabled in v1; "
-            f"metadata and title are searchable. Convert to .md/.txt for full text RAG."
-        )
-        return stub, "metadata_only"
+    if not _is_downloadable(entry):
+        return "", "not_downloadable"
 
     drive_id = entry.get("drive_id") or ""
     item_id = entry.get("item_id") or entry.get("external_id") or ""
     if drive_id and item_id:
         path = f"/drives/{drive_id}/items/{item_id}/content"
     elif item_id:
-        # Site drive fallback
         site_id, _ = await resolve_site_id()
         path = f"/sites/{site_id}/drive/items/{item_id}/content"
     else:
         return "", "missing_item_id"
 
     raw, ct = await ms_graph.graph_request_bytes("GET", path)
-    text = raw.decode("utf-8", errors="replace")
-    if "html" in (ct or "") or (entry.get("extension") or "") in (".html", ".htm"):
-        text = html_to_text(text)
-    return text.strip(), "text_extracted"
+    filename = title
+    if ext and not title.lower().endswith(ext.lower()):
+        filename = f"{title}{ext}"
+    text, status = doc_extract.extract_bytes(
+        raw,
+        filename=filename,
+        mime=ct or mime,
+    )
+    return (text or "").strip(), status
