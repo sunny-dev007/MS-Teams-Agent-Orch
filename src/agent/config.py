@@ -86,6 +86,14 @@ class Settings(BaseSettings):
     doc_knowledge_chunk_overlap: int = 150
     doc_knowledge_top_k: int = 5
 
+    # Qdrant Cloud (optional vector backend for Doc Knowledge — defaults empty = SQLite cosine)
+    # Use the *cluster* REST URL + Database API key (not only the Cloud Management key).
+    qdrant_url: str = ""  # e.g. https://xxxx.aws.cloud.qdrant.io:6333
+    qdrant_api_key: SecretStr = SecretStr("")
+    qdrant_collection: str = "doc_knowledge_chunks"
+    # Prefer Qdrant when URL+key set; set false to force local SQLite vectors
+    enable_qdrant: bool = True
+
     # Microsoft Graph (Docs Agent + Doc Knowledge) — app-only client credentials
     ms_graph_tenant_id: str = ""
     ms_graph_client_id: str = ""

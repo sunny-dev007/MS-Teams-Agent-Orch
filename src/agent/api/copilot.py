@@ -216,7 +216,7 @@ async def copilot_channel_health() -> dict[str, Any]:
     """Liveness + light auth/config probes for Copilot / ops checks."""
     azdo_configured = bool(settings.azdo_org_url and settings.azdo_pat.get_secret_value())
     github_configured = bool(settings.github_token.get_secret_value())
-    from agent.services import ms_graph
+    from agent.services import ms_graph, qdrant_store
 
     return {
         "enabled": bool(settings.enable_teams_copilot_channel),
@@ -234,5 +234,8 @@ async def copilot_channel_health() -> dict[str, Any]:
             "graph_configured": ms_graph.graph_configured(),
             "docs_agent_ready": ms_graph.docs_agent_ready(),
             "doc_knowledge_ready": ms_graph.doc_knowledge_ready(),
+            "qdrant_configured": qdrant_store.qdrant_configured(),
+            "qdrant_ready": qdrant_store.qdrant_ready(),
+            "qdrant_collection": (settings.qdrant_collection or "") if qdrant_store.qdrant_configured() else "",
         },
     }

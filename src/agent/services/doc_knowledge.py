@@ -1,4 +1,8 @@
-"""Ingest + retrieve orchestration for Document Knowledge Fabric."""
+"""Ingest + retrieve orchestration for Document Knowledge Fabric.
+
+Vectors prefer Qdrant Cloud when configured; SQLite keeps catalog + chunk text
+and remains the offline cosine fallback.
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from agent.config import settings
 from agent.core.logging import get_logger
 from agent.models import knowledge_doc as kd
-from agent.services import doc_vector, graph_docs
+from agent.services import doc_vector, graph_docs, qdrant_store
 from agent.services.llm import invoke_llm
 
 logger = get_logger(__name__)
@@ -55,11 +59,42 @@ async def ingest_catalog_entries(
                     error="No extractable text",
                     owner_session=owner_session,
                 )
-                results.append({"id": doc["id"], "title": title, "status": "failed", "reason": "empty"})
+                results.append(
+                    {"id": doc["id"], "title": title, "status": "failed", "reason": "empty"}
+                )
                 continue
 
             records = await doc_vector.build_chunk_records(text)
-            await kd.replace_chunks(doc["id"], records)
+            vector_backend = "sqlite"
+            qdrant_points = 0
+            store_local_embeddings = True
+            if qdrant_store.qdrant_configured():
+                try:
+                    qdrant_points = await qdrant_store.upsert_document_chunks(
+                        doc_id=doc["id"],
+                        title=title,
+                        source_type=source,
+                        doc_mode=doc.get("doc_mode") or "general",
+                        web_url=entry.get("web_url"),
+                        owner_session=owner_session,
+                        records=records,
+                    )
+                    if qdrant_points > 0:
+                        vector_backend = "qdrant"
+                        # Keep SQLite lean: text only; vectors live in Qdrant
+                        store_local_embeddings = False
+                except Exception:
+                    logger.exception(
+                        "Qdrant upsert failed for %s — falling back to SQLite vectors",
+                        title,
+                    )
+
+            sqlite_records = (
+                records
+                if store_local_embeddings
+                else [{"text": r.get("text") or "", "embedding": []} for r in records]
+            )
+            await kd.replace_chunks(doc["id"], sqlite_records)
             updated = await kd.upsert_document(
                 doc_id=doc["id"],
                 external_id=external_id,
@@ -71,6 +106,15 @@ async def ingest_catalog_entries(
                 chunk_count=len(records),
                 owner_session=owner_session,
                 error="",
+                metadata={
+                    "folder": entry.get("folder") or "",
+                    "extension": entry.get("extension") or "",
+                    "size": entry.get("size") or 0,
+                    "last_modified": entry.get("last_modified") or "",
+                    "pick": entry.get("pick"),
+                    "vector_backend": vector_backend,
+                    "qdrant_points": qdrant_points,
+                },
             )
             results.append(
                 {
@@ -81,6 +125,8 @@ async def ingest_catalog_entries(
                     "extract_status": extract_status,
                     "doc_mode": updated.get("doc_mode"),
                     "source_type": source,
+                    "vector_backend": vector_backend,
+                    "qdrant_points": qdrant_points,
                 }
             )
         except Exception as exc:
@@ -89,17 +135,62 @@ async def ingest_catalog_entries(
     return results
 
 
+async def _retrieve_hits(
+    question: str,
+    *,
+    owner_session: str | None = None,
+    doc_ids: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], str]:
+    """Return (hits, backend_name). Prefers Qdrant; falls back to SQLite cosine."""
+    q_emb = (await doc_vector.embed_texts([question]))[0]
+
+    if qdrant_store.qdrant_configured():
+        try:
+            hits = await qdrant_store.search(
+                q_emb,
+                top_k=settings.doc_knowledge_top_k,
+                owner_session=None,
+                doc_ids=doc_ids,
+            )
+            if not hits and owner_session:
+                hits = await qdrant_store.search(
+                    q_emb,
+                    top_k=settings.doc_knowledge_top_k,
+                    owner_session=owner_session,
+                    doc_ids=doc_ids,
+                )
+            if hits:
+                return hits, "qdrant"
+        except Exception:
+            logger.exception("Qdrant search failed — using SQLite fallback")
+
+    corpus = await kd.load_chunks_with_embeddings(
+        owner_session=owner_session,
+        doc_ids=doc_ids,
+    )
+    if not corpus and owner_session:
+        corpus = await kd.load_chunks_with_embeddings(doc_ids=doc_ids)
+    if not corpus:
+        return [], "none"
+
+    with_vectors = [c for c in corpus if c.get("embedding")]
+    if not with_vectors:
+        return [], "sqlite_no_vectors"
+
+    hits = doc_vector.search_chunks(q_emb, with_vectors, top_k=settings.doc_knowledge_top_k)
+    return hits, "sqlite"
+
+
 async def retrieve_answer(
     question: str,
     *,
     owner_session: str | None = None,
     doc_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    corpus = await kd.load_chunks_with_embeddings(
-        owner_session=owner_session,
-        doc_ids=doc_ids,
-    )
-    if not corpus:
+    ready = await kd.list_ready_documents(owner_session=None, limit=1)
+    if not ready and owner_session:
+        ready = await kd.list_ready_documents(owner_session=owner_session, limit=1)
+    if not ready:
         return {
             "answer": (
                 "No ingested documents yet. Say *list my documents*, pick numbers, "
@@ -107,16 +198,30 @@ async def retrieve_answer(
             ),
             "citations": [],
             "hits": [],
+            "vector_backend": "none",
         }
 
-    q_emb = (await doc_vector.embed_texts([question]))[0]
-    hits = doc_vector.search_chunks(q_emb, corpus, top_k=settings.doc_knowledge_top_k)
-    # Drop very weak matches
-    hits = [h for h in hits if float(h.get("score") or 0) > 0.05] or hits[:3]
+    hits, backend = await _retrieve_hits(
+        question, owner_session=owner_session, doc_ids=doc_ids
+    )
+    if not hits:
+        return {
+            "answer": (
+                "Documents are ingested but no matching chunks were retrieved. "
+                "If you just enabled Qdrant, re-run *ingest* so vectors are upserted. "
+                f"(backend={backend})"
+            ),
+            "citations": [],
+            "hits": [],
+            "vector_backend": backend,
+        }
+
+    floor = 0.05 if backend == "sqlite" else 0.0
+    filtered = [h for h in hits if float(h.get("score") or 0) > floor] or hits[:3]
 
     context_blocks = []
     citations = []
-    for i, h in enumerate(hits, start=1):
+    for i, h in enumerate(filtered, start=1):
         context_blocks.append(
             f"[{i}] ({h.get('source_type')}/{h.get('doc_mode')}) {h.get('title')}\n{h.get('text')}"
         )
@@ -146,7 +251,12 @@ async def retrieve_answer(
     ]
     resp = await invoke_llm(messages, role="default")
     answer = (getattr(resp, "content", None) or str(resp) or "").strip()
-    return {"answer": answer, "citations": citations, "hits": hits}
+    return {
+        "answer": answer,
+        "citations": citations,
+        "hits": filtered,
+        "vector_backend": backend,
+    }
 
 
 async def summarize_insights(
@@ -156,6 +266,8 @@ async def summarize_insights(
     doc_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     docs = await kd.list_ready_documents(owner_session=owner_session, limit=40)
+    if not docs:
+        docs = await kd.list_ready_documents(limit=40)
     if doc_ids:
         docs = [d for d in docs if d["id"] in set(doc_ids)]
     if not docs:
@@ -164,7 +276,6 @@ async def summarize_insights(
             "docs_used": [],
         }
 
-    # Prefer semantic hits when focus is a real question; else use previews of all docs
     if focus and len(focus.split()) >= 3:
         rag = await retrieve_answer(focus, owner_session=owner_session, doc_ids=doc_ids)
         context = "\n\n".join(
@@ -200,7 +311,12 @@ async def summarize_insights(
     return {
         "summary": summary,
         "docs_used": [
-            {"id": d["id"], "title": d["title"], "source_type": d["source_type"], "doc_mode": d["doc_mode"]}
+            {
+                "id": d["id"],
+                "title": d["title"],
+                "source_type": d["source_type"],
+                "doc_mode": d["doc_mode"],
+            }
             for d in docs[:20]
         ],
     }

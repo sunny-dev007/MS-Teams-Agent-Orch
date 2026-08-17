@@ -91,7 +91,17 @@ async def test_copilot_message_routes_and_returns_outbox(copilot_env):
 
 
 @pytest.mark.asyncio
-async def test_copilot_health(copilot_env):
+async def test_copilot_health(copilot_env, monkeypatch):
+    from agent.config import settings
+    from pydantic import SecretStr
+
+    monkeypatch.setattr(settings, "enable_docs_agent", False)
+    monkeypatch.setattr(settings, "enable_qa_agent", False)
+    monkeypatch.setattr(settings, "enable_doc_knowledge", False)
+    monkeypatch.setattr(settings, "enable_qdrant", True)
+    monkeypatch.setattr(settings, "qdrant_url", "")
+    monkeypatch.setattr(settings, "qdrant_api_key", SecretStr(""))
+
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/api/channels/copilot/health")
@@ -107,6 +117,8 @@ async def test_copilot_health(copilot_env):
     assert body["fabric"]["qa_agent_enabled"] is False
     assert body["fabric"]["doc_knowledge_enabled"] is False
     assert "doc_knowledge_ready" in body["fabric"]
+    assert body["fabric"]["qdrant_configured"] is False
+    assert "qdrant_ready" in body["fabric"]
 
 
 @pytest.mark.asyncio

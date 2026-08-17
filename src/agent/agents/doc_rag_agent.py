@@ -71,9 +71,19 @@ async def ask_documents(state: AgentState) -> AgentState:
             f"({c.get('source_type')}/{c.get('doc_mode')}, score={c.get('score')}){link}"
         )
 
-    note = f"*Doc RAG Agent*\n\n{result.get('answer') or '_No answer_'}\n"
+    note = f"*Doc RAG Agent*"
+    backend = ""
+    # surface backend lightly when present in citations path
+    from agent.services import qdrant_store
+
+    if qdrant_store.qdrant_configured():
+        note += " _(Qdrant)_"
+    note += f"\n\n{result.get('answer') or '_No answer_'}\n"
     if cite_lines:
         note += "\n*Sources*\n" + "\n".join(cite_lines)
+    if result.get("vector_backend"):
+        backend = str(result["vector_backend"])
+        note += f"\n\n_vector: {backend}_"
 
     return {
         **state,

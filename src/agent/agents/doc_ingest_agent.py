@@ -89,7 +89,11 @@ async def ingest_documents(state: AgentState) -> AgentState:
     ok = [r for r in results if r.get("status") == "ready"]
     bad = [r for r in results if r.get("status") != "ready"]
 
-    lines = [f"✓ *{r['title']}* — {r.get('chunks', 0)} chunks ({r.get('extract_status')})" for r in ok]
+    lines = [
+        f"✓ *{r['title']}* — {r.get('chunks', 0)} chunks "
+        f"({r.get('extract_status')}, vec={r.get('vector_backend', 'sqlite')})"
+        for r in ok
+    ]
     lines += [f"✗ *{r.get('title')}* — {r.get('reason')}" for r in bad]
 
     note = (

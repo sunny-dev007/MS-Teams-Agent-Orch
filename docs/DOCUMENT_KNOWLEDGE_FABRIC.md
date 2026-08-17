@@ -19,8 +19,8 @@ Teams message
     → planner keywords (beat repo/coding session)
     → LangGraph specialist → notify_result
          Library lists Graph files + stores catalog in session
-         Ingest downloads text, chunks, embeds, stores in SQLite
-         RAG embeds question, cosine top-k, LLM answer + citations
+         Ingest downloads text, chunks, embeds → Qdrant (SQLite catalog)
+         RAG embeds question → Qdrant top-k (SQLite cosine fallback)
          Insights synthesizes themes/risks/actions from corpus
 ```
 
@@ -70,6 +70,35 @@ curl -sS https://whatsapp-ai-agent-sunny.azurewebsites.net/api/channels/copilot/
 4. `summarize docs <focus>`
 5. `list ingested documents`
 
-## Storage
+## Storage / vector backend
 
-SQLite tables `knowledge_documents` + `knowledge_chunks` (same App Service DB pattern as `release_events`). Vectors stored as JSON float arrays; similarity is in-process cosine (fits B1 corpora without a separate vector DB).
+| Layer | Role |
+|---|---|
+| **SQLite** `knowledge_documents` + `knowledge_chunks` | Catalog, metadata (`doc_mode`, source), chunk **text** |
+| **Qdrant Cloud** (preferred when configured) | Vector upsert + semantic search for RAG |
+| **SQLite cosine** | Automatic fallback if Qdrant URL/key missing or search fails |
+
+### Qdrant setup (important)
+
+The screenshot **Cloud Management Key** manages your Qdrant account.  
+For ingest/RAG you need the **cluster REST endpoint** + a **Database API key**:
+
+1. Qdrant Cloud → **Clusters** → open your cluster  
+2. Copy **Cluster URL** (e.g. `https://xxxx.aws.cloud.qdrant.io:6333`)  
+3. **Data Access Control** → create/copy a **Database API key** (not only Management)  
+4. Set App Service (never commit secrets to git):
+
+```bash
+az webapp config appsettings set -g ai-agent-rg -n whatsapp-ai-agent-sunny --settings \
+  ENABLE_DOC_KNOWLEDGE=true \
+  ENABLE_QDRANT=true \
+  QDRANT_URL="https://YOUR-CLUSTER.aws.cloud.qdrant.io:6333" \
+  QDRANT_API_KEY="***" \
+  QDRANT_COLLECTION=doc_knowledge_chunks \
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small
+```
+
+On first ingest the agent auto-creates collection `doc_knowledge_chunks` (Cosine, size = embedding dims).  
+If you previously ingested with SQLite-only vectors, **re-run ingest** after enabling Qdrant.
+
+Health: `fabric.qdrant_configured` / `fabric.qdrant_ready` on `/api/channels/copilot/health`.
