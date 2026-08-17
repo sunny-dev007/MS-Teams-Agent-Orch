@@ -245,6 +245,15 @@ async def copilot_channel_health() -> dict[str, Any]:
     github_configured = bool(settings.github_token.get_secret_value())
     from agent.services import azure_boards, ms_graph, qdrant_store
 
+    graph_roles: list[str] = []
+    graph_has_mail_read = False
+    if ms_graph.graph_configured() and settings.enable_outlook_agent:
+        try:
+            graph_roles = await ms_graph.graph_token_roles()
+            graph_has_mail_read = "Mail.Read" in graph_roles
+        except Exception:
+            graph_roles = []
+
     return {
         "enabled": bool(settings.enable_teams_copilot_channel),
         "api_key_configured": bool(settings.copilot_api_key.get_secret_value()),
@@ -261,6 +270,8 @@ async def copilot_channel_health() -> dict[str, Any]:
             "outlook_agent_enabled": bool(settings.enable_outlook_agent),
             "boards_agent_enabled": bool(settings.enable_boards_agent),
             "graph_configured": ms_graph.graph_configured(),
+            "graph_has_mail_read_role": graph_has_mail_read,
+            "graph_token_roles": graph_roles,
             "docs_agent_ready": ms_graph.docs_agent_ready(),
             "doc_knowledge_ready": ms_graph.doc_knowledge_ready(),
             "outlook_agent_ready": ms_graph.outlook_agent_ready(),

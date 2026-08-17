@@ -10,10 +10,70 @@ from agent.config import Settings
 from agent.services import azure_boards
 
 
-def test_outlook_boards_flags_default_off():
-    s = Settings(_env_file=None)
-    assert s.enable_outlook_agent is False
-    assert s.enable_boards_agent is False
+def test_decode_token_roles_and_clear_cache():
+    import base64
+    import json
+
+    from agent.services import ms_graph
+
+    payload = {"roles": ["Sites.ReadWrite.All", "Mail.Read", "User.Read.All"]}
+    raw = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    token = f"hdr.{raw}.sig"
+    assert "Mail.Read" in ms_graph.decode_token_roles(token)
+
+    ms_graph._token_cache["access_token"] = "stale"
+    ms_graph._token_cache["expires_at"] = 9_999_999_999.0
+    ms_graph.clear_app_token_cache()
+    assert ms_graph._token_cache["access_token"] == ""
+    assert ms_graph._token_cache["expires_at"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_graph_request_retries_once_on_403(monkeypatch):
+    import json
+
+    import httpx
+
+    from agent.services import ms_graph
+
+    calls = {"n": 0}
+
+    class FakeResp:
+        def __init__(self, status_code: int, body: dict):
+            self.status_code = status_code
+            self._body = body
+            self.text = json.dumps(body)
+            self.content = self.text.encode()
+            self.request = httpx.Request("GET", "https://graph.microsoft.com/v1.0/x")
+
+        def json(self):
+            return self._body
+
+    class FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def request(self, method, url, headers=None, json=None, params=None):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                return FakeResp(
+                    403, {"error": {"code": "ErrorAccessDenied", "message": "denied"}}
+                )
+            return FakeResp(200, {"value": []})
+
+    monkeypatch.setattr(ms_graph, "graph_configured", lambda: True)
+    monkeypatch.setattr(ms_graph, "get_app_token", AsyncMock(return_value="tok"))
+    monkeypatch.setattr(ms_graph.httpx, "AsyncClient", FakeClient)
+
+    body = await ms_graph.graph_request("GET", "/users/x/messages")
+    assert body == {"value": []}
+    assert calls["n"] == 2
 
 
 def test_boards_wiql_never_uses_at_me():

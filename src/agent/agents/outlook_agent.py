@@ -107,16 +107,46 @@ async def read_outlook(state: AgentState) -> AgentState:
         }
 
     try:
+        from agent.services import ms_graph
+
         display = ""
+        mailbox_id = user_id
         try:
-            from agent.services import ms_graph
-
             profile = await ms_graph.get_user_profile(user_id)
-            display = (profile.get("displayName") or profile.get("mail") or "").strip()
+            display = (
+                profile.get("displayName")
+                or profile.get("mail")
+                or profile.get("userPrincipalName")
+                or ""
+            ).strip()
+            # Prefer Entra OID for mail APIs (more reliable than UPN encoding)
+            oid = str(profile.get("id") or "").strip()
+            if oid:
+                mailbox_id = oid
         except Exception:
-            logger.exception("Outlook profile lookup failed (continuing)")
+            logger.exception("Outlook profile lookup failed (continuing with raw id)")
 
-        messages = await outlook_mail.list_user_inbox(user_id)
+        # Catch stale tokens minted before Application Mail.Read was consented
+        roles = await ms_graph.graph_token_roles()
+        if roles and "Mail.Read" not in roles:
+            ms_graph.clear_app_token_cache()
+            roles = await ms_graph.graph_token_roles()
+            if "Mail.Read" not in roles:
+                return {
+                    **state,
+                    "status": "failed",
+                    "handled_by": AGENT_NAME,
+                    "notification_text": (
+                        "*Outlook Agent* — Graph app token is missing role **Mail.Read**.\n\n"
+                        f"Token roles: `{', '.join(roles) or '(none)'}`\n\n"
+                        "On app **Release-Agent-Fabric-Docs** add **Application** "
+                        "**Mail.Read**, grant admin consent, then **restart** the App Service "
+                        "and retry."
+                    ),
+                    "error": "token_missing_Mail.Read",
+                }
+
+        messages = await outlook_mail.list_user_inbox(mailbox_id)
         note = _format_digest(messages, display=display)
         if phone:
             try:
@@ -136,13 +166,29 @@ async def read_outlook(state: AgentState) -> AgentState:
         }
     except Exception as exc:
         logger.exception("Outlook Agent failed")
+        detail = str(exc)
+        hint = (
+            "Confirm Graph **Application** permission **Mail.Read** + admin consent.\n"
+            "(Delegated Mail.Read is not enough — this agent uses app-only client credentials.)"
+        )
+        if "403" in detail or "AccessDenied" in detail or "ErrorAccessDenied" in detail:
+            hint = (
+                "*403 Forbidden* with Application **Mail.Read** already granted usually means:\n\n"
+                "1. **Stale token** — restart App Service `whatsapp-ai-agent-sunny`, wait 1 min, retry\n"
+                "2. **Exchange Application Access Policy** is denying this app for your mailbox:\n"
+                "   `Connect-ExchangeOnline` then\n"
+                "   `Test-ApplicationAccessPolicy -Identity sunny@aienterpriselabs.com "
+                "-AppId 0a98eb76-b5ca-4269-9a47-f64456b2f776`\n"
+                "   If **Denied**, create/update an Allow policy for your mailbox "
+                "(or remove the blocking policy).\n"
+                "3. Confirm mailbox has an Exchange Online license\n\n"
+                "App id in use: `0a98eb76-b5ca-4269-9a47-f64456b2f776` "
+                "(must match the app where you granted Application Mail.Read)."
+            )
         return {
             **state,
             "status": "failed",
             "handled_by": AGENT_NAME,
-            "notification_text": (
-                f"*Outlook Agent* failed: {exc}\n\n"
-                "Confirm Graph app permission **Mail.Read** (application) + admin consent."
-            ),
-            "error": str(exc),
+            "notification_text": f"*Outlook Agent* failed: {detail}\n\n{hint}",
+            "error": detail,
         }
