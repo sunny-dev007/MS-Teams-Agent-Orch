@@ -102,13 +102,16 @@ async def route_inbound_message(
 
     message = (message or "").strip()
 
-    # Fabric Docs/QA intents bypass coding gates — SharePoint notes must not become a code PR.
+    # Fabric Docs/QA/Knowledge intents bypass coding gates — must not become a code PR.
     import re
 
     if re.search(
         r"(release\s*notes|write\s+(?:the\s+)?docs?|publish\s+(?:to\s+)?sharepoint|"
         r"documentation\s+agent|create\s+(?:a\s+)?(?:release\s+)?document|"
-        r"run\s+qa|start\s+qa|qa\s+agent|playwright)",
+        r"run\s+qa|start\s+qa|qa\s+agent|playwright|"
+        r"list\s+(?:my\s+)?(?:documents?|docs|files)|list\s+(?:sharepoint|onedrive|onenote)|"
+        r"list\s+ingested|ingest\s+(?:\d+|all)|vectorize|ask\s+docs?|ask\s+knowledge|"
+        r"summarize\s+docs?|summarise\s+docs?|doc\s+insights?|knowledge\s+base)",
         message,
         re.I,
     ):

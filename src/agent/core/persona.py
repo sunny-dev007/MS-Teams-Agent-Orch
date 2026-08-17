@@ -18,7 +18,8 @@ HELP_MENU = (
     "3. *Repos* — \"check my repos\" (GitHub or Azure DevOps)\n"
     "4. *Code* — pick a repo, review *plan* → *PROCEED* → dev → PR review → *APPROVE* deploy\n"
     "5. *Status* — \"status\" or \"resume\" (see pending step)\n"
-    "6. *Cancel* — \"stop\", \"new task\", or \"check my repos\" (fresh start)\n\n"
+    "6. *Cancel* — \"stop\", \"new task\", or \"check my repos\" (fresh start)\n"
+    "7. *Knowledge* (when enabled) — \"list my documents\" → ingest → ask docs / summarize docs\n\n"
     "*Coding gates:* PROCEED → 1/2 (PR review) → PR READY (manual) → APPROVE (deploy)\n\n"
     "Reply with a number or just tell me what you need."
 )

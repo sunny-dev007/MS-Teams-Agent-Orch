@@ -129,7 +129,9 @@ async def test_fabric_flags_default_off():
         enable_docs_agent=False,
         enable_qa_agent=False,
         enable_release_handoff=False,
+        enable_doc_knowledge=False,
     )
     assert s.enable_docs_agent is False
     assert s.enable_qa_agent is False
     assert s.enable_release_handoff is False
+    assert s.enable_doc_knowledge is False

@@ -17,6 +17,10 @@ from agent.specialists.coding_deployer import run_deployer
 from agent.specialists.coding_developer import run_developer
 from agent.specialists.coding_reviewer import run_reviewer
 from agent.specialists.docs_agent import run_docs
+from agent.specialists.doc_library_agent import run_doc_library
+from agent.specialists.doc_ingest_agent import run_doc_ingest
+from agent.specialists.doc_rag_agent import run_doc_rag
+from agent.specialists.doc_insights_agent import run_doc_insights
 from agent.specialists.email_agent import run_email, run_send_email
 from agent.specialists.evaluator_agent import run_evaluator, run_task_status
 from agent.specialists.general_agent import run_general
@@ -92,6 +96,15 @@ def _route_after_plan(state: AgentState) -> str:
         return "docs_agent"
     if intent == "run_qa":
         return "qa_agent"
+    # Document Knowledge Fabric (safe when ENABLE_DOC_KNOWLEDGE=false)
+    if intent == "list_docs":
+        return "doc_library_agent"
+    if intent == "ingest_docs":
+        return "doc_ingest_agent"
+    if intent == "ask_docs":
+        return "doc_rag_agent"
+    if intent == "summarize_docs":
+        return "doc_insights_agent"
     if intent in ("code_change", "bug_fix"):
         if not state.get("repo_url"):
             return "repo_wizard"
@@ -315,6 +328,10 @@ def build_graph() -> StateGraph:
     graph.add_node("task_status_agent", run_task_status)
     graph.add_node("docs_agent", run_docs)
     graph.add_node("qa_agent", run_qa)
+    graph.add_node("doc_library_agent", run_doc_library)
+    graph.add_node("doc_ingest_agent", run_doc_ingest)
+    graph.add_node("doc_rag_agent", run_doc_rag)
+    graph.add_node("doc_insights_agent", run_doc_insights)
     graph.add_node("coding_architect", run_architect)
     graph.add_node("coding_developer", run_developer)
     graph.add_node("coding_reviewer", run_reviewer)
@@ -361,6 +378,10 @@ def build_graph() -> StateGraph:
         "task_status_agent": "task_status_agent",
         "docs_agent": "docs_agent",
         "qa_agent": "qa_agent",
+        "doc_library_agent": "doc_library_agent",
+        "doc_ingest_agent": "doc_ingest_agent",
+        "doc_rag_agent": "doc_rag_agent",
+        "doc_insights_agent": "doc_insights_agent",
         "coding_architect": "coding_architect",
         "coding_developer": "coding_developer",
         "handle_approval": "handle_approval",
@@ -380,6 +401,10 @@ def build_graph() -> StateGraph:
     graph.add_edge("task_status_agent", "notify_result")
     graph.add_edge("docs_agent", "notify_result")
     graph.add_edge("qa_agent", "notify_result")
+    graph.add_edge("doc_library_agent", "notify_result")
+    graph.add_edge("doc_ingest_agent", "notify_result")
+    graph.add_edge("doc_rag_agent", "notify_result")
+    graph.add_edge("doc_insights_agent", "notify_result")
 
     graph.add_conditional_edges("repo_wizard", _route_after_repo_wizard, {
         "notify_then_develop": "notify_then_develop",

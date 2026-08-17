@@ -105,6 +105,8 @@ async def test_copilot_health(copilot_env):
     assert "fabric" in body
     assert body["fabric"]["docs_agent_enabled"] is False
     assert body["fabric"]["qa_agent_enabled"] is False
+    assert body["fabric"]["doc_knowledge_enabled"] is False
+    assert "doc_knowledge_ready" in body["fabric"]
 
 
 @pytest.mark.asyncio

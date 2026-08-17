@@ -87,3 +87,8 @@ class AgentState(TypedDict, total=False):
     release_id: str
     doc_url: str
     app_url: str
+
+    # Document Knowledge Fabric (optional — flag gated)
+    kb_ingest_results: list
+    kb_citations: list
+    kb_docs_used: list

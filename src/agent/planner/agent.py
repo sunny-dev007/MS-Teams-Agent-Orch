@@ -53,6 +53,29 @@ _RUN_QA_RE = re.compile(
     r"(run\s+qa|start\s+qa|qa\s+agent|playwright|test\s+(?:this\s+)?(?:release|deploy))",
     re.IGNORECASE,
 )
+# Document Knowledge Fabric — must beat coding/repo session like Docs/QA
+_LIST_DOCS_RE = re.compile(
+    r"(list\s+(?:my\s+)?(?:documents?|docs|files)|list\s+(?:sharepoint|onedrive|onenote)|"
+    r"show\s+(?:my\s+)?(?:documents?|docs)|browse\s+(?:documents?|docs|sharepoint)|"
+    r"list\s+ingested|knowledge\s+base|kb\s+status|doc\s+library)",
+    re.IGNORECASE,
+)
+_INGEST_DOCS_RE = re.compile(
+    r"(ingest\s+(?:\d+|all)|vectorize|index\s+(?:these\s+)?docs?|"
+    r"add\s+(?:to\s+)?(?:knowledge|kb)|ingest\s+documents?)",
+    re.IGNORECASE,
+)
+_ASK_DOCS_RE = re.compile(
+    r"(ask\s+docs?|ask\s+knowledge|doc\s+q(?:na|&a)?|question\s+on\s+docs?|"
+    r"search\s+(?:ingested\s+)?docs?|query\s+(?:the\s+)?(?:knowledge|kb))",
+    re.IGNORECASE,
+)
+_SUMMARIZE_DOCS_RE = re.compile(
+    r"(summarize\s+docs?|summarise\s+docs?|doc\s+insights?|"
+    r"insights?\s+(?:on|from)\s+docs?|document\s+insights?)",
+    re.IGNORECASE,
+)
+_DOC_PICK_NUMS_RE = re.compile(r"^\s*[\d,\s]+(?:\s*(?:and|&)\s*[\d,\s]+)*\s*$")
 
 
 def is_simple_greeting(message: str) -> bool:
@@ -87,6 +110,36 @@ async def plan(state: AgentState) -> AgentState:
             except Exception:
                 logger.exception("%s failed clearing session for qa intent", AGENT_NAME)
         return {**state, "intent": "run_qa", "planned_by": AGENT_NAME}
+
+    # Document Knowledge Fabric — priority over coding gates / repo wizard
+    async def _clear_for_kb(intent_name: str) -> AgentState:
+        if phone:
+            try:
+                from agent.core.session import save_session
+
+                # clear coding awaiting; merge keeps data.doc_catalog for ingest picks
+                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+            except Exception:
+                logger.exception("%s failed clearing session for %s", AGENT_NAME, intent_name)
+        return {**state, "intent": intent_name, "planned_by": AGENT_NAME}
+
+    if _LIST_DOCS_RE.search(user_msg):
+        return await _clear_for_kb("list_docs")
+    if _INGEST_DOCS_RE.search(user_msg):
+        return await _clear_for_kb("ingest_docs")
+    if _ASK_DOCS_RE.search(user_msg):
+        return await _clear_for_kb("ask_docs")
+    if _SUMMARIZE_DOCS_RE.search(user_msg):
+        return await _clear_for_kb("summarize_docs")
+
+    # Bare number picks while awaiting doc_pick → ingest
+    if phone:
+        try:
+            session = await get_session(phone)
+            if session.get("awaiting") == "doc_pick" and _DOC_PICK_NUMS_RE.match(user_msg):
+                return {**state, "intent": "ingest_docs", "planned_by": AGENT_NAME}
+        except Exception:
+            logger.exception("%s failed reading doc_pick session", AGENT_NAME)
 
     if phone:
         session = await get_session(phone)

@@ -230,7 +230,9 @@ async def copilot_channel_health() -> dict[str, Any]:
             "docs_agent_enabled": bool(settings.enable_docs_agent),
             "qa_agent_enabled": bool(settings.enable_qa_agent),
             "release_handoff_enabled": bool(settings.enable_release_handoff),
+            "doc_knowledge_enabled": bool(settings.enable_doc_knowledge),
             "graph_configured": ms_graph.graph_configured(),
             "docs_agent_ready": ms_graph.docs_agent_ready(),
+            "doc_knowledge_ready": ms_graph.doc_knowledge_ready(),
         },
     }

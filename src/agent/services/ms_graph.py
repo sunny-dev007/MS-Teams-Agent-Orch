@@ -1,6 +1,6 @@
-"""Microsoft Graph client — Docs Agent only (SharePoint / OneDrive / OneNote).
+"""Microsoft Graph client — SharePoint / OneDrive / OneNote (app-only).
 
-Feature: Release Agent Fabric — ENABLE_DOCS_AGENT must be true and credentials set.
+Feature: Release Agent Fabric + Document Knowledge Fabric.
 Uses httpx + client credentials; no new package dependency.
 """
 
@@ -30,6 +30,10 @@ def graph_configured() -> bool:
 
 def docs_agent_ready() -> bool:
     return bool(settings.enable_docs_agent and graph_configured())
+
+
+def doc_knowledge_ready() -> bool:
+    return bool(settings.enable_doc_knowledge and graph_configured())
 
 
 async def get_app_token() -> str:
@@ -80,3 +84,54 @@ async def graph_request(
         if resp.status_code == 204 or not resp.content:
             return {}
         return resp.json()
+
+
+async def graph_request_bytes(
+    method: str,
+    path: str,
+    *,
+    params: dict | None = None,
+    accept: str = "*/*",
+    timeout: float = 120.0,
+) -> tuple[bytes, str]:
+    """Binary/text download (drive content, OneNote HTML). Returns (body, content_type)."""
+    token = await get_app_token()
+    url = path if path.startswith("http") else f"{_GRAPH}{path}"
+    headers = {"Authorization": f"Bearer {token}", "Accept": accept}
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        resp = await client.request(method, url, headers=headers, params=params)
+        if resp.status_code >= 400:
+            logger.error(
+                "Graph bytes %s %s -> %s %s",
+                method,
+                path,
+                resp.status_code,
+                resp.text[:500],
+            )
+            resp.raise_for_status()
+        return resp.content, resp.headers.get("content-type", "")
+
+
+async def graph_paginate(
+    path: str,
+    *,
+    params: dict | None = None,
+    max_pages: int = 5,
+) -> list[dict[str, Any]]:
+    """Collect `value` arrays across @odata.nextLink pages."""
+    items: list[dict[str, Any]] = []
+    next_path: str | None = path
+    next_params = params
+    for _ in range(max_pages):
+        if not next_path:
+            break
+        body = await graph_request("GET", next_path, params=next_params)
+        batch = body.get("value") or []
+        if isinstance(batch, list):
+            items.extend([x for x in batch if isinstance(x, dict)])
+        link = body.get("@odata.nextLink")
+        if not link:
+            break
+        next_path = str(link)
+        next_params = None
+    return items

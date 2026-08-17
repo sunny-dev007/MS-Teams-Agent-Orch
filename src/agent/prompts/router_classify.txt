@@ -10,6 +10,10 @@ Classify the user's WhatsApp message into exactly one intent:
 - "approval_yes": approve a pending task
 - "approval_no": reject a pending task
 - "task_status": ask about task/job status
+- "list_docs": list SharePoint/OneDrive/OneNote documents or ingested knowledge base
+- "ingest_docs": ingest/vectorize selected documents into the knowledge base
+- "ask_docs": QnA over ingested documents (RAG)
+- "summarize_docs": executive insights/summary over ingested documents
 - "general": general conversation or help
 
 Also extract when present (else null):

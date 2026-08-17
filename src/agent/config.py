@@ -75,7 +75,18 @@ class Settings(BaseSettings):
     enable_qa_agent: bool = False
     enable_release_handoff: bool = False
 
-    # Microsoft Graph (Docs Agent) — app-only client credentials
+    # Document Knowledge Fabric (SharePoint/OneDrive/OneNote → ingest → RAG/Insights)
+    # Additive — defaults OFF; never affects WhatsApp/Dev coding path when false.
+    enable_doc_knowledge: bool = False
+    azure_openai_embedding_deployment: str = "text-embedding-3-small"
+    ms_graph_onedrive_user_id: str = ""  # UPN or AAD OID for OneDrive listing (optional)
+    doc_knowledge_sources: str = "sharepoint,onedrive,onenote"  # csv of sources to list
+    doc_knowledge_max_list: int = 25
+    doc_knowledge_chunk_chars: int = 1200
+    doc_knowledge_chunk_overlap: int = 150
+    doc_knowledge_top_k: int = 5
+
+    # Microsoft Graph (Docs Agent + Doc Knowledge) — app-only client credentials
     ms_graph_tenant_id: str = ""
     ms_graph_client_id: str = ""
     ms_graph_client_secret: SecretStr = SecretStr("")
