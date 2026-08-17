@@ -22,6 +22,20 @@ SOURCE_SHAREPOINT = "sharepoint"
 SOURCE_ONEDRIVE = "onedrive"
 SOURCE_ONENOTE = "onenote"
 
+# Short tags for Teams/WhatsApp lists (enterprise-readable)
+SOURCE_TAGS = {
+    SOURCE_SHAREPOINT: "SP",
+    SOURCE_ONEDRIVE: "OD",
+    SOURCE_ONENOTE: "ON",
+}
+SOURCE_TAG_LEGEND = "[SP]=SharePoint · [OD]=OneDrive · [ON]=OneNote"
+
+
+def source_tag(source_type: str | None) -> str:
+    """Return SP / OD / ON for a Graph source_type (unknown → ??)."""
+    key = (source_type or "").strip().lower()
+    return SOURCE_TAGS.get(key, "??")
+
 _TEXT_EXTS = {
     ".txt",
     ".md",

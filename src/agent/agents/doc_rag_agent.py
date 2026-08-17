@@ -63,14 +63,17 @@ async def ask_documents(state: AgentState) -> AgentState:
 
     cites = result.get("citations") or []
     cite_lines = []
+    from agent.services.graph_docs import source_tag
+
     for c in cites:
         url = c.get("web_url") or ""
         link = f" — {url}" if url else ""
         locator = (c.get("locator") or "").strip()
         loc = f" · {locator}" if locator else ""
+        tag = source_tag(c.get("source_type"))
         cite_lines.append(
-            f"[{c.get('n')}] {c.get('title')}{loc} "
-            f"({c.get('source_type')}/{c.get('doc_mode')}, score={c.get('score')}){link}"
+            f"[{c.get('n')}] [{tag}] {c.get('title')}{loc} "
+            f"({c.get('doc_mode')}, score={c.get('score')}){link}"
         )
 
     note = f"*Doc RAG Agent*"
@@ -86,6 +89,17 @@ async def ask_documents(state: AgentState) -> AgentState:
     if result.get("vector_backend"):
         backend = str(result["vector_backend"])
         note += f"\n\n_vector: {backend}_"
+    related = result.get("related_queries") or []
+    if related:
+        note += "\n\n*Related*\n" + "\n".join(f"• `{q}`" for q in related[:3])
+
+    if phone:
+        try:
+            from agent.services.workspace_handoff import WS_KNOWLEDGE, mark_workspace
+
+            await mark_workspace(phone, WS_KNOWLEDGE)
+        except Exception:
+            logger.exception("Failed marking knowledge workspace")
 
     return {
         **state,
@@ -93,4 +107,5 @@ async def ask_documents(state: AgentState) -> AgentState:
         "handled_by": AGENT_NAME,
         "notification_text": note,
         "kb_citations": cites,
+        "kb_related_queries": related,
     }

@@ -246,7 +246,8 @@ def format_session_cleared(*, had_task_id: str = "", had_gate: str = "") -> str:
     lines.extend([
         "You can start fresh:",
         "• *check my repos* — browse GitHub / Azure DevOps",
-        "• *help* — full menu",
+        "• *list my documents* — Knowledge (SP / OD / ON)",
+        "• *help* — full tools & prompts catalog",
     ])
     return "\n".join(lines)
 

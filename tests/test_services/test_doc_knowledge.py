@@ -48,7 +48,29 @@ async def test_library_disabled_message(monkeypatch):
     monkeypatch.setattr(settings, "enable_doc_knowledge", False)
     out = await list_documents({"user_message": "list my documents", "whatsapp_phone": "teams:u"})
     assert out["status"] == "skipped"
-    assert "disabled" in (out.get("notification_text") or "").lower()
+    assert "disabled" in out["notification_text"].lower()
+
+
+def test_source_tags_sp_od_on():
+    from agent.agents.doc_library_agent import _format_catalog
+    from agent.services.graph_docs import SOURCE_TAG_LEGEND, source_tag
+
+    assert source_tag("sharepoint") == "SP"
+    assert source_tag("onedrive") == "OD"
+    assert source_tag("onenote") == "ON"
+    assert source_tag("unknown") == "??"
+
+    text = _format_catalog(
+        [
+            {"pick": 1, "source_type": "sharepoint", "title": "guide.md", "doc_mode": "guide", "folder": "Docs"},
+            {"pick": 2, "source_type": "onedrive", "title": "notes.docx", "doc_mode": "general", "folder": ""},
+            {"pick": 3, "source_type": "onenote", "title": "Meeting", "doc_mode": "notes", "folder": "NB"},
+        ]
+    )
+    assert SOURCE_TAG_LEGEND in text
+    assert "[SP] *guide.md*" in text
+    assert "[OD] *notes.docx*" in text
+    assert "[ON] *Meeting*" in text
 
 
 @pytest.mark.asyncio
@@ -168,6 +190,24 @@ def test_extract_chunk_locator_from_markdown_and_page():
     slide = "## Slide 2\n\nRollback plan"
     loc3 = doc_vector.extract_chunk_locator(slide)
     assert loc3.get("slide") == 2
+
+
+@pytest.mark.asyncio
+async def test_suggest_related_queries_from_locators(monkeypatch):
+    from agent.config import settings
+    from agent.services import doc_knowledge
+
+    monkeypatch.setattr(settings, "doc_knowledge_multi_query", False)
+    related = await doc_knowledge.suggest_related_queries(
+        "ask docs what about Agent Logic?",
+        [
+            {"locator": "2.1 Two-Layer Agent Architecture", "title": "developer-guide.md"},
+            {"locator": "2.2 Service Layer Pattern", "title": "developer-guide.md"},
+        ],
+        answer="Agents are pure functions.",
+    )
+    assert related
+    assert any("ask docs" in q.lower() or "summarize docs" in q.lower() for q in related)
 
 
 @pytest.mark.asyncio

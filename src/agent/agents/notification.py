@@ -94,9 +94,14 @@ async def notify(state: AgentState) -> AgentState:
 
     template = STATUS_TEMPLATES.get(status, STATUS_TEMPLATES["general_response"])
 
+    detail = state.get("notification_text", "")
+    handoff = (state.get("handoff_note") or "").strip()
+    if handoff:
+        detail = f"{handoff}\n\n{detail}" if detail else handoff
+
     text = template.format(
         task_id=state.get("task_id", "unknown"),
-        detail=state.get("notification_text", ""),
+        detail=detail,
         review_result=state.get("review_result", ""),
         repo=state.get("repo_url", "N/A"),
         branch=state.get("branch_name", "N/A"),

@@ -57,6 +57,24 @@ async def summarize_documents(state: AgentState) -> AgentState:
         f"*Doc Insights Agent*\n\n{result.get('summary') or '_No summary_'}\n\n"
         f"_Based on:_ {used_line}"
     )
+    # Related prompts from docs used (titles → grounded follow-ups)
+    related = []
+    for d in used[:3]:
+        t = (d.get("title") or "").strip()
+        if t:
+            related.append(f"ask docs what are the key points in {t}?")
+    if related:
+        note += "\n\n*Related*\n" + "\n".join(f"• `{q}`" for q in related)
+
+    phone = state.get("whatsapp_phone") or ""
+    if phone:
+        try:
+            from agent.services.workspace_handoff import WS_KNOWLEDGE, mark_workspace
+
+            await mark_workspace(phone, WS_KNOWLEDGE)
+        except Exception:
+            logger.exception("Failed marking knowledge workspace")
+
     return {
         **state,
         "status": "completed",

@@ -113,15 +113,24 @@ async def plan(state: AgentState) -> AgentState:
 
     # Document Knowledge Fabric — priority over coding gates / repo wizard
     async def _clear_for_kb(intent_name: str) -> AgentState:
+        handoff = ""
         if phone:
             try:
                 from agent.core.session import save_session
+                from agent.services.workspace_handoff import (
+                    WS_KNOWLEDGE,
+                    handoff_note_for,
+                )
 
+                handoff = await handoff_note_for(phone, next_workspace=WS_KNOWLEDGE)
                 # clear coding awaiting; merge keeps data.doc_catalog for ingest picks
                 await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
             except Exception:
                 logger.exception("%s failed clearing session for %s", AGENT_NAME, intent_name)
-        return {**state, "intent": intent_name, "planned_by": AGENT_NAME}
+        out = {**state, "intent": intent_name, "planned_by": AGENT_NAME}
+        if handoff:
+            out["handoff_note"] = handoff
+        return out
 
     if _LIST_DOCS_RE.search(user_msg):
         return await _clear_for_kb("list_docs")
@@ -259,7 +268,22 @@ async def plan(state: AgentState) -> AgentState:
     if user_msg.strip() == "2" or _MEETING_RE.search(user_msg):
         return {**state, "intent": "schedule_meeting", "planned_by": AGENT_NAME}
     if user_msg.strip() == "3" or _REPOS_RE.match(user_msg):
-        return {**state, "intent": "browse_repos", "planned_by": AGENT_NAME}
+        out = {**state, "intent": "browse_repos", "planned_by": AGENT_NAME}
+        if phone:
+            try:
+                from agent.services.workspace_handoff import (
+                    WS_DEV,
+                    handoff_note_for,
+                    mark_workspace,
+                )
+
+                note = await handoff_note_for(phone, next_workspace=WS_DEV)
+                await mark_workspace(phone, WS_DEV)
+                if note:
+                    out["handoff_note"] = note
+            except Exception:
+                logger.exception("%s handoff to Dev failed", AGENT_NAME)
+        return out
     if user_msg.strip() == "5" or _STATUS_RE.match(user_msg):
         return {**state, "intent": "task_status", "planned_by": AGENT_NAME}
 
@@ -338,7 +362,18 @@ async def plan(state: AgentState) -> AgentState:
                 updates[key] = result[key]
 
     logger.info("%s -> intent=%s task=%s", AGENT_NAME, intent, state.get("task_id"))
-    return {**state, **updates}
+    out = {**state, **updates}
+    if phone and intent in ("browse_repos", "code_change", "bug_fix"):
+        try:
+            from agent.services.workspace_handoff import WS_DEV, handoff_note_for, mark_workspace
+
+            note = await handoff_note_for(phone, next_workspace=WS_DEV)
+            await mark_workspace(phone, WS_DEV)
+            if note:
+                out["handoff_note"] = note
+        except Exception:
+            logger.exception("%s Dev handoff failed", AGENT_NAME)
+    return out
 
 
 # LangGraph node alias

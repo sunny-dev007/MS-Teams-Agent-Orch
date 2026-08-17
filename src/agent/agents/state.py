@@ -92,3 +92,5 @@ class AgentState(TypedDict, total=False):
     kb_ingest_results: list
     kb_citations: list
     kb_docs_used: list
+    kb_related_queries: list
+    handoff_note: str

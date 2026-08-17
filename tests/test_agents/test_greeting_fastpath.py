@@ -22,7 +22,13 @@ def test_is_simple_greeting(message, expected):
 
 def test_persona_assets():
     assert "Sunny" in GREETING_REPLY
-    assert "Emails" in HELP_MENU
+    assert "Email Agent" in HELP_MENU
+    assert "Document Knowledge Fabric" in HELP_MENU
+    assert "[SP]=SharePoint" in HELP_MENU
+    assert "check my repos" in HELP_MENU
+    assert "ask docs" in HELP_MENU
+    assert "write release notes" in HELP_MENU
+    assert "run QA" in HELP_MENU
 
 
 @pytest.mark.asyncio

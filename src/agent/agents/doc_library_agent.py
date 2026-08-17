@@ -27,9 +27,9 @@ _DISABLED = (
 def _format_catalog(catalog: list[dict]) -> str:
     if not catalog:
         return "_No files found. Check Graph site settings / OneDrive user / Notes permissions._"
-    lines = []
+    lines = [f"_Tags:_ {graph_docs.SOURCE_TAG_LEGEND}", ""]
     for row in catalog:
-        src = (row.get("source_type") or "?").upper()[:2]
+        src = graph_docs.source_tag(row.get("source_type"))
         mode = row.get("doc_mode") or "general"
         folder = row.get("folder") or ""
         loc = f" / {folder}" if folder else ""
@@ -38,6 +38,25 @@ def _format_catalog(catalog: list[dict]) -> str:
             f"({mode}{loc})"
         )
     return "\n".join(lines)
+
+
+def _sources_footer() -> str:
+    raw = (settings.doc_knowledge_sources or "sharepoint").lower()
+    enabled = [p.strip() for p in raw.split(",") if p.strip()]
+    bits = []
+    for s, tag in (
+        ("sharepoint", "SP"),
+        ("onedrive", "OD"),
+        ("onenote", "ON"),
+    ):
+        on = s in enabled
+        if s == "onedrive" and on and not (settings.ms_graph_onedrive_user_id or "").strip():
+            bits.append(f"{tag}_needs_user_id")
+        elif on:
+            bits.append(f"{tag}_on")
+        else:
+            bits.append(f"{tag}_off")
+    return "_Sources:_ " + " · ".join(bits)
 
 
 async def list_documents(state: AgentState) -> AgentState:
@@ -76,8 +95,8 @@ async def list_documents(state: AgentState) -> AgentState:
             )
         else:
             lines = [
-                f"{i}. *{d['title']}* [{d['source_type']}/{d['doc_mode']}] "
-                f"chunks={d['chunk_count']} `{d['id']}`"
+                f"{i}. [{graph_docs.source_tag(d['source_type'])}] *{d['title']}* "
+                f"({d['doc_mode']}) chunks={d['chunk_count']} `{d['id']}`"
                 for i, d in enumerate(docs, start=1)
             ]
             note = "*Ingested knowledge base*\n\n" + "\n".join(lines)
@@ -115,9 +134,17 @@ async def list_documents(state: AgentState) -> AgentState:
     note = (
         "*Doc Library Agent* — selectable documents\n\n"
         f"{_format_catalog(catalog)}\n\n"
+        f"{_sources_footer()}\n\n"
         "Reply *ingest 1,3* (or *ingest all*) to vectorize with metadata.\n"
         "Then *ask docs <question>* or *summarize docs <focus>*."
     )
+    if phone:
+        try:
+            from agent.services.workspace_handoff import WS_KNOWLEDGE, mark_workspace
+
+            await mark_workspace(phone, WS_KNOWLEDGE)
+        except Exception:
+            logger.exception("Failed marking knowledge workspace")
     return {
         **state,
         "status": "completed",

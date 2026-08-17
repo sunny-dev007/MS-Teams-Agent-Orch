@@ -13,6 +13,18 @@ Additive feature for Teams (and WhatsApp): **list → select → ingest/vectoriz
 | **Doc RAG** | `ask_docs` | `ask docs what is our release process?` |
 | **Doc Insights** | `summarize_docs` | `summarize docs risks`, `doc insights` |
 
+### Source tags in lists
+
+| Tag | Source |
+|---|---|
+| **SP** | SharePoint |
+| **OD** | OneDrive |
+| **ON** | OneNote |
+
+Example: `1. [SP] *developer-guide.md* (guide / WhatsApp-MultiAgent-Context)`
+
+Say `help` for the full tools & quick-prompts catalog (all agents).
+
 ```
 Teams message
     → channel_gates (bypass coding gates)
@@ -114,4 +126,11 @@ az webapp config appsettings set -g ai-agent-rg -n whatsapp-ai-agent-sunny --set
 
 On first ingest the agent auto-creates the Qdrant collection (Cosine, size = embedding dims).
 
-Health: `fabric.qdrant_configured` / `fabric.qdrant_ready` on `/api/channels/copilot/health`.
+## Enterprise orchestration notes
+
+- **Workspaces:** Knowledge vs Dev soft-switch with a banner; never auto-clear PROCEED/APPROVE gates.
+- **Related prompts:** After RAG, suggest follow-ups derived from retrieved section locators only.
+- **Sources:** `DOC_KNOWLEDGE_SOURCES=sharepoint,onedrive,onenote`. OneDrive also needs `MS_GRAPH_ONEDRIVE_USER_ID`.
+- **List tags:** `[SP]` / `[OD]` / `[ON]` on every library + ingested + citation line.
+- **Help catalog:** `help` / `menu` lists all agents and quick prompts (flag-gated features labeled).
+- **Isolation:** Knowledge intents bypass coding gates; `stop` clears stuck sessions intentionally.

@@ -396,12 +396,90 @@ async def retrieve_answer(
     ]
     resp = await invoke_llm(messages, temperature=0.15, role="rag")
     answer = (getattr(resp, "content", None) or str(resp) or "").strip()
+    related = await suggest_related_queries(question, citations, answer=answer)
     return {
         "answer": answer,
         "citations": citations,
         "hits": filtered,
         "vector_backend": backend,
+        "related_queries": related,
     }
+
+
+async def suggest_related_queries(
+    question: str,
+    citations: list[dict[str, Any]],
+    *,
+    answer: str = "",
+    limit: int = 3,
+) -> list[str]:
+    """Suggest follow-up prompts grounded in retrieved locators (no invented docs)."""
+    locs: list[str] = []
+    titles: list[str] = []
+    for c in citations[:8]:
+        loc = (c.get("locator") or c.get("section") or "").strip()
+        title = (c.get("title") or "").strip()
+        if loc and loc not in locs:
+            locs.append(loc)
+        if title and title not in titles:
+            titles.append(title)
+    if not locs and not titles:
+        return [
+            "ask docs summarize the key architecture patterns",
+            "list ingested documents",
+            "summarize docs risks and recommended actions",
+        ][:limit]
+
+    # Deterministic, citation-grounded suggestions (safe for enterprise — no LLM drift)
+    out: list[str] = []
+    for loc in locs[:4]:
+        # Strip page/slide prefixes for cleaner prompts
+        clean = re.sub(r"^(Page|Slide)\s+\d+\s*[·\-:]?\s*", "", loc).strip() or loc
+        q = f"ask docs what does this document say about {clean}?"
+        if q.lower() not in {question.lower(), *(x.lower() for x in out)}:
+            out.append(q)
+        if len(out) >= limit:
+            break
+    if len(out) < limit and titles:
+        out.append(f"ask docs summarize key points from {titles[0]}")
+    if len(out) < limit:
+        out.append("summarize docs risks and recommended actions")
+    # Optional LLM polish constrained to locator list only
+    if locs and settings.doc_knowledge_multi_query:
+        try:
+            resp = await invoke_llm(
+                [
+                    SystemMessage(
+                        content=(
+                            "Propose up to 3 short follow-up questions a user can ask next. "
+                            "Each MUST start with 'ask docs ' or 'summarize docs '. "
+                            "Use ONLY these section titles (do not invent topics):\n"
+                            + "\n".join(f"- {x}" for x in locs[:6])
+                            + '\nReturn JSON: {"queries":["..."]}'
+                        )
+                    ),
+                    HumanMessage(
+                        content=f"User question: {question}\nAnswer excerpt: {(answer or '')[:400]}"
+                    ),
+                ],
+                temperature=0.2,
+                role="rag",
+            )
+            raw = (getattr(resp, "content", None) or str(resp) or "").strip()
+            start, end = raw.find("{"), raw.rfind("}") + 1
+            data = json.loads(raw[start:end] if start != -1 and end > 0 else raw)
+            polished: list[str] = []
+            for q in (data.get("queries") or [])[:limit]:
+                s = str(q).strip()
+                if not s.lower().startswith(("ask docs", "summarize docs", "ask knowledge")):
+                    s = f"ask docs {s}"
+                if s.lower() != question.lower() and s not in polished:
+                    polished.append(s)
+            if polished:
+                return polished[:limit]
+        except Exception:
+            logger.exception("Related-query polish failed — using deterministic suggestions")
+    return out[:limit]
 
 
 async def summarize_insights(
