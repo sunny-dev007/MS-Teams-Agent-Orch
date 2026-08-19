@@ -33,7 +33,7 @@ Teams message
 ```
 
 - Outlook: Graph app-only `Mail.Read` → `GET /users/{oid}/mailFolders/Inbox/messages`
-- Boards: Graph user profile + AzDO WIQL (never `@Me`)
+- Boards: Graph user profile + AzDO WIQL (never `@Me`). Matches **mail, UPN, guest `#EXT#` UPN decoded to the original mailbox**, and AzDO `uniqueName` aliases so MSA Gmail assignments still appear for a Teams Entra identity.
 - Soft workspace handoff: `productivity` lane (does not clear PROCEED/APPROVE except when entering productivity from a fabric clear — same as Knowledge)
 
 ## App Service settings

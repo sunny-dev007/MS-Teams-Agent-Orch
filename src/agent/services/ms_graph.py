@@ -95,7 +95,7 @@ async def get_user_profile(user_id: str) -> dict[str, Any]:
     # Prefer mail + UPN for Boards identity matching
     path = (
         f"/users/{quote(uid)}"
-        f"?$select=id,displayName,mail,userPrincipalName,givenName"
+        f"?$select=id,displayName,mail,userPrincipalName,givenName,otherMails"
     )
     return await graph_request("GET", path)
 

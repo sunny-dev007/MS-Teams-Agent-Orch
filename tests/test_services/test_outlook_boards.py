@@ -84,6 +84,22 @@ def test_boards_wiql_never_uses_at_me():
     assert "Priority" in wiql
 
 
+def test_guest_upn_decodes_to_gmail_and_multi_assigned_wiql():
+    upn = "suchitroy3_gmail.com#EXT#@suchitroy3gmail.onmicrosoft.com"
+    assert azure_boards.guest_upn_to_mail(upn) == "suchitroy3@gmail.com"
+    aliases = azure_boards.assigned_to_aliases(
+        {"email": upn, "upn": upn, "mail": "", "other_mails": []},
+        email=upn,
+    )
+    assert "suchitroy3@gmail.com" in aliases
+    wiql = azure_boards.build_assigned_wiql(
+        aliases[0], project="Project-NIT", emails=aliases
+    )
+    assert "@Me" not in wiql
+    assert "suchitroy3@gmail.com" in wiql
+    assert " OR " in wiql or len(aliases) == 1
+
+
 def test_boards_wiql_escapes_quote():
     wiql = azure_boards.build_assigned_wiql("o'brien@contoso.com")
     assert "o''brien@contoso.com" in wiql

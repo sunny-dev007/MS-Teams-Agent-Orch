@@ -44,7 +44,7 @@ def _org_url() -> str:
     return settings.azdo_org_url.rstrip("/")
 
 
-async def resolve_identity_email(teams_user_id: str) -> dict[str, str]:
+async def resolve_identity_email(teams_user_id: str) -> dict[str, Any]:
     """Resolve Entra OID/UPN → mail + display name via Graph."""
     uid = (teams_user_id or "").strip()
     if not uid:
@@ -52,6 +52,8 @@ async def resolve_identity_email(teams_user_id: str) -> dict[str, str]:
     profile = await ms_graph.get_user_profile(uid)
     mail = (profile.get("mail") or "").strip()
     upn = (profile.get("userPrincipalName") or "").strip()
+    other = profile.get("otherMails") or []
+    extra = [str(x).strip() for x in other if str(x).strip()] if isinstance(other, list) else []
     email = mail or upn
     if not email:
         raise RuntimeError(
@@ -61,9 +63,114 @@ async def resolve_identity_email(teams_user_id: str) -> dict[str, str]:
         "email": email,
         "upn": upn,
         "mail": mail,
+        "other_mails": extra,
         "display_name": (profile.get("displayName") or "").strip(),
         "id": str(profile.get("id") or uid),
     }
+
+
+def guest_upn_to_mail(upn: str) -> str | None:
+    """Decode Entra guest UPN ``local_domain.com#EXT#@tenant`` → ``local@domain.com``."""
+    raw = (upn or "").strip()
+    if "#ext#" not in raw.lower():
+        return None
+    prefix = raw.split("#", 1)[0]
+    if "_" not in prefix:
+        return None
+    local, _, domain = prefix.rpartition("_")
+    if local and domain and "." in domain:
+        return f"{local}@{domain}"
+    return None
+
+
+def assigned_to_aliases(
+    identity: dict[str, Any] | None = None,
+    *,
+    email: str = "",
+) -> list[str]:
+    """Unique Graph/AzDO identity strings to match System.AssignedTo (never @Me)."""
+    ident = identity or {}
+    raw: list[str] = []
+    for v in (
+        email,
+        ident.get("email"),
+        ident.get("mail"),
+        ident.get("upn"),
+        *(ident.get("other_mails") or []),
+        *(ident.get("azdo_unique_names") or []),
+    ):
+        s = str(v or "").strip()
+        if s:
+            raw.append(s)
+        decoded = guest_upn_to_mail(s)
+        if decoded:
+            raw.append(decoded)
+    out: list[str] = []
+    seen: set[str] = set()
+    for s in raw:
+        key = s.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(s)
+    return out
+
+
+async def lookup_azdo_unique_names(queries: list[str]) -> list[str]:
+    """Resolve Graph aliases to AzDO uniqueName values (MSA vs guest UPN)."""
+    found: list[str] = []
+    seen: set[str] = set()
+    if not boards_configured():
+        return []
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for q in queries:
+            q = (q or "").strip()
+            if not q or len(q) < 3:
+                continue
+            url = (
+                f"{_org_url().replace('https://dev.azure.com', 'https://vssps.dev.azure.com')}"
+                f"/_apis/identities?searchFilter=General&filterValue={quote(q)}"
+                f"&queryMembership=None&api-version=7.1"
+            )
+            # Some orgs only accept org-scoped identities on dev.azure.com
+            try:
+                resp = await client.get(url, headers=_headers())
+                if resp.status_code >= 400:
+                    resp = await client.get(
+                        f"{_org_url()}/_apis/identities?searchFilter=General"
+                        f"&filterValue={quote(q)}&queryMembership=None&api-version=7.1",
+                        headers=_headers(),
+                    )
+                if resp.status_code >= 400:
+                    logger.info("AzDO identity search skipped for %s: %s", q, resp.status_code)
+                    continue
+                data = resp.json()
+            except Exception:
+                logger.exception("AzDO identity search failed for %s", q)
+                continue
+            rows = data if isinstance(data, list) else (data.get("value") or [])
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                props = row.get("properties") or {}
+                for key in ("Account", "Mail", "DirectoryAlias"):
+                    block = props.get(key) if isinstance(props, dict) else None
+                    val = ""
+                    if isinstance(block, dict):
+                        val = str(block.get("$value") or "").strip()
+                    if val:
+                        lk = val.lower()
+                        if lk not in seen:
+                            seen.add(lk)
+                            found.append(val)
+                for key in ("uniqueName", "providerDisplayName", "customDisplayName"):
+                    val = str(row.get(key) or "").strip()
+                    if val and "@" in val:
+                        lk = val.lower()
+                        if lk not in seen:
+                            seen.add(lk)
+                            found.append(val)
+    return found
 
 
 async def list_org_projects() -> list[dict[str, str]]:
@@ -79,17 +186,32 @@ async def list_org_projects() -> list[dict[str, str]]:
     return out
 
 
-def build_assigned_wiql(email: str, *, project: str = "") -> str:
-    """WIQL for work items assigned to email — never uses @Me (PAT owner)."""
-    safe = (email or "").replace("'", "''").strip()
-    if not safe:
+def build_assigned_wiql(
+    email: str,
+    *,
+    project: str = "",
+    emails: list[str] | None = None,
+) -> str:
+    """WIQL for work items assigned to email(s) — never uses @Me (PAT owner)."""
+    aliases = [e for e in (emails or [email]) if (e or "").strip()]
+    if not aliases and (email or "").strip():
+        aliases = [email]
+    if not aliases:
         raise ValueError("email is required for Boards WIQL")
+    clauses = []
+    for raw in aliases:
+        safe = (raw or "").replace("'", "''").strip()
+        if safe:
+            clauses.append(f"[System.AssignedTo] = '{safe}'")
+    if not clauses:
+        raise ValueError("email is required for Boards WIQL")
+    assigned = clauses[0] if len(clauses) == 1 else "(" + " OR ".join(clauses) + ")"
     states = (
         "'New', 'Active', 'Committed', 'To Do', 'Doing', "
         "'Approved', 'In Progress', 'Proposed'"
     )
     where = (
-        f"[System.AssignedTo] = '{safe}' "
+        f"{assigned} "
         f"AND [System.State] IN ({states}) "
         f"AND [System.WorkItemType] <> ''"
     )
@@ -167,18 +289,28 @@ async def list_assigned_work_items(
     *,
     project: str | None = None,
     top: int | None = None,
+    identity: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Query work items assigned to email via WIQL + work items batch get."""
+    """Query work items assigned to Graph/AzDO identity aliases via WIQL + batch get."""
     if not boards_configured():
         raise RuntimeError("Azure DevOps org URL / PAT not configured")
 
     limit = int(top if top is not None else settings.boards_work_item_top or 15)
     limit = max(1, min(limit, 50))
     proj = (project if project is not None else "").strip()
-    # Empty project = org-wide query (caller decides); do not force demo project here
-    # so the multi-project picker can ask first.
+    aliases = assigned_to_aliases(identity, email=email)
+    try:
+        extra = await lookup_azdo_unique_names(aliases[:6])
+        aliases = assigned_to_aliases(
+            {**(identity or {}), "azdo_unique_names": extra},
+            email=email,
+        )
+    except Exception:
+        logger.exception("AzDO identity expansion failed — using Graph aliases only")
+    if not aliases:
+        raise ValueError("email is required for Boards WIQL")
 
-    wiql = build_assigned_wiql(email, project=proj)
+    wiql = build_assigned_wiql(aliases[0], project=proj, emails=aliases)
     if proj:
         url = f"{_org_url()}/{quote(proj)}/_apis/wit/wiql?api-version=7.1&$top={limit}"
     else:
@@ -216,7 +348,12 @@ async def list_assigned_work_items(
     items = [_normalize_work_item(row, fallback_project=proj) for row in (batch.get("value") or [])]
     items = [x for x in items if x.get("id")]
     items = sort_items_by_priority(items)
-    logger.info("Boards assigned email=%s count=%s project=%s", email, len(items), proj or "*")
+    logger.info(
+        "Boards assigned aliases=%s count=%s project=%s",
+        aliases[:8],
+        len(items),
+        proj or "*",
+    )
     return items
 
 

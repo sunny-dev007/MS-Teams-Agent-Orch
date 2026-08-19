@@ -117,6 +117,8 @@ def _format_items(
             f"*Boards Agent* — **{project}**\n"
             f"Assigned to: **{who}**\n\n"
             "_No open action items matched._\n\n"
+            "Items must be assigned to **your Teams identity** (mail or guest UPN) "
+            "and not Done/Closed.\n"
             "Try another project, or **check my repos**."
         )
 
@@ -366,7 +368,9 @@ async def _fetch_and_list(
     project: str,
 ) -> AgentState:
     items = await azure_boards.list_assigned_work_items(
-        identity["email"], project=project
+        identity.get("email") or "",
+        project=project,
+        identity=identity,
     )
     catalog = [
         {
@@ -380,24 +384,32 @@ async def _fetch_and_list(
         }
         for it in items
     ]
+    session_data = dict(state.get("session_data") or {})
+    awaiting = AWAITING_TICKET if catalog else AWAITING_PROJECT
+    save_data: dict = {
+        "boards_catalog": catalog,
+        "boards_project": project,
+        "boards_identity": identity,
+        "channel": "teams",
+    }
+    if session_data.get("boards_projects"):
+        save_data["boards_projects"] = session_data["boards_projects"]
     await save_session(
         phone,
-        awaiting=AWAITING_TICKET,
-        data={
-            "boards_catalog": catalog,
-            "boards_project": project,
-            "boards_identity": identity,
-            "channel": "teams",
-        },
+        awaiting=awaiting,
+        data=save_data,
         merge_data=True,
     )
     await _mark_productivity(phone)
+    note = _format_items(items, project=project, display=display)
+    if not catalog and session_data.get("boards_projects"):
+        note += "\n\nReply with another **project number**, or **stop** then *my work items*."
     return {
         **state,
         "status": "completed",
         "handled_by": AGENT_NAME,
-        "session_awaiting": AWAITING_TICKET,
-        "notification_text": _format_items(items, project=project, display=display),
+        "session_awaiting": awaiting,
+        "notification_text": note,
     }
 
 
