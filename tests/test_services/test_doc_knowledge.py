@@ -52,7 +52,7 @@ async def test_library_disabled_message(monkeypatch):
 
 
 def test_source_tags_sp_od_on():
-    from agent.agents.doc_library_agent import _format_catalog
+    from agent.agents.doc_library_agent import _format_catalog_page
     from agent.services.graph_docs import SOURCE_TAG_LEGEND, source_tag
 
     assert source_tag("sharepoint") == "SP"
@@ -60,17 +60,79 @@ def test_source_tags_sp_od_on():
     assert source_tag("onenote") == "ON"
     assert source_tag("unknown") == "??"
 
-    text = _format_catalog(
+    text = _format_catalog_page(
         [
-            {"pick": 1, "source_type": "sharepoint", "title": "guide.md", "doc_mode": "guide", "folder": "Docs"},
-            {"pick": 2, "source_type": "onedrive", "title": "notes.docx", "doc_mode": "general", "folder": ""},
-            {"pick": 3, "source_type": "onenote", "title": "Meeting", "doc_mode": "notes", "folder": "NB"},
-        ]
+            {
+                "pick": 1,
+                "source_type": "sharepoint",
+                "title": "guide.md",
+                "doc_mode": "guide",
+                "folder": "Docs",
+                "site_name": "Engineering",
+                "web_url": "https://contoso.sharepoint.com/guide.md",
+                "extension": ".md",
+                "size": 2048,
+            },
+            {
+                "pick": 2,
+                "source_type": "onedrive",
+                "title": "notes.docx",
+                "doc_mode": "general",
+                "folder": "",
+                "site_name": "OneDrive",
+                "web_url": "",
+                "extension": ".docx",
+                "size": 100,
+            },
+            {
+                "pick": 3,
+                "source_type": "onenote",
+                "title": "Meeting",
+                "doc_mode": "notes",
+                "folder": "NB",
+                "site_name": "OneNote",
+                "web_url": "https://onenote",
+                "extension": ".one",
+                "size": 0,
+            },
+        ],
+        page=0,
+        page_size=10,
+        teams=True,
     )
     assert SOURCE_TAG_LEGEND in text
-    assert "[SP] *guide.md*" in text
-    assert "[OD] *notes.docx*" in text
-    assert "[ON] *Meeting*" in text
+    assert "[guide.md](https://contoso.sharepoint.com/guide.md)" in text
+    assert "Engineering / Docs" in text
+    assert "2.0 KB" in text or "2.1 KB" in text
+    assert "Found **3**" in text
+
+
+def test_extract_library_query_and_page():
+    from agent.services.graph_docs import extract_library_query, format_file_size, parse_library_page
+
+    assert extract_library_query("list of my document") == ""
+    assert extract_library_query("list my documents") == ""
+    assert "guide" in extract_library_query("find document developer-guide").lower()
+    assert extract_library_query("next page") == ""
+    assert parse_library_page("next", 0, 3) == 1
+    assert parse_library_page("page 3", 0, 3) == 2
+    assert parse_library_page("previous", 1, 3) == 0
+    assert format_file_size(1536).endswith("KB")
+
+
+@pytest.mark.asyncio
+async def test_planner_informal_list_and_search_docs():
+    from agent.planner.agent import plan
+
+    assert (await plan({"user_message": "list of my document", "whatsapp_phone": ""}))[
+        "intent"
+    ] == "list_docs"
+    assert (await plan({"user_message": "show me my documents", "whatsapp_phone": ""}))[
+        "intent"
+    ] == "list_docs"
+    assert (
+        await plan({"user_message": "find document developer-guide", "whatsapp_phone": ""})
+    )["intent"] == "list_docs"
 
 
 @pytest.mark.asyncio

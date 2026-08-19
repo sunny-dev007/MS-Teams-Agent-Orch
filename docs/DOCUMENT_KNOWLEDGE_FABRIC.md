@@ -8,7 +8,7 @@ Additive feature for Teams (and WhatsApp): **list → select → ingest/vectoriz
 
 | Agent | Intent | Teams phrases |
 |---|---|---|
-| **Doc Library** | `list_docs` | `list my documents`, `list sharepoint docs`, `list ingested documents` |
+| **Doc Library** | `list_docs` | `list my documents`, `list of my document`, `show me my documents`, `find document &lt;keyword&gt;`, `next page` |
 | **Doc Ingest** | `ingest_docs` | `ingest 1,3`, `ingest all`, or bare `1, 3` after a list |
 | **Doc RAG** | `ask_docs` | `ask docs what is our release process?` |
 | **Doc Insights** | `summarize_docs` | `summarize docs risks`, `doc insights` |
@@ -21,7 +21,7 @@ Additive feature for Teams (and WhatsApp): **list → select → ingest/vectoriz
 | **OD** | OneDrive |
 | **ON** | OneNote |
 
-Example: `1. [SP] *developer-guide.md* (guide / WhatsApp-MultiAgent-Context)`
+Example Teams row: `1. [SP] [developer-guide.md](https://…)` with type, size, site/folder. Lists paginate **10 per page** (`next page`). Filename search: `find document guide`. Extra SharePoint sites: `DOC_KNOWLEDGE_ALL_SITES=true` (falls back to the configured site).
 
 Say `help` for the full tools & quick-prompts catalog (all agents with `ON`/`OFF`).
 Say `hello` for the welcome card: session status, *Active agents*, and suggested next steps.
@@ -51,6 +51,9 @@ az webapp config appsettings set -g ai-agent-rg -n whatsapp-ai-agent-sunny --set
   ENABLE_DOC_KNOWLEDGE=false \
   AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-large \
   DOC_KNOWLEDGE_SOURCES=sharepoint,onedrive,onenote \
+  DOC_KNOWLEDGE_MAX_LIST=100 \
+  DOC_KNOWLEDGE_PAGE_SIZE=10 \
+  DOC_KNOWLEDGE_ALL_SITES=true \
   MS_GRAPH_ONEDRIVE_USER_ID=  # optional UPN/OID for OneDrive
 ```
 

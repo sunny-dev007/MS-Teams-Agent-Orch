@@ -54,10 +54,28 @@ _RUN_QA_RE = re.compile(
     re.IGNORECASE,
 )
 # Document Knowledge Fabric — must beat coding/repo session like Docs/QA
+# Informal phrasing: "list of my document", "show my files", filename search
 _LIST_DOCS_RE = re.compile(
-    r"(list\s+(?:my\s+)?(?:documents?|docs|files)|list\s+(?:sharepoint|onedrive|onenote)|"
-    r"show\s+(?:my\s+)?(?:documents?|docs)|browse\s+(?:documents?|docs|sharepoint)|"
+    r"(list\s+(?:of\s+)?(?:my\s+)?(?:documents?|docs|files)|"
+    r"list\s+(?:sharepoint|onedrive|onenote)|"
+    r"(?:show|get|fetch|display|give|pull)\s+(?:me\s+)?(?:all\s+)?(?:my\s+)?(?:the\s+)?"
+    r"(?:sharepoint\s+|onedrive\s+|onenote\s+)?(?:documents?|docs)|"
+    r"browse\s+(?:documents?|docs|sharepoint)|"
+    r"(?:my|all)\s+(?:sharepoint\s+)?(?:documents?|docs)\b|"
+    r"documents?\s+from\s+sharepoint|"
     r"list\s+ingested|knowledge\s+base|kb\s+status|doc\s+library)",
+    re.IGNORECASE,
+)
+_SEARCH_DOCS_RE = re.compile(
+    r"(?:find|search|locate|look\s+up)\s+(?:my\s+)?(?:documents?|docs|files?)\s+"
+    r"(?:named|called|like|for|about|with)?\s*\S+|"
+    r"search\s+(?:(?:in|on)\s+)?(?:sharepoint|onedrive|onenote)|"
+    r"(?:documents?|docs|files|sharepoint)\s+(?:named|called|like|about|with|for)\s+\S+",
+    re.IGNORECASE,
+)
+_DOC_PAGE_RE = re.compile(
+    r"^\s*(?:next(?:\s+page)?|more(?:\s+documents?)?|previous|prev(?:ious)?\s*page|"
+    r"page\s+\d+)\s*[.!]?\s*$",
     re.IGNORECASE,
 )
 _INGEST_DOCS_RE = re.compile(
@@ -152,6 +170,8 @@ async def plan(state: AgentState) -> AgentState:
 
     if _LIST_DOCS_RE.search(user_msg):
         return await _clear_for_kb("list_docs")
+    if _SEARCH_DOCS_RE.search(user_msg):
+        return await _clear_for_kb("list_docs")
     if _INGEST_DOCS_RE.search(user_msg):
         return await _clear_for_kb("ingest_docs")
     if _ASK_DOCS_RE.search(user_msg):
@@ -189,6 +209,14 @@ async def plan(state: AgentState) -> AgentState:
         try:
             session = await get_session(phone)
             awaiting_early = session.get("awaiting")
+            if awaiting_early == "doc_pick" and _DOC_PAGE_RE.match(user_msg):
+                return {
+                    **state,
+                    "intent": "list_docs",
+                    "session_awaiting": "doc_pick",
+                    "session_data": session.get("data") or {},
+                    "planned_by": AGENT_NAME,
+                }
             if awaiting_early == "doc_pick" and _DOC_PICK_NUMS_RE.match(user_msg):
                 return {**state, "intent": "ingest_docs", "planned_by": AGENT_NAME}
             # Boards multi-step (project / ticket) — do not steal coding gates

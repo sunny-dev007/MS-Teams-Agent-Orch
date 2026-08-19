@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 from html.parser import HTMLParser
 from typing import Any
+from urllib.parse import quote
 
 from agent.config import settings
 from agent.core.logging import get_logger
@@ -130,7 +131,89 @@ def _enabled_sources() -> set[str]:
     return {p.strip() for p in raw.split(",") if p.strip()}
 
 
-def _drive_item_to_catalog(item: dict[str, Any], *, source: str) -> dict[str, Any] | None:
+def format_file_size(n: int | None) -> str:
+    """Human-readable size for Teams/WhatsApp lists."""
+    try:
+        size = int(n or 0)
+    except (TypeError, ValueError):
+        return "—"
+    if size <= 0:
+        return "—"
+    if size < 1024:
+        return f"{size} B"
+    if size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    return f"{size / (1024 * 1024):.1f} MB"
+
+
+def folder_from_parent(parent: dict[str, Any] | None) -> str:
+    """Best-effort folder path from Graph parentReference.path."""
+    if not parent:
+        return ""
+    raw = str(parent.get("path") or "")
+    # e.g. /drives/{id}/root:/ReleaseNotes/sub
+    if "/root:" in raw:
+        rest = raw.split("/root:", 1)[-1].strip("/")
+        return rest
+    name = (parent.get("name") or "").strip()
+    if name.lower() in ("root", "documents", ""):
+        return ""
+    return name
+
+
+def extract_library_query(user_message: str) -> str:
+    """Filename/keyword for library search. Empty = browse all (paginated)."""
+    raw = (user_message or "").strip()
+    if not raw:
+        return ""
+    lower = raw.lower()
+    if re.match(
+        r"^\s*(next(?:\s+page)?|more(?:\s+documents?)?|previous|prev(?:ious)?\s*page|"
+        r"page\s+\d+)\s*$",
+        lower,
+    ):
+        return ""
+    # Strip list/show/browse boilerplate
+    cleaned = re.sub(
+        r"\b(list|show|get|fetch|display|give|pull|browse|find|search|locate|"
+        r"look\s+up|of|my|the|all|me|please|from|in|on|named|called|like|about|"
+        r"with|for|documents?|docs|files?|sharepoint|onedrive|onenote|"
+        r"document\s+library|library)\b",
+        " ",
+        raw,
+        flags=re.I,
+    )
+    cleaned = re.sub(r"[?!.,]+", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    if len(cleaned) < 2:
+        return ""
+    # Keep short filename-like tokens (avoid swallowing whole sentences)
+    if len(cleaned) > 80:
+        cleaned = cleaned[:80]
+    return cleaned
+
+
+def parse_library_page(user_message: str, current: int, page_count: int) -> int:
+    """Resolve next/prev/page N into a 0-based page index."""
+    msg = (user_message or "").strip().lower()
+    m = re.match(r"page\s+(\d+)", msg)
+    if m:
+        return max(0, min(int(m.group(1)) - 1, max(0, page_count - 1)))
+    if msg.startswith("prev") or msg.startswith("previous"):
+        return max(0, current - 1)
+    if msg.startswith("next") or msg.startswith("more"):
+        return min(current + 1, max(0, page_count - 1))
+    return current
+
+
+def _drive_item_to_catalog(
+    item: dict[str, Any],
+    *,
+    source: str,
+    site_name: str = "",
+    site_web_url: str = "",
+    folder: str = "",
+) -> dict[str, Any] | None:
     if item.get("folder") is not None and not item.get("file"):
         return None  # skip folders in v1 list (files only)
     name = item.get("name") or "untitled"
@@ -138,6 +221,8 @@ def _drive_item_to_catalog(item: dict[str, Any], *, source: str) -> dict[str, An
     ext = ""
     if "." in name:
         ext = "." + name.rsplit(".", 1)[-1].lower()
+    parent = item.get("parentReference") or {}
+    folder_name = folder or folder_from_parent(parent)
     return {
         "external_id": item.get("id") or "",
         "source_type": source,
@@ -148,50 +233,179 @@ def _drive_item_to_catalog(item: dict[str, Any], *, source: str) -> dict[str, An
         "size": int(item.get("size") or 0),
         "last_modified": item.get("lastModifiedDateTime") or "",
         "doc_mode": infer_doc_mode(name, mime),
-        "download_path": f"/drives/{item.get('parentReference', {}).get('driveId', '')}/items/{item.get('id')}/content"
-        if (item.get("parentReference") or {}).get("driveId")
+        "download_path": f"/drives/{parent.get('driveId', '')}/items/{item.get('id')}/content"
+        if parent.get("driveId")
         else "",
         "item_id": item.get("id") or "",
-        "drive_id": (item.get("parentReference") or {}).get("driveId") or "",
+        "drive_id": parent.get("driveId") or "",
+        "folder": folder_name,
+        "site_name": site_name,
+        "site_web_url": site_web_url,
     }
 
 
-async def list_sharepoint_files(*, site_id: str, limit: int) -> list[dict[str, Any]]:
-    items = await ms_graph.graph_paginate(
-        f"/sites/{site_id}/drive/root/children",
-        params={
-            "$top": min(limit, 50),
-            "$select": "id,name,webUrl,size,file,folder,lastModifiedDateTime,parentReference",
-        },
-        max_pages=2,
+async def _site_meta(site_id: str) -> tuple[str, str, str]:
+    """Return (id, displayName, webUrl)."""
+    site = await ms_graph.graph_request(
+        "GET", f"/sites/{site_id}?$select=id,displayName,webUrl,name"
     )
+    name = (site.get("displayName") or site.get("name") or "SharePoint").strip()
+    return str(site.get("id") or site_id), name, site.get("webUrl") or ""
+
+
+async def list_accessible_sites(*, max_sites: int) -> list[dict[str, str]]:
+    """Configured site first, then other Graph-visible site collections (capped)."""
+    out: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def _add(sid: str, name: str, url: str) -> None:
+        key = (sid or "").strip()
+        if not key or key in seen:
+            return
+        seen.add(key)
+        out.append({"id": key, "name": name or "SharePoint", "web_url": url or ""})
+
+    try:
+        sid, url = await resolve_site_id()
+        sid, name, url = await _site_meta(sid)
+        _add(sid, name, url)
+    except Exception:
+        logger.exception("Configured SharePoint site could not be resolved")
+
+    if not settings.doc_knowledge_all_sites:
+        return out[:max_sites]
+
+    try:
+        host = (settings.ms_graph_sharepoint_hostname or "").strip()
+        q = host.split(".")[0] if host else "*"
+        body = await ms_graph.graph_request(
+            "GET",
+            f"/sites?search={quote(q)}&$select=id,displayName,webUrl,name&$top={max(max_sites, 10)}",
+        )
+        for s in body.get("value") or []:
+            if not isinstance(s, dict):
+                continue
+            _add(
+                str(s.get("id") or ""),
+                (s.get("displayName") or s.get("name") or "").strip(),
+                s.get("webUrl") or "",
+            )
+            if len(out) >= max_sites:
+                break
+    except Exception:
+        logger.exception("Graph site search failed — using configured site only")
+    return out[:max_sites]
+
+
+async def _walk_drive_files(
+    *,
+    site_id: str,
+    item_path: str,
+    folder_label: str,
+    site_name: str,
+    site_web_url: str,
+    source: str,
+    depth: int,
+    max_depth: int,
+    remaining: int,
+) -> list[dict[str, Any]]:
+    if remaining <= 0 or depth > max_depth:
+        return []
+    try:
+        items = await ms_graph.graph_paginate(
+            item_path,
+            params={
+                "$top": min(50, max(remaining, 10)),
+                "$select": "id,name,webUrl,size,file,folder,lastModifiedDateTime,parentReference",
+            },
+            max_pages=2,
+        )
+    except Exception:
+        logger.exception("Drive list failed path=%s", item_path[:80])
+        return []
+
     out: list[dict[str, Any]] = []
     for it in items:
+        if remaining - len(out) <= 0:
+            break
         if it.get("folder") is not None and not it.get("file"):
-            folder_id = it.get("id")
-            if not folder_id:
+            fid = it.get("id")
+            fname = it.get("name") or ""
+            if not fid or depth >= max_depth:
                 continue
-            try:
-                children = await ms_graph.graph_paginate(
-                    f"/sites/{site_id}/drive/items/{folder_id}/children",
-                    params={
-                        "$top": min(limit, 50),
-                        "$select": "id,name,webUrl,size,file,folder,lastModifiedDateTime,parentReference",
-                    },
-                    max_pages=1,
-                )
-            except Exception:
-                logger.exception("Failed listing folder %s", it.get("name"))
-                continue
-            for child in children:
-                row = _drive_item_to_catalog(child, source=SOURCE_SHAREPOINT)
-                if row:
-                    row["folder"] = it.get("name") or ""
-                    out.append(row)
+            child_folder = "/".join(p for p in (folder_label, fname) if p)
+            nested = await _walk_drive_files(
+                site_id=site_id,
+                item_path=f"/sites/{site_id}/drive/items/{fid}/children",
+                folder_label=child_folder,
+                site_name=site_name,
+                site_web_url=site_web_url,
+                source=source,
+                depth=depth + 1,
+                max_depth=max_depth,
+                remaining=remaining - len(out),
+            )
+            out.extend(nested)
             continue
-        row = _drive_item_to_catalog(it, source=SOURCE_SHAREPOINT)
+        row = _drive_item_to_catalog(
+            it,
+            source=source,
+            site_name=site_name,
+            site_web_url=site_web_url,
+            folder=folder_label,
+        )
         if row:
-            row["folder"] = ""
+            out.append(row)
+    return out[:remaining]
+
+
+async def list_sharepoint_files(*, site_id: str, limit: int) -> list[dict[str, Any]]:
+    try:
+        sid, name, url = await _site_meta(site_id)
+    except Exception:
+        sid, name, url = site_id, "SharePoint", ""
+    depth = max(1, int(settings.doc_knowledge_folder_depth or 3))
+    return await _walk_drive_files(
+        site_id=sid,
+        item_path=f"/sites/{sid}/drive/root/children",
+        folder_label="",
+        site_name=name,
+        site_web_url=url,
+        source=SOURCE_SHAREPOINT,
+        depth=0,
+        max_depth=depth,
+        remaining=limit,
+    )
+
+
+async def search_sharepoint_files(
+    *, site_id: str, query: str, limit: int, site_name: str = "", site_web_url: str = ""
+) -> list[dict[str, Any]]:
+    q = (query or "").strip()
+    q = re.sub(r"[^a-zA-Z0-9._\- ]+", " ", q).strip()
+    if not q:
+        return await list_sharepoint_files(site_id=site_id, limit=limit)
+    try:
+        items = await ms_graph.graph_paginate(
+            f"/sites/{site_id}/drive/root/search(q='{q.replace(chr(39), ' ')}')",
+            params={
+                "$top": min(limit, 50),
+                "$select": "id,name,webUrl,size,file,folder,lastModifiedDateTime,parentReference",
+            },
+            max_pages=2,
+        )
+    except Exception:
+        logger.exception("Drive search failed site=%s q=%s", site_id[:12], q[:40])
+        return await list_sharepoint_files(site_id=site_id, limit=limit)
+    out: list[dict[str, Any]] = []
+    for it in items:
+        row = _drive_item_to_catalog(
+            it,
+            source=SOURCE_SHAREPOINT,
+            site_name=site_name,
+            site_web_url=site_web_url,
+        )
+        if row:
             out.append(row)
         if len(out) >= limit:
             break
@@ -212,7 +426,9 @@ async def list_onedrive_files(*, limit: int) -> list[dict[str, Any]]:
     )
     out: list[dict[str, Any]] = []
     for it in items:
-        row = _drive_item_to_catalog(it, source=SOURCE_ONEDRIVE)
+        row = _drive_item_to_catalog(
+            it, source=SOURCE_ONEDRIVE, site_name="OneDrive", folder=""
+        )
         if row:
             row["folder"] = ""
             out.append(row)
@@ -253,6 +469,8 @@ async def list_onenote_pages(*, site_id: str, limit: int) -> list[dict[str, Any]
                 "doc_mode": infer_doc_mode(title, "onenote"),
                 "content_url": p.get("contentUrl") or "",
                 "folder": "OneNote",
+                "site_name": "OneNote",
+                "site_web_url": web,
                 "item_id": p.get("id") or "",
                 "drive_id": "",
             }
@@ -262,28 +480,96 @@ async def list_onenote_pages(*, site_id: str, limit: int) -> list[dict[str, Any]
     return out
 
 
-async def list_knowledge_catalog(*, limit: int | None = None) -> list[dict[str, Any]]:
-    """Unified catalog for Teams selection (numbered list)."""
+async def list_knowledge_catalog(
+    *,
+    limit: int | None = None,
+    query: str | None = None,
+) -> list[dict[str, Any]]:
+    """Unified catalog for Teams selection (numbered list). Optional filename query."""
     if not ms_graph.graph_configured():
         raise RuntimeError("Microsoft Graph credentials not configured")
-    cap = int(limit or settings.doc_knowledge_max_list or 25)
+    cap = int(limit or settings.doc_knowledge_max_list or 100)
+    cap = max(10, min(cap, 250))
     sources = _enabled_sources()
-    site_id = ""
+    q = (query or "").strip()
     catalog: list[dict[str, Any]] = []
+    seen: set[str] = set()
 
-    need_site = SOURCE_SHAREPOINT in sources or SOURCE_ONENOTE in sources
-    if need_site:
-        site_id, _ = await resolve_site_id()
+    def _add(rows: list[dict[str, Any]]) -> None:
+        for row in rows:
+            key = f"{row.get('drive_id')}:{row.get('item_id') or row.get('external_id')}"
+            if key in seen:
+                continue
+            seen.add(key)
+            catalog.append(row)
 
-    per = max(5, cap // max(1, len(sources)))
-    if SOURCE_SHAREPOINT in sources and site_id:
-        catalog.extend(await list_sharepoint_files(site_id=site_id, limit=per))
+    if SOURCE_SHAREPOINT in sources:
+        max_sites = max(1, int(settings.doc_knowledge_max_sites or 8))
+        sites = await list_accessible_sites(max_sites=max_sites)
+        if not sites:
+            try:
+                sid, url = await resolve_site_id()
+                sites = [{"id": sid, "name": "SharePoint", "web_url": url}]
+            except Exception:
+                sites = []
+        per_site = max(8, cap // max(1, len(sites)))
+        for site in sites:
+            sid = site["id"]
+            if q:
+                _add(
+                    await search_sharepoint_files(
+                        site_id=sid,
+                        query=q,
+                        limit=per_site,
+                        site_name=site.get("name") or "",
+                        site_web_url=site.get("web_url") or "",
+                    )
+                )
+            else:
+                _add(await list_sharepoint_files(site_id=sid, limit=per_site))
+            if len(catalog) >= cap:
+                break
+
     if SOURCE_ONEDRIVE in sources:
-        catalog.extend(await list_onedrive_files(limit=per))
-    if SOURCE_ONENOTE in sources and site_id:
-        catalog.extend(await list_onenote_pages(site_id=site_id, limit=per))
+        od = await list_onedrive_files(limit=max(8, cap // 4))
+        if q:
+            ql = q.lower()
+            od = [
+                r
+                for r in od
+                if ql in (r.get("title") or "").lower()
+                or ql in (r.get("folder") or "").lower()
+            ]
+        _add(od)
 
-    catalog.sort(key=lambda r: (r.get("source_type") or "", (r.get("title") or "").lower()))
+    if SOURCE_ONENOTE in sources:
+        try:
+            site_id, _ = await resolve_site_id()
+            on = await list_onenote_pages(site_id=site_id, limit=max(8, cap // 4))
+            if q:
+                ql = q.lower()
+                on = [r for r in on if ql in (r.get("title") or "").lower()]
+            _add(on)
+        except Exception:
+            logger.exception("OneNote catalog skipped")
+
+    if q:
+        ql = q.lower()
+        catalog = [
+            r
+            for r in catalog
+            if ql in (r.get("title") or "").lower()
+            or ql in (r.get("folder") or "").lower()
+            or ql in (r.get("site_name") or "").lower()
+        ]
+
+    catalog.sort(
+        key=lambda r: (
+            r.get("source_type") or "",
+            (r.get("site_name") or "").lower(),
+            (r.get("title") or "").lower(),
+        )
+    )
     for i, row in enumerate(catalog[:cap], start=1):
         row["pick"] = i
     return catalog[:cap]

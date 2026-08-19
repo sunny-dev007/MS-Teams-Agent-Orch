@@ -5,10 +5,13 @@ Feature: Document Knowledge Fabric. ENABLE_DOC_KNOWLEDGE default false.
 
 from __future__ import annotations
 
+import re
+
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.channel_identity import is_teams_session
 from agent.core.logging import get_logger
-from agent.core.session import save_session
+from agent.core.session import get_session, save_session
 from agent.models import knowledge_doc as kd
 from agent.services import graph_docs, ms_graph
 
@@ -23,21 +26,98 @@ _DISABLED = (
     "Dev Agent and WhatsApp coding paths are unchanged."
 )
 
+_PAGE_NAV_RE = re.compile(
+    r"^\s*(next(?:\s+page)?|more(?:\s+documents?)?|previous|"
+    r"prev(?:ious)?\s*page|page\s+\d+)\s*$",
+    re.I,
+)
 
-def _format_catalog(catalog: list[dict]) -> str:
-    if not catalog:
-        return "_No files found. Check Graph site settings / OneDrive user / Notes permissions._"
-    lines = [f"_Tags:_ {graph_docs.SOURCE_TAG_LEGEND}", ""]
-    for row in catalog:
-        src = graph_docs.source_tag(row.get("source_type"))
-        mode = row.get("doc_mode") or "general"
-        folder = row.get("folder") or ""
-        loc = f" / {folder}" if folder else ""
-        lines.append(
-            f"{row.get('pick')}. [{src}] *{row.get('title')}* "
-            f"({mode}{loc})"
+
+def _file_label(row: dict) -> str:
+    title = (row.get("title") or "untitled").replace("|", "/")
+    url = (row.get("web_url") or "").strip()
+    if url:
+        return f"[{title}]({url})"
+    return f"**{title}**"
+
+
+def _format_catalog_page(
+    catalog: list[dict],
+    *,
+    page: int,
+    page_size: int,
+    query: str = "",
+    teams: bool = True,
+) -> str:
+    total = len(catalog)
+    if total == 0:
+        if query:
+            return (
+                f"_No files matched **{query}**._\n\n"
+                "Try a shorter keyword, or *list my documents* for the full library."
+            )
+        return (
+            "_No files found. Check Graph site settings / OneDrive user / Notes permissions._"
         )
+
+    start = page * page_size
+    chunk = catalog[start : start + page_size]
+    page_count = max(1, (total + page_size - 1) // page_size)
+    head = (
+        f"Found **{total}** file(s)"
+        + (f" matching **{query}**" if query else "")
+        + f" — showing **{start + 1}–{start + len(chunk)}** "
+        f"(page **{page + 1}** of **{page_count}**, {page_size} per page)."
+    )
+    lines = [head, "", f"_Tags:_ {graph_docs.SOURCE_TAG_LEGEND}", ""]
+    if teams:
+        lines += [
+            "| # | File | Type | Size | Site / folder |",
+            "| :---: | :--- | :---: | ---: | :--- |",
+        ]
+        for row in chunk:
+            src = graph_docs.source_tag(row.get("source_type"))
+            ext = (row.get("extension") or "—").lstrip(".") or "—"
+            loc = " / ".join(
+                p for p in ((row.get("site_name") or ""), (row.get("folder") or "")) if p
+            ) or "—"
+            loc = loc.replace("|", "/")
+            lines.append(
+                f"| {row.get('pick')} | [{src}] {_file_label(row)} | {ext} | "
+                f"{graph_docs.format_file_size(row.get('size'))} | {loc} |"
+            )
+    else:
+        for row in chunk:
+            src = graph_docs.source_tag(row.get("source_type"))
+            ext = (row.get("extension") or "").lstrip(".") or "file"
+            loc = " / ".join(
+                p for p in ((row.get("site_name") or ""), (row.get("folder") or "")) if p
+            )
+            url = (row.get("web_url") or "").strip()
+            lines.append(
+                f"{row.get('pick')}. [{src}] *{row.get('title')}* "
+                f"({ext} · {graph_docs.format_file_size(row.get('size'))}"
+                f"{(' · ' + loc) if loc else ''})"
+            )
+            if url:
+                lines.append(f"   {url}")
     return "\n".join(lines)
+
+
+def _related_prompts(*, page: int, page_count: int, query: str, has_items: bool) -> str:
+    bits = []
+    if has_items and page + 1 < page_count:
+        bits.append(f"*next page* (page {page + 2})")
+    if page > 0:
+        bits.append("*previous page*")
+    bits.append("*ingest 1,3* (use the **#** column)")
+    bits.append("*ingest all*")
+    if query:
+        bits.append("*list my documents* (clear search)")
+    else:
+        bits.append("*find document keyword* (filename search)")
+    bits.append("*ask docs …* after ingest")
+    return "**Next:** " + " · ".join(bits)
 
 
 def _sources_footer() -> str:
@@ -56,7 +136,8 @@ def _sources_footer() -> str:
             bits.append(f"{tag}_on")
         else:
             bits.append(f"{tag}_off")
-    return "_Sources:_ " + " · ".join(bits)
+    extra = "all-sites" if settings.doc_knowledge_all_sites else "configured-site"
+    return "_Sources:_ " + " · ".join(bits) + f" · _{extra}_"
 
 
 async def list_documents(state: AgentState) -> AgentState:
@@ -80,13 +161,14 @@ async def list_documents(state: AgentState) -> AgentState:
         }
 
     msg = (state.get("user_message") or "").lower()
+    raw_msg = state.get("user_message") or ""
     phone = state.get("whatsapp_phone") or ""
+    teams = is_teams_session(phone)
+    page_size = max(5, min(int(settings.doc_knowledge_page_size or 10), 25))
 
-    # Inventory of already-ingested docs
     if "ingested" in msg or "knowledge base" in msg or "kb status" in msg:
         docs = await kd.list_ready_documents(owner_session=phone or None, limit=30)
         if not docs:
-            # Also show global ready docs (shared KB on App Service)
             docs = await kd.list_ready_documents(limit=30)
         if not docs:
             note = (
@@ -108,35 +190,78 @@ async def list_documents(state: AgentState) -> AgentState:
             "notification_text": note,
         }
 
-    try:
-        catalog = await graph_docs.list_knowledge_catalog()
-    except Exception as exc:
-        logger.exception("Doc library list failed")
-        return {
-            **state,
-            "status": "failed",
-            "handled_by": AGENT_NAME,
-            "notification_text": f"*Doc Library Agent* failed listing: {exc}",
-            "error": str(exc),
-        }
+    session_data: dict = {}
+    if phone:
+        try:
+            session_data = (await get_session(phone)).get("data") or {}
+        except Exception:
+            session_data = {}
+
+    existing = list(session_data.get("doc_catalog") or [])
+    current_page = int(session_data.get("doc_page") or 0)
+    stored_query = str(session_data.get("doc_query") or "")
+    is_page_nav = bool(_PAGE_NAV_RE.match(raw_msg.strip()))
+    query = graph_docs.extract_library_query(raw_msg)
+
+    catalog = existing
+    if is_page_nav and existing:
+        page_count = max(1, (len(existing) + page_size - 1) // page_size)
+        current_page = graph_docs.parse_library_page(raw_msg, current_page, page_count)
+        catalog = existing
+        query = stored_query
+    else:
+        try:
+            catalog = await graph_docs.list_knowledge_catalog(query=query or None)
+        except Exception as exc:
+            logger.exception("Doc library list failed")
+            return {
+                **state,
+                "status": "failed",
+                "handled_by": AGENT_NAME,
+                "notification_text": (
+                    f"*Doc Library Agent* failed listing: {exc}\n\n"
+                    "If extra-site search is blocked, the configured SharePoint site is still used."
+                ),
+                "error": str(exc),
+            }
+        current_page = 0
+
+    page_count = max(1, (len(catalog) + page_size - 1) // page_size)
+    current_page = max(0, min(current_page, page_count - 1))
 
     if phone:
         try:
             await save_session(
                 phone,
                 awaiting="doc_pick",
-                data={"doc_catalog": catalog, "channel": "teams" if phone.startswith("teams:") else "whatsapp"},
+                data={
+                    "doc_catalog": catalog,
+                    "doc_page": current_page,
+                    "doc_query": query,
+                    "channel": "teams" if teams else "whatsapp",
+                },
                 merge_data=True,
             )
         except Exception:
             logger.exception("Failed saving doc_catalog session")
 
+    body = _format_catalog_page(
+        catalog,
+        page=current_page,
+        page_size=page_size,
+        query=query,
+        teams=teams,
+    )
     note = (
         "*Doc Library Agent* — selectable documents\n\n"
-        f"{_format_catalog(catalog)}\n\n"
+        f"{body}\n\n"
         f"{_sources_footer()}\n\n"
-        "Reply *ingest 1,3* (or *ingest all*) to vectorize with metadata.\n"
-        "Then *ask docs <question>* or *summarize docs <focus>*."
+        + _related_prompts(
+            page=current_page,
+            page_count=page_count,
+            query=query,
+            has_items=bool(catalog),
+        )
     )
     if phone:
         try:

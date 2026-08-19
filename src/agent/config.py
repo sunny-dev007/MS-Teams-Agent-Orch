@@ -93,7 +93,13 @@ class Settings(BaseSettings):
     azure_openai_embedding_deployment: str = "text-embedding-3-large"
     ms_graph_onedrive_user_id: str = ""  # UPN or AAD OID for OneDrive listing (optional)
     doc_knowledge_sources: str = "sharepoint,onedrive,onenote"  # csv of sources to list
-    doc_knowledge_max_list: int = 25
+    # Catalog cap in session (pagination displays page_size at a time)
+    doc_knowledge_max_list: int = 100
+    doc_knowledge_page_size: int = 10
+    # Also list other Graph-visible site collections (falls back to configured site)
+    doc_knowledge_all_sites: bool = True
+    doc_knowledge_max_sites: int = 8
+    doc_knowledge_folder_depth: int = 3
     # Structure-aware chunking defaults (~450–600 tokens with ~20% overlap)
     doc_knowledge_chunk_chars: int = 1800
     doc_knowledge_chunk_overlap: int = 360

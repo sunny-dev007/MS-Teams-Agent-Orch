@@ -10,7 +10,7 @@ Classify the user's WhatsApp message into exactly one intent:
 - "approval_yes": approve a pending task
 - "approval_no": reject a pending task
 - "task_status": ask about task/job status
-- "list_docs": list SharePoint/OneDrive/OneNote documents or ingested knowledge base
+- "list_docs": list or search SharePoint/OneDrive/OneNote documents (including informal phrasing like "list of my document", "show my files", "find document guide", "next page") or ingested knowledge base
 - "ingest_docs": ingest/vectorize selected documents into the knowledge base
 - "ask_docs": QnA over ingested documents (RAG)
 - "summarize_docs": executive insights/summary over ingested documents
