@@ -13,51 +13,39 @@
             color: #333;
         }
         header {
-            background-color: #0078d4;
+            background-color: #009688;
             color: white;
             padding: 10px 20px;
             text-align: center;
         }
-        main {
+        .container {
             padding: 20px;
         }
-        .status {
-            display: flex;
-            justify-content: space-around;
+        .section {
             margin-bottom: 20px;
-        }
-        .status div {
-            background-color: #fff;
+            padding: 20px;
+            background-color: white;
             border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            padding: 15px;
-            flex: 1;
-            margin: 0 10px;
-            text-align: center;
         }
-        .status div h2 {
-            margin: 0 0 10px;
-            font-size: 1.2em;
+        h2 {
+            color: #009688;
         }
-        .status div p {
-            margin: 0;
-            font-size: 1em;
+        .capabilities {
+            display: flex;
+            flex-wrap: wrap;
         }
-        footer {
-            background-color: #0078d4;
-            color: white;
-            text-align: center;
-            padding: 10px 0;
-            position: fixed;
-            width: 100%;
-            bottom: 0;
+        .capability {
+            flex: 1 1 45%;
+            margin: 10px;
+            padding: 10px;
+            background-color: #e0f7fa;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
         }
         @media (max-width: 600px) {
-            .status {
-                flex-direction: column;
-            }
-            .status div {
-                margin: 10px 0;
+            .capability {
+                flex: 1 1 100%;
             }
         }
     </style>
@@ -66,21 +54,36 @@
     <header>
         <h1>WhatsApp AI Agent Portal</h1>
     </header>
-    <main>
-        <section class="status">
-            <div>
-                <h2>Agent Status</h2>
-                <p id="agent-status">Loading...</p>
+    <div class="container">
+        <div class="section">
+            <h2>Agent Overview</h2>
+            <p>Welcome to the WhatsApp AI Agent Portal. This platform allows you to manage your engineering tasks through WhatsApp messages.</p>
+        </div>
+        <div class="section">
+            <h2>Capabilities</h2>
+            <div class="capabilities">
+                <div class="capability">
+                    <h3>Email Management</h3>
+                    <p>Read and classify emails, send new emails, and manage your inbox efficiently.</p>
+                </div>
+                <div class="capability">
+                    <h3>Calendar Scheduling</h3>
+                    <p>Schedule meetings, create events, and integrate with Google Calendar.</p>
+                </div>
+                <div class="capability">
+                    <h3>Repository Browsing</h3>
+                    <p>Browse and manage your repositories on GitHub and Azure DevOps.</p>
+                </div>
+                <div class="capability">
+                    <h3>Code Development</h3>
+                    <p>Develop code, review changes, and deploy to production with human approval.</p>
+                </div>
             </div>
-            <div>
-                <h2>Capabilities</h2>
-                <p>Manage emails, schedule meetings, and more.</p>
-            </div>
-        </section>
-    </main>
-    <footer>
-        <p>&copy; 2023 WhatsApp AI Agent</p>
-    </footer>
-    <script src="portal.js"></script>
+        </div>
+        <div class="section">
+            <h2>Status</h2>
+            <p>All systems are operational. You can start sending commands via WhatsApp.</p>
+        </div>
+    </div>
 </body>
 </html>
