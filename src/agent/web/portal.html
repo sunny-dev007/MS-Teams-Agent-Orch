@@ -3,86 +3,79 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WhatsApp AI Agent Portal</title>
+    <title>Personal AI Agent Portal</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
             margin: 0;
-            padding: 0;
-            background-color: #f4f4f9;
-            color: #333;
+            font-family: Arial, sans-serif;
         }
-        header {
-            background-color: #009688;
-            color: white;
+        .header {
+            position: sticky;
+            top: 0;
+            background-color: #004d40;
+            color: #ffffff;
             padding: 10px 20px;
-            text-align: center;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
         }
-        .container {
+        .brand {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .brand h1 {
+            margin: 0;
+            font-size: 1.5em;
+        }
+        .brand p {
+            margin: 0;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+        .nav {
+            margin-top: 10px;
+        }
+        .nav a {
+            color: #ffffff;
+            text-decoration: none;
+            margin-right: 15px;
+            font-size: 0.9em;
+        }
+        .nav a:hover {
+            text-decoration: underline;
+        }
+        .content {
             padding: 20px;
         }
         .section {
-            margin-bottom: 20px;
-            padding: 20px;
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-        h2 {
-            color: #009688;
-        }
-        .capabilities {
-            display: flex;
-            flex-wrap: wrap;
-        }
-        .capability {
-            flex: 1 1 45%;
-            margin: 10px;
-            padding: 10px;
-            background-color: #e0f7fa;
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        }
-        @media (max-width: 600px) {
-            .capability {
-                flex: 1 1 100%;
-            }
+            margin-bottom: 40px;
         }
     </style>
 </head>
 <body>
-    <header>
-        <h1>WhatsApp AI Agent Portal</h1>
-    </header>
-    <div class="container">
-        <div class="section">
-            <h2>Agent Overview</h2>
-            <p>Welcome to the WhatsApp AI Agent Portal. This platform allows you to manage your engineering tasks through WhatsApp messages.</p>
+    <div class="header">
+        <div class="brand">
+            <h1>Personal AI Agent</h1>
+            <p>Your smart assistant for engineering tasks</p>
         </div>
-        <div class="section">
+        <div class="nav">
+            <a href="#overview">Overview</a>
+            <a href="#capabilities">Capabilities</a>
+            <a href="#status">Status</a>
+        </div>
+    </div>
+    <div class="content">
+        <div id="overview" class="section">
+            <h2>Overview</h2>
+            <p>Welcome to the Personal AI Agent portal. Here you can find information about the capabilities and status of your AI assistant.</p>
+        </div>
+        <div id="capabilities" class="section">
             <h2>Capabilities</h2>
-            <div class="capabilities">
-                <div class="capability">
-                    <h3>Email Management</h3>
-                    <p>Read and classify emails, send new emails, and manage your inbox efficiently.</p>
-                </div>
-                <div class="capability">
-                    <h3>Calendar Scheduling</h3>
-                    <p>Schedule meetings, create events, and integrate with Google Calendar.</p>
-                </div>
-                <div class="capability">
-                    <h3>Repository Browsing</h3>
-                    <p>Browse and manage your repositories on GitHub and Azure DevOps.</p>
-                </div>
-                <div class="capability">
-                    <h3>Code Development</h3>
-                    <p>Develop code, review changes, and deploy to production with human approval.</p>
-                </div>
-            </div>
+            <p>The Personal AI Agent can handle a variety of tasks including email management, meeting scheduling, and code development.</p>
         </div>
-        <div class="section">
+        <div id="status" class="section">
             <h2>Status</h2>
-            <p>All systems are operational. You can start sending commands via WhatsApp.</p>
+            <p>Check the current status of your AI agent and recent activities.</p>
         </div>
     </div>
 </body>
