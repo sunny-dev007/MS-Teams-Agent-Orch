@@ -80,7 +80,8 @@ _DOC_PAGE_RE = re.compile(
 )
 _INGEST_DOCS_RE = re.compile(
     r"(ingest\s+(?:\d+|all)|vectorize|index\s+(?:these\s+)?docs?|"
-    r"add\s+(?:to\s+)?(?:knowledge|kb)|ingest\s+documents?)",
+    r"add\s+(?:to\s+)?(?:knowledge|kb)|ingest\s+documents?|"
+    r"re-?ingest|ingest\s+stale)",
     re.IGNORECASE,
 )
 _ASK_DOCS_RE = re.compile(
@@ -91,6 +92,15 @@ _ASK_DOCS_RE = re.compile(
 _SUMMARIZE_DOCS_RE = re.compile(
     r"(summarize\s+docs?|summarise\s+docs?|doc\s+insights?|"
     r"insights?\s+(?:on|from)\s+docs?|document\s+insights?)",
+    re.IGNORECASE,
+)
+_DATA_ANALYST_RE = re.compile(
+    r"(convert\s+(?:this\s+|the\s+)?excel|"
+    r"analy[sz]e\s+(?:this\s+|the\s+)?(?:excel|spreadsheet|workbook)|"
+    r"excel\s+(?:dashboard|analytics|analyst)|"
+    r"advanced\s+excel|"
+    r"data\s+analyst(?:\s+agent)?|"
+    r"transform\s+(?:this\s+|the\s+)?(?:excel|spreadsheet))",
     re.IGNORECASE,
 )
 _DOC_PICK_NUMS_RE = re.compile(r"^\s*[\d,\s]+(?:\s*(?:and|&)\s*[\d,\s]+)*\s*$")
@@ -178,6 +188,8 @@ async def plan(state: AgentState) -> AgentState:
         return await _clear_for_kb("ask_docs")
     if _SUMMARIZE_DOCS_RE.search(user_msg):
         return await _clear_for_kb("summarize_docs")
+    if _DATA_ANALYST_RE.search(user_msg):
+        return await _clear_for_kb("analyze_excel")
 
     # Outlook / Boards — Teams productivity lane (priority over coding session)
     async def _clear_for_productivity(intent_name: str) -> AgentState:

@@ -210,6 +210,25 @@ async def replace_chunks(
         return len(chunks)
 
 
+async def map_by_external_ids(pairs: list[tuple[str, str]]) -> dict[tuple[str, str], dict]:
+    """Lookup knowledge rows by (external_id, source_type). Additive catalog overlay."""
+    keys = [(e or "", s or "") for e, s in pairs if e]
+    if not keys:
+        return {}
+    ids = list({k[0] for k in keys})
+    await ensure_db_schema()
+    async with async_session() as session:
+        q = select(KnowledgeDocument).where(KnowledgeDocument.external_id.in_(ids))
+        rows = (await session.execute(q)).scalars().all()
+    out: dict[tuple[str, str], dict] = {}
+    wanted = set(keys)
+    for row in rows:
+        key = (row.external_id, row.source_type)
+        if key in wanted:
+            out[key] = doc_to_dict(row)
+    return out
+
+
 async def list_ready_documents(*, owner_session: str | None = None, limit: int = 50) -> list[dict]:
     await ensure_db_schema()
     async with async_session() as session:

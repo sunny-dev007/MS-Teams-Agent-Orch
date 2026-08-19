@@ -103,6 +103,7 @@ def test_source_tags_sp_od_on():
     assert SOURCE_TAG_LEGEND in text
     assert "[guide.md](https://contoso.sharepoint.com/guide.md)" in text
     assert "Engineering / Docs" in text
+    assert "Ingestion" in text
     assert "2.0 KB" in text or "2.1 KB" in text
     assert "Found **3**" in text
 
@@ -196,6 +197,7 @@ async def test_graph_routes_knowledge_intents():
     assert _route_after_plan({"intent": "ingest_docs"}) == "doc_ingest_agent"
     assert _route_after_plan({"intent": "ask_docs"}) == "doc_rag_agent"
     assert _route_after_plan({"intent": "summarize_docs"}) == "doc_insights_agent"
+    assert _route_after_plan({"intent": "analyze_excel"}) == "data_analyst_agent"
 
 
 def test_chunk_and_cosine():
@@ -314,3 +316,66 @@ async def test_infer_doc_mode():
     assert infer_doc_mode("Security-Policy.pdf") == "policy"
     assert infer_doc_mode("How-To-Deploy.md") == "howto"
     assert infer_doc_mode("ReleaseNotes-41.html") == "release"
+
+
+def test_ingest_status_raw_ingested_stale():
+    from agent.services.ingest_status import (
+        STATUS_INGESTED,
+        STATUS_RAW,
+        STATUS_STALE,
+        classify_ingest_status,
+        overlay_catalog,
+    )
+
+    entry = {
+        "external_id": "abc",
+        "source_type": "sharepoint",
+        "last_modified": "2026-08-20T10:00:00Z",
+        "size": 100,
+        "pick": 1,
+        "title": "a.docx",
+    }
+    assert classify_ingest_status(entry, None) == STATUS_RAW
+    kb_ready = {
+        "status": "ready",
+        "metadata": {"source_last_modified": "2026-08-20T10:00:00Z", "source_size": 100},
+        "updated_at": "2026-08-20T10:00:00+00:00",
+    }
+    assert classify_ingest_status(entry, kb_ready) == STATUS_INGESTED
+    stale_entry = {**entry, "last_modified": "2026-08-20T12:00:00Z"}
+    assert classify_ingest_status(stale_entry, kb_ready) == STATUS_STALE
+    size_entry = {**entry, "size": 250}
+    assert classify_ingest_status(size_entry, kb_ready) == STATUS_STALE
+
+    rows = overlay_catalog(
+        [stale_entry],
+        {("abc", "sharepoint"): kb_ready},
+    )
+    assert rows[0]["ingest_label"] == "Ready for re-ingest"
+
+
+@pytest.mark.asyncio
+async def test_planner_routes_data_analyst_and_reingest():
+    from agent.planner.agent import plan
+
+    assert (await plan({"user_message": "convert excel 6", "whatsapp_phone": ""}))[
+        "intent"
+    ] == "analyze_excel"
+    assert (await plan({"user_message": "reingest stale", "whatsapp_phone": ""}))[
+        "intent"
+    ] == "ingest_docs"
+
+
+@pytest.mark.asyncio
+async def test_data_analyst_flag_default_off():
+    from agent.agents.data_analyst_agent import analyze_excel
+    from agent.config import Settings, settings
+
+    s = Settings(_env_file=None, enable_data_analyst_agent=False)
+    assert s.enable_data_analyst_agent is False
+    from unittest.mock import patch
+
+    with patch.object(settings, "enable_data_analyst_agent", False):
+        out = await analyze_excel({"user_message": "convert excel 1", "whatsapp_phone": "teams:u"})
+    assert out["status"] == "skipped"
+

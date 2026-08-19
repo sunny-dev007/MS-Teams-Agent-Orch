@@ -21,7 +21,9 @@ Additive feature for Teams (and WhatsApp): **list → select → ingest/vectoriz
 | **OD** | OneDrive |
 | **ON** | OneNote |
 
-Example Teams row: `1. [SP] [developer-guide.md](https://…)` with type, size, site/folder. Lists paginate **10 per page** (`next page`). Filename search: `find document guide`. Extra SharePoint sites: `DOC_KNOWLEDGE_ALL_SITES=true` (falls back to the configured site).
+Example Teams row: `1. [SP] [developer-guide.md](https://…)` with type, size, site/folder, and **Ingestion** (`Raw / Not ingested`, `Ingested`, or `Ready for re-ingest` when Graph `lastModified`/size is newer than the last index). Lists paginate **10 per page** (`next page`). Filename search: `find document guide`. Extra SharePoint sites: `DOC_KNOWLEDGE_ALL_SITES=true` (falls back to the configured site).
+
+**Graceful reindex:** `ingest 1,3` always replaces chunks/vectors for that file id (Qdrant delete-then-upsert). `ingest all` skips unchanged ingested files. `reingest stale` only refreshes **Ready for re-ingest** rows.
 
 Say `help` for the full tools & quick-prompts catalog (all agents with `ON`/`OFF`).
 Say `hello` for the welcome card: session status, *Active agents*, and suggested next steps.

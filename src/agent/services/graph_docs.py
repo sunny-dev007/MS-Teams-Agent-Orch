@@ -626,3 +626,68 @@ async def fetch_document_text(entry: dict[str, Any]) -> tuple[str, str]:
         mime=ct or mime,
     )
     return (text or "").strip(), status
+
+
+def _drive_content_path(entry: dict[str, Any], site_id: str) -> str:
+    drive_id = entry.get("drive_id") or ""
+    item_id = entry.get("item_id") or entry.get("external_id") or ""
+    if drive_id and item_id:
+        return f"/drives/{drive_id}/items/{item_id}/content"
+    if item_id:
+        return f"/sites/{site_id}/drive/items/{item_id}/content"
+    return ""
+
+
+async def fetch_document_bytes(entry: dict[str, Any]) -> tuple[bytes, str]:
+    """Download original file bytes (Excel/Office). Does not extract text."""
+    if entry.get("source_type") == SOURCE_ONENOTE:
+        return b"", "onenote_not_workbook"
+    site_id, _ = await resolve_site_id()
+    path = _drive_content_path(entry, site_id)
+    if not path:
+        return b"", "missing_item_id"
+    raw, ct = await ms_graph.graph_request_bytes("GET", path)
+    return raw, ct or ""
+
+
+async def upload_site_file(
+    *,
+    folder: str,
+    filename: str,
+    content: bytes,
+    content_type: str,
+) -> str:
+    """Upload bytes under the configured SharePoint site drive. Returns webUrl or empty."""
+    import httpx
+
+    if not ms_graph.graph_configured():
+        return ""
+    site_id, _ = await resolve_site_id()
+    folder = (folder or "Analytics").strip().strip("/")
+    try:
+        await ms_graph.graph_request(
+            "POST",
+            f"/sites/{site_id}/drive/root/children",
+            json_body={
+                "name": folder,
+                "folder": {},
+                "@microsoft.graph.conflictBehavior": "fail",
+            },
+        )
+    except Exception:
+        logger.info("%s folder may already exist", folder)
+
+    safe = "".join(ch if ch.isalnum() or ch in ".-_" else "-" for ch in filename)[:80]
+    path = quote(f"/{folder}/{safe}", safe="/")
+    token = await ms_graph.get_app_token()
+    url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{path}:/content"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": content_type or "application/octet-stream",
+    }
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        resp = await client.put(url, headers=headers, content=content)
+        if resp.status_code >= 400:
+            logger.error("Site file upload failed %s %s", resp.status_code, resp.text[:400])
+            return ""
+        return resp.json().get("webUrl") or ""

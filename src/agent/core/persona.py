@@ -90,6 +90,12 @@ def _agent_rows() -> list[tuple[str, bool, str, str]]:
             "summarize docs risks",
         ),
         (
+            "Data Analyst",
+            bool(settings.enable_data_analyst_agent),
+            "Excel → executive dashboard workbook (SharePoint Analytics)",
+            "convert excel 6",
+        ),
+        (
             "Docs Agent",
             bool(settings.enable_docs_agent),
             "Publish release notes to SharePoint",
@@ -230,6 +236,8 @@ def build_help_menu(
             f"- {b('ingest 1,3')} / {b('ingest all')} — Doc Ingest → Qdrant",
             f"- {b('ask docs <question>')} — Doc RAG (citations + related)",
             f"- {b('summarize docs <focus>')} — Doc Insights",
+            f"- {b('convert excel <n>')} — Data Analyst "
+            f"({'ON' if settings.enable_data_analyst_agent else 'OFF'})",
             "",
             b("5 · Release Fabric"),
             f"- Docs Agent ({docs}) — {b('write release notes for PR <n>')}",
@@ -267,6 +275,8 @@ def build_help_menu(
         f"{b('4 · Document Knowledge')} — {kb}",
         "Tags: SP · OD · ON",
         f"• {b('list my documents')} → {b('ingest 1,3')} → {b('ask docs …')}",
+        f"• {b('convert excel <n>')} — Data Analyst "
+        f"({'ON' if settings.enable_data_analyst_agent else 'OFF'})",
         "",
         f"{b('5 · Release Fabric')} — Docs {docs} · QA {qa}",
         f"• {b('write release notes for PR <n>')} · {b('run QA')}",

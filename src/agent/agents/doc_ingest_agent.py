@@ -19,6 +19,7 @@ AGENT_NAME = "doc_ingest_agent"
 
 _NUMS_RE = re.compile(r"\b(\d+)\b")
 _ALL_RE = re.compile(r"\bingest\s+all\b|\ball\s+documents?\b", re.I)
+_STALE_RE = re.compile(r"re-?ingest|\bingest\s+stale\b|\bstale\b", re.I)
 
 
 async def ingest_documents(state: AgentState) -> AgentState:
@@ -68,11 +69,29 @@ async def ingest_documents(state: AgentState) -> AgentState:
                 "error": str(exc),
             }
 
-    if _ALL_RE.search(msg):
+    if _STALE_RE.search(msg) and not _ALL_RE.search(msg) and not _NUMS_RE.search(msg):
+        from agent.services.ingest_status import STATUS_STALE, annotate_catalog
+
+        catalog = await annotate_catalog(catalog)
+        selected = [row for row in catalog if row.get("ingest_status") == STATUS_STALE]
+        skip_fresh = False
+        if not selected:
+            return {
+                **state,
+                "status": "completed",
+                "handled_by": AGENT_NAME,
+                "notification_text": (
+                    "*Doc Ingest Agent* — no files are **Ready for re-ingest**.\n"
+                    "List the library again after a source update, or *ingest 1,3* to force reindex."
+                ),
+            }
+    elif _ALL_RE.search(msg):
         selected = catalog
+        skip_fresh = True
     else:
         picks = {int(n) for n in _NUMS_RE.findall(msg)}
         selected = [row for row in catalog if int(row.get("pick") or 0) in picks]
+        skip_fresh = False
 
     if not selected:
         return {
@@ -85,21 +104,39 @@ async def ingest_documents(state: AgentState) -> AgentState:
             ),
         }
 
-    results = await doc_knowledge.ingest_catalog_entries(selected, owner_session=phone or None)
+    results = await doc_knowledge.ingest_catalog_entries(
+        selected, owner_session=phone or None, skip_fresh=skip_fresh
+    )
     ok = [r for r in results if r.get("status") == "ready"]
-    bad = [r for r in results if r.get("status") != "ready"]
+    skipped = [r for r in results if r.get("status") == "skipped"]
+    bad = [r for r in results if r.get("status") not in ("ready", "skipped")]
+
+    def _action_label(r: dict) -> str:
+        act = r.get("ingest_action") or ""
+        if act == "reindexed":
+            return "reindexed"
+        if act == "created":
+            return "ingested"
+        return act or "ready"
 
     lines = [
-        f"✓ *{r['title']}* — {r.get('chunks', 0)} chunks "
+        f"✓ *{r['title']}* — {_action_label(r)} · {r.get('chunks', 0)} chunks "
         f"({r.get('extract_status')}, vec={r.get('vector_backend', 'sqlite')})"
         for r in ok
+    ]
+    lines += [
+        f"↷ *{r.get('title')}* — skipped (already ingested, source unchanged)"
+        for r in skipped
     ]
     lines += [f"✗ *{r.get('title')}* — {r.get('reason')}" for r in bad]
 
     note = (
-        f"*Doc Ingest Agent* — vectorized {len(ok)}/{len(results)}\n\n"
+        f"*Doc Ingest Agent* — vectorized {len(ok)}/{len(results)}"
+        + (f" · skipped {len(skipped)} unchanged" if skipped else "")
+        + "\n\n"
         + "\n".join(lines)
-        + "\n\nNext: *ask docs <your question>* or *summarize docs <focus>*\n"
+        + "\n\nReindex replaces prior chunks/vectors for the same file (no duplicates).\n"
+        "Next: *ask docs <your question>* or *summarize docs <focus>*\n"
         "Inventory: *list ingested documents*"
     )
 
@@ -111,7 +148,7 @@ async def ingest_documents(state: AgentState) -> AgentState:
 
     return {
         **state,
-        "status": "completed" if ok else "failed",
+        "status": "completed" if (ok or skipped) else "failed",
         "handled_by": AGENT_NAME,
         "notification_text": note,
         "kb_ingest_results": results,

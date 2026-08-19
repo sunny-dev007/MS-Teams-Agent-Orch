@@ -70,10 +70,15 @@ def _format_catalog_page(
         f"(page **{page + 1}** of **{page_count}**, {page_size} per page)."
     )
     lines = [head, "", f"_Tags:_ {graph_docs.SOURCE_TAG_LEGEND}", ""]
+    lines.append(
+        "_Ingestion:_ **Raw / Not ingested** · **Ingested** · **Ready for re-ingest** "
+        "(source newer than last vector index) · **Ingest failed**"
+    )
+    lines.append("")
     if teams:
         lines += [
-            "| # | File | Type | Size | Site / folder |",
-            "| :---: | :--- | :---: | ---: | :--- |",
+            "| # | File | Type | Size | Site / folder | Ingestion |",
+            "| :---: | :--- | :---: | ---: | :--- | :--- |",
         ]
         for row in chunk:
             src = graph_docs.source_tag(row.get("source_type"))
@@ -82,9 +87,10 @@ def _format_catalog_page(
                 p for p in ((row.get("site_name") or ""), (row.get("folder") or "")) if p
             ) or "—"
             loc = loc.replace("|", "/")
+            ingest = (row.get("ingest_label") or "Raw / Not ingested").replace("|", "/")
             lines.append(
                 f"| {row.get('pick')} | [{src}] {_file_label(row)} | {ext} | "
-                f"{graph_docs.format_file_size(row.get('size'))} | {loc} |"
+                f"{graph_docs.format_file_size(row.get('size'))} | {loc} | {ingest} |"
             )
     else:
         for row in chunk:
@@ -97,26 +103,41 @@ def _format_catalog_page(
             lines.append(
                 f"{row.get('pick')}. [{src}] *{row.get('title')}* "
                 f"({ext} · {graph_docs.format_file_size(row.get('size'))}"
-                f"{(' · ' + loc) if loc else ''})"
+                f"{(' · ' + loc) if loc else ''} · {row.get('ingest_label') or 'Raw / Not ingested'})"
             )
             if url:
                 lines.append(f"   {url}")
     return "\n".join(lines)
 
 
-def _related_prompts(*, page: int, page_count: int, query: str, has_items: bool) -> str:
+def _related_prompts(
+    *,
+    page: int,
+    page_count: int,
+    query: str,
+    has_items: bool,
+    stale_picks: list[int] | None = None,
+    excel_picks: list[int] | None = None,
+) -> str:
     bits = []
     if has_items and page + 1 < page_count:
         bits.append(f"*next page* (page {page + 2})")
     if page > 0:
         bits.append("*previous page*")
     bits.append("*ingest 1,3* (use the **#** column)")
-    bits.append("*ingest all*")
+    bits.append("*ingest all* (skips unchanged ingested files)")
+    stale_picks = stale_picks or []
+    if stale_picks:
+        sample = ",".join(str(n) for n in stale_picks[:6])
+        bits.append(f"*reingest stale* (or ingest {sample})")
     if query:
         bits.append("*list my documents* (clear search)")
     else:
         bits.append("*find document keyword* (filename search)")
     bits.append("*ask docs …* after ingest")
+    excel_picks = excel_picks or []
+    if settings.enable_data_analyst_agent and excel_picks:
+        bits.append(f"*convert excel {excel_picks[0]}* (Data Analyst)")
     return "**Next:** " + " · ".join(bits)
 
 
@@ -229,6 +250,18 @@ async def list_documents(state: AgentState) -> AgentState:
     page_count = max(1, (len(catalog) + page_size - 1) // page_size)
     current_page = max(0, min(current_page, page_count - 1))
 
+    try:
+        from agent.services.ingest_status import annotate_catalog, excel_picks, stale_picks
+
+        catalog = await annotate_catalog(catalog)
+    except Exception:
+        logger.exception("Ingestion status overlay failed — listing without status column extras")
+        stale_nums: list[int] = []
+        excel_nums: list[int] = []
+    else:
+        stale_nums = stale_picks(catalog)
+        excel_nums = excel_picks(catalog)
+
     if phone:
         try:
             await save_session(
@@ -261,6 +294,8 @@ async def list_documents(state: AgentState) -> AgentState:
             page_count=page_count,
             query=query,
             has_items=bool(catalog),
+            stale_picks=stale_nums,
+            excel_picks=excel_nums,
         )
     )
     if phone:

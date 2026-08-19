@@ -49,13 +49,35 @@ async def ingest_catalog_entries(
     entries: list[dict[str, Any]],
     *,
     owner_session: str | None,
+    skip_fresh: bool = False,
 ) -> list[dict[str, Any]]:
+    """Vectorize catalog rows. Same external_id upserts + Qdrant delete-then-upsert (graceful reindex).
+
+    skip_fresh: for *ingest all*, skip files already ingested with unchanged Graph lastModified/size.
+    Explicit picks always reindex (replace chunks/vectors; no duplicates).
+    """
+    from agent.services.ingest_status import STATUS_INGESTED, STATUS_STALE, annotate_catalog
+
     results: list[dict[str, Any]] = []
-    for entry in entries:
+    annotated = await annotate_catalog(list(entries))
+    for entry in annotated:
         external_id = entry.get("external_id") or entry.get("item_id") or ""
         source = entry.get("source_type") or "sharepoint"
         title = entry.get("title") or "untitled"
         doc_mode = entry.get("doc_mode") or graph_docs.infer_doc_mode(title)
+        ingest_state = entry.get("ingest_status") or ""
+        if skip_fresh and ingest_state == STATUS_INGESTED:
+            results.append(
+                {
+                    "id": entry.get("kb_doc_id"),
+                    "title": title,
+                    "status": "skipped",
+                    "reason": "already ingested — source unchanged",
+                    "ingest_action": "skipped_fresh",
+                }
+            )
+            continue
+        reindex = ingest_state in (STATUS_STALE, STATUS_INGESTED)
         try:
             doc = await kd.upsert_document(
                 external_id=external_id,
@@ -159,10 +181,13 @@ async def ingest_catalog_entries(
                     "extension": entry.get("extension") or "",
                     "size": entry.get("size") or 0,
                     "last_modified": entry.get("last_modified") or "",
+                    "source_size": entry.get("size") or 0,
+                    "source_last_modified": entry.get("last_modified") or "",
                     "pick": entry.get("pick"),
                     "vector_backend": vector_backend,
                     "qdrant_points": qdrant_points,
                     "embedding_deployment": settings.azure_openai_embedding_deployment,
+                    "reindexed": bool(reindex),
                 },
             )
             results.append(
@@ -176,6 +201,7 @@ async def ingest_catalog_entries(
                     "source_type": source,
                     "vector_backend": vector_backend,
                     "qdrant_points": qdrant_points,
+                    "ingest_action": "reindexed" if reindex else "created",
                 }
             )
         except Exception as exc:

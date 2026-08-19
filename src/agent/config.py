@@ -117,6 +117,10 @@ class Settings(BaseSettings):
     # Prefer Qdrant when URL+key set; set false to force local SQLite vectors
     enable_qdrant: bool = True
 
+    # Data Analyst Agent — Excel → executive workbook (SharePoint Analytics folder)
+    # Additive — default OFF; does not change Doc RAG, Dev, or WhatsApp coding.
+    enable_data_analyst_agent: bool = False
+
     # Microsoft Graph (Docs Agent + Doc Knowledge) — app-only client credentials
     ms_graph_tenant_id: str = ""
     ms_graph_client_id: str = ""
