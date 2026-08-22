@@ -48,6 +48,18 @@ async def ingest_documents(state: AgentState) -> AgentState:
 
     msg = state.get("user_message") or ""
     phone = state.get("whatsapp_phone") or ""
+
+    from agent.services import doc_upload as _doc_upload
+
+    if _doc_upload.message_expects_teams_attachment(msg):
+        return {
+            **state,
+            "status": "failed",
+            "handled_by": AGENT_NAME,
+            "notification_text": _doc_upload.attachment_not_received_reply(),
+            "error": "attachment_bytes_missing",
+        }
+
     catalog: list = []
     if phone:
         session = await get_session(phone)

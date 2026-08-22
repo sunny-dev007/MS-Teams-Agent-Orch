@@ -7,7 +7,7 @@ import inspect
 from typing import Any, Literal
 
 from fastapi import APIRouter, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from agent.config import settings
 from agent.core.channel_identity import teams_session_id
@@ -20,10 +20,17 @@ router = APIRouter(prefix="/api/channels/copilot", tags=["copilot"])
 
 
 class CopilotAttachment(BaseModel):
-    filename: str = Field(..., min_length=1, description="Original file name including extension")
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    filename: str = Field(default="upload.bin", min_length=1, description="Original file name")
     content_base64: str | None = Field(
         default=None,
         description="Base64-encoded file bytes from Teams/Copilot Studio",
+    )
+    content_bytes: str | None = Field(
+        default=None,
+        alias="contentBytes",
+        description="Power Platform alias for base64 content",
     )
     content_url: str | None = Field(
         default=None,
@@ -241,9 +248,22 @@ def _attachments_for_graph(body: CopilotMessageRequest) -> list[dict[str, Any]]:
 
     out: list[dict[str, Any]] = []
     for att in body.attachments or []:
-        norm = doc_upload.normalize_attachment(att.model_dump(exclude_none=True))
+        raw = att.model_dump(exclude_none=True, by_alias=True)
+        norm = doc_upload.normalize_attachment(raw)
         if norm:
             out.append(norm)
+        else:
+            logger.warning(
+                "Copilot attachment skipped (no decodable content) filename=%s keys=%s",
+                raw.get("filename") or raw.get("name"),
+                list(raw.keys()),
+            )
+    if body.message and doc_upload.message_expects_teams_attachment(body.message):
+        logger.info(
+            "Copilot attachment-oriented message attachments_in=%s normalized=%s",
+            len(body.attachments or []),
+            len(out),
+        )
     return out
 
 

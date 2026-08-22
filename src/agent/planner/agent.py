@@ -235,6 +235,18 @@ async def plan(state: AgentState) -> AgentState:
                 "planned_by": AGENT_NAME,
             }
 
+    if (
+        _settings.enable_doc_knowledge
+        and _doc_upload.message_expects_teams_attachment(user_msg)
+        and not effective_atts
+    ):
+        return {
+            **state,
+            "intent": "general",
+            "notification_text": _doc_upload.attachment_not_received_reply(),
+            "planned_by": AGENT_NAME,
+        }
+
     if _LIST_DOCS_RE.search(user_msg):
         return await _clear_for_kb("list_docs")
     if _SEARCH_DOCS_RE.search(user_msg):

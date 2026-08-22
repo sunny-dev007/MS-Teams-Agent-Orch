@@ -17,6 +17,18 @@ from agent.services import doc_extract, doc_knowledge, graph_docs, ms_graph
 
 logger = get_logger(__name__)
 
+SUPPORTED_INGEST_EXTENSIONS = (
+    ".pdf",
+    ".docx",
+    ".pptx",
+    ".xlsx",
+    ".csv",
+    ".md",
+    ".markdown",
+    ".txt",
+)
+SUPPORTED_INGEST_FORMATS_LABEL = "PDF, DOCX, PPTX, XLSX, CSV, MD, TXT"
+
 _MIME_BY_EXT = {
     ".pdf": "application/pdf",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -46,7 +58,8 @@ _UPLOAD_ACTION_RE = re.compile(
     r"add\s+to\s+(?:the\s+)?(?:knowledge|kb)|"
     r"upload(?:\s+(?:this|to\s+sharepoint|and\s+ingest))?|"
     r"save(?:\s+to\s+sharepoint)?|"
-    r"process\s+(?:this|the)\s+(?:file|document|pdf|doc)"
+    r"process\s+(?:this|the)\s+(?:file|document|pdf|doc)|"
+    r"ingest\s+into\s+(?:the\s+)?system"
     r")(?:\s|$)|"
     r"\b(?:attached|uploaded)\s+(?:file|pdf|document|docx|pptx|spreadsheet)\b|"
     r"\bthis\s+(?:attached\s+)?(?:file|pdf|document|docx|pptx|spreadsheet)\b|"
@@ -73,9 +86,29 @@ def normalize_attachment(raw: dict[str, Any]) -> dict[str, Any] | None:
             "extension": ext,
         }
 
-    filename = (raw.get("filename") or raw.get("name") or "upload.bin").strip()
-    content_type = (raw.get("content_type") or raw.get("mime_type") or raw.get("contentType") or "").strip()
-    content_b64 = raw.get("content_base64") or raw.get("contentBase64") or ""
+    filename = (
+        raw.get("filename")
+        or raw.get("name")
+        or raw.get("Name")
+        or raw.get("fileName")
+        or "upload.bin"
+    ).strip()
+    content_type = (
+        raw.get("content_type")
+        or raw.get("mime_type")
+        or raw.get("contentType")
+        or raw.get("MediaType")
+        or raw.get("mediaType")
+        or ""
+    ).strip()
+    content_b64 = (
+        raw.get("content_base64")
+        or raw.get("contentBase64")
+        or raw.get("content_bytes")
+        or raw.get("contentBytes")
+        or raw.get("ContentBytes")
+        or ""
+    )
     content_url = raw.get("content_url") or raw.get("contentUrl") or raw.get("url") or ""
 
     if content_b64:
@@ -137,7 +170,67 @@ def attachments_from_session(stored: list[dict[str, Any]]) -> list[dict[str, Any
 
 def wants_upload_action(message: str) -> bool:
     """True when the user explicitly asks to upload/ingest an attached Teams file."""
-    return bool(_UPLOAD_ACTION_RE.search((message or "").strip()))
+    msg = (message or "").strip()
+    if not msg:
+        return False
+    # Catalog picks like ingest 1,3 / ingest all — not Teams attachment upload.
+    if re.search(r"\bingest\s+(?:\d+|all|stale|documents?)\b", msg, re.I):
+        return False
+    return bool(_UPLOAD_ACTION_RE.search(msg))
+
+
+def message_expects_teams_attachment(message: str) -> bool:
+    """True when the user refers to an attached/uploaded file (not corpus summarize docs)."""
+    msg = (message or "").strip()
+    if not msg:
+        return False
+    if wants_upload_action(msg):
+        return True
+    # Corpus insights — summarize docs / doc insights (no attachment path).
+    if re.search(
+        r"(?:summarize\s+docs?|summarise\s+docs?|doc\s+insights?|"
+        r"insights?\s+(?:on|from)\s+docs?|document\s+insights?)",
+        msg,
+        re.I,
+    ):
+        return False
+    if re.search(r"\bsummar(?:ize|ise)\b", msg, re.I):
+        if re.search(
+            r"\b(?:this|it|attached|uploaded|into\s+the\s+system)\b",
+            msg,
+            re.I,
+        ):
+            return True
+        if re.search(r"\b(?:pdf|file|docx|pptx|spreadsheet|xlsx|csv)\b", msg, re.I):
+            return True
+    if re.search(r"\bingest\b", msg, re.I) and re.search(
+        r"\b(?:this|attached|uploaded|into\s+(?:the\s+)?system|the\s+(?:pdf|file))\b",
+        msg,
+        re.I,
+    ):
+        return True
+    return False
+
+
+def attachment_not_received_reply() -> str:
+    """Honest failure when Teams/Copilot did not pass attachment bytes to the API."""
+    return (
+        "*Doc Upload Agent* — your message asks to ingest/summarize an **attached file**, "
+        "but **no file bytes** arrived from Teams.\n\n"
+        "The Copilot **PersonalAIAgent** action must map `attachments[]` with "
+        "`filename` + `content_base64` (connector swagger **v1.0.7**). "
+        "Text-only calls cannot upload to SharePoint.\n\n"
+        "**Manual workaround:** upload to SharePoint → *list my documents* → *ingest N*.\n\n"
+        f"**Supported ingestion formats:** {SUPPORTED_INGEST_FORMATS_LABEL}."
+    )
+
+
+def unsupported_format_message(filename: str, ext: str = "", mime: str = "") -> str:
+    shown = ext or mime or "unknown"
+    return (
+        f"*{filename}* — format `{shown}` is **not supported** for ingestion.\n"
+        f"Supported: {SUPPORTED_INGEST_FORMATS_LABEL}."
+    )
 
 
 async def _fetch_url_bytes(url: str, *, max_bytes: int) -> bytes:
@@ -157,7 +250,7 @@ def validate_attachment(att: dict[str, Any]) -> tuple[bool, str]:
         ext = "." + filename.rsplit(".", 1)[-1].lower()
     mime = att.get("content_type") or ""
     if not doc_extract.is_supported_extension(ext, mime):
-        return False, f"Unsupported type `{ext or mime or 'unknown'}` — use PDF, DOCX, PPTX, XLSX, CSV, MD, or TXT."
+        return False, unsupported_format_message(filename, ext=ext, mime=mime)
     content = att.get("content")
     if content is None:
         if att.get("content_url"):
@@ -199,10 +292,7 @@ async def upload_and_ingest_attachments(
     if not attachments:
         return {
             "status": "failed",
-            "message": (
-                "*Doc Upload Agent* — no files found.\n"
-                "Attach a PDF/DOCX in Teams, then say *ingest this* or *summarize this*."
-            ),
+            "message": attachment_not_received_reply(),
         }
 
     folder = (settings.doc_upload_folder or "UploadedDocs").strip().strip("/") or "UploadedDocs"

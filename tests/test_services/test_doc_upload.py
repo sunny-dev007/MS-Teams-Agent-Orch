@@ -26,7 +26,7 @@ def test_validate_attachment_rejects_unknown():
         {"filename": "malware.exe", "content": b"x" * 32, "extension": ".exe"}
     )
     assert ok is False
-    assert "Unsupported" in reason
+    assert "not supported" in reason.lower()
 
 
 def test_attachments_session_roundtrip():
@@ -44,10 +44,94 @@ def test_wants_upload_action_phrases():
     from agent.services.doc_upload import wants_upload_action
 
     assert wants_upload_action("Please ingest this attached pdf file into the system")
+    assert wants_upload_action("please ingest into the system and summarise it")
     assert wants_upload_action("upload to sharepoint")
     assert wants_upload_action("process this document")
     assert not wants_upload_action("here is the file")
     assert not wants_upload_action("thanks for the update")
+    assert not wants_upload_action("ingest 1,3")
+    assert not wants_upload_action("ingest all")
+
+
+def test_message_expects_teams_attachment():
+    from agent.services.doc_upload import message_expects_teams_attachment
+
+    assert message_expects_teams_attachment("ingest this")
+    assert message_expects_teams_attachment("summarize this")
+    assert message_expects_teams_attachment("please ingest into the system and summarise it")
+    assert not message_expects_teams_attachment("summarize docs risks")
+    assert not message_expects_teams_attachment("ingest 1,3")
+    assert not message_expects_teams_attachment("list my documents")
+
+
+@pytest.mark.asyncio
+async def test_planner_blocks_summarize_this_without_attachment(monkeypatch):
+    from agent.config import settings
+    from agent.planner.agent import plan
+
+    async def _empty_session(_phone):
+        return {"phone": _phone, "awaiting": None, "provider": None, "data": {}}
+
+    monkeypatch.setattr("agent.core.session.get_session", _empty_session)
+    monkeypatch.setattr(settings, "enable_doc_knowledge", True)
+    out = await plan(
+        {
+            "user_message": "summarize this",
+            "whatsapp_phone": "teams:user-no-att",
+        }
+    )
+    assert out["intent"] == "general"
+    assert "no file bytes" in out["notification_text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_planner_blocks_ingest_this_without_attachment(monkeypatch):
+    from agent.config import settings
+    from agent.planner.agent import plan
+
+    async def _empty_session(_phone):
+        return {"phone": _phone, "awaiting": None, "provider": None, "data": {}}
+
+    monkeypatch.setattr("agent.core.session.get_session", _empty_session)
+    monkeypatch.setattr(settings, "enable_doc_knowledge", True)
+    out = await plan(
+        {
+            "user_message": "ingest this",
+            "whatsapp_phone": "teams:user-no-att",
+        }
+    )
+    assert out["intent"] == "general"
+    assert "no file bytes" in out["notification_text"].lower()
+
+
+@pytest.mark.asyncio
+async def test_planner_combined_ingest_summarize_with_attachment(monkeypatch):
+    from agent.config import settings
+    from agent.planner.agent import plan
+
+    monkeypatch.setattr(settings, "enable_doc_knowledge", True)
+    att = {"filename": "guide.pdf", "content": b"%PDF-1.4 test", "extension": ".pdf"}
+    out = await plan(
+        {
+            "user_message": "please ingest into the system and summarise it",
+            "whatsapp_phone": "teams:user1",
+            "attachments": [att],
+        }
+    )
+    assert out["intent"] == "upload_ingest_docs"
+    assert out.get("upload_summarize") is True
+
+
+def test_unsupported_format_message():
+    from agent.services.doc_upload import unsupported_format_message, validate_attachment
+
+    ok, msg = validate_attachment(
+        {"filename": "virus.exe", "content": b"x" * 32, "extension": ".exe"}
+    )
+    assert ok is False
+    assert "not supported" in msg.lower()
+    assert "PDF" in msg
+    assert "not supported" in unsupported_format_message("bad.bin", ext=".bin").lower()
 
 
 @pytest.mark.asyncio

@@ -38,6 +38,21 @@ async def summarize_documents(state: AgentState) -> AgentState:
         }
 
     raw = state.get("user_message") or ""
+
+    from agent.services import doc_upload as _doc_upload
+
+    if _doc_upload.message_expects_teams_attachment(raw):
+        return {
+            **state,
+            "status": "failed",
+            "handled_by": AGENT_NAME,
+            "notification_text": (
+                _doc_upload.attachment_not_received_reply()
+                + "\n\n_I did not summarize the existing knowledge base — that would be misleading._"
+            ),
+            "error": "attachment_bytes_missing",
+        }
+
     focus = _STRIP_PREFIX.sub("", raw).strip() or "overall themes and risks"
     try:
         result = await doc_knowledge.summarize_insights(focus, owner_session=None)
