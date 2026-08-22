@@ -112,6 +112,8 @@ async def route_inbound_message(
         r"list\s+(?:of\s+)?(?:my\s+)?(?:documents?|docs|files)|list\s+(?:sharepoint|onedrive|onenote)|"
         r"(?:show|get|fetch|display|pull)\s+(?:me\s+)?(?:all\s+)?(?:my\s+)?(?:documents?|docs)|"
         r"browse\s+(?:documents?|docs|sharepoint)|"
+        r"(?:show|get|fetch|display|pull|find)\s+(?:me\s+)?(?:the\s+)?(?:\S+\s+){0,8}(?:pdf|file|docx?|document)s?\b|"
+        r"(?:named|called)\s+(?:as\s+)?[:=\-]?\s*\S+|"
         r"(?:find|search)\s+(?:(?:the\s+|my\s+)?(?:document|doc|file)s?\s+)|"
         r"list\s+ingested|ingest\s+(?:\d+|all)|vectorize|ask\s+docs?|ask\s+knowledge|"
         r"summarize\s+docs?|summarise\s+docs?|doc\s+insights?|knowledge\s+base|"

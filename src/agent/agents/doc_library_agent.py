@@ -221,8 +221,10 @@ async def list_documents(state: AgentState) -> AgentState:
     existing = list(session_data.get("doc_catalog") or [])
     current_page = int(session_data.get("doc_page") or 0)
     stored_query = str(session_data.get("doc_query") or "")
+    stored_keywords = list(session_data.get("doc_keywords") or [])
     is_page_nav = bool(_PAGE_NAV_RE.match(raw_msg.strip()))
     query = graph_docs.extract_library_query(raw_msg)
+    keywords: list[str] = []
 
     catalog = existing
     if is_page_nav and existing:
@@ -230,9 +232,17 @@ async def list_documents(state: AgentState) -> AgentState:
         current_page = graph_docs.parse_library_page(raw_msg, current_page, page_count)
         catalog = existing
         query = stored_query
+        keywords = stored_keywords
     else:
+        parsed_q, parsed_kws = graph_docs.parse_search_keywords(raw_msg)
+        if parsed_kws or parsed_q:
+            query = parsed_q
+            keywords = parsed_kws
         try:
-            catalog = await graph_docs.list_knowledge_catalog(query=query or None)
+            catalog = await graph_docs.list_knowledge_catalog(
+                query=query or None,
+                keywords=keywords or None,
+            )
         except Exception as exc:
             logger.exception("Doc library list failed")
             return {
@@ -271,6 +281,7 @@ async def list_documents(state: AgentState) -> AgentState:
                     "doc_catalog": catalog,
                     "doc_page": current_page,
                     "doc_query": query,
+                    "doc_keywords": keywords,
                     "channel": "teams" if teams else "whatsapp",
                 },
                 merge_data=True,

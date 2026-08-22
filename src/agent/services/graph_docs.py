@@ -161,24 +161,123 @@ def folder_from_parent(parent: dict[str, Any] | None) -> str:
     return name
 
 
-def extract_library_query(user_message: str) -> str:
-    """Filename/keyword for library search. Empty = browse all (paginated)."""
+SEARCH_STOPWORDS = frozenset(
+    {
+        "list",
+        "show",
+        "get",
+        "fetch",
+        "display",
+        "give",
+        "pull",
+        "browse",
+        "find",
+        "search",
+        "locate",
+        "look",
+        "up",
+        "of",
+        "my",
+        "the",
+        "all",
+        "me",
+        "please",
+        "from",
+        "in",
+        "on",
+        "named",
+        "called",
+        "like",
+        "about",
+        "with",
+        "for",
+        "documents",
+        "document",
+        "docs",
+        "doc",
+        "files",
+        "file",
+        "sharepoint",
+        "onedrive",
+        "onenote",
+        "library",
+        "which",
+        "as",
+        "pdf",
+        "pptx",
+        "docx",
+        "xlsx",
+        "csv",
+        "txt",
+        "md",
+        "a",
+        "an",
+        "is",
+        "to",
+        "into",
+    }
+)
+
+
+def tokenize_search_keywords(text: str) -> list[str]:
+    """Split filename-like text into keyword tokens (includes hyphen segments)."""
+    raw = (text or "").lower()
+    parts = re.split(r"[^a-z0-9._\-]+", raw)
+    expanded: list[str] = []
+    for part in parts:
+        token = part.strip("._-")
+        if len(token) < 2 or token in SEARCH_STOPWORDS:
+            continue
+        expanded.append(token)
+        if "-" in token:
+            for piece in token.split("-"):
+                piece = piece.strip()
+                if len(piece) >= 3 and piece not in SEARCH_STOPWORDS:
+                    expanded.append(piece)
+    seen: set[str] = set()
+    out: list[str] = []
+    for token in expanded:
+        if token not in seen:
+            seen.add(token)
+            out.append(token)
+    return out[:8]
+
+
+def parse_search_keywords(user_message: str) -> tuple[str, list[str]]:
+    """Return (display query for UI, keyword tokens for AND matching)."""
     raw = (user_message or "").strip()
     if not raw:
-        return ""
+        return "", []
     lower = raw.lower()
     if re.match(
         r"^\s*(next(?:\s+page)?|more(?:\s+documents?)?|previous|prev(?:ious)?\s*page|"
         r"page\s+\d+)\s*$",
         lower,
     ):
-        return ""
-    # Strip list/show/browse boilerplate
+        return "", []
+
+    named = re.search(
+        r"(?:named|called)\s+(?:as\s+)?[:=\-]?\s*['\"]?([^\s'\"?]+)",
+        raw,
+        re.I,
+    )
+    if named:
+        phrase = named.group(1).strip("'\"")
+        kws = tokenize_search_keywords(phrase)
+        display = phrase[:80] if phrase else " · ".join(kws)
+        return display, kws
+
+    quoted = re.search(r"['\"]([^'\"]{2,120})['\"]", raw)
+    if quoted:
+        phrase = quoted.group(1)
+        kws = tokenize_search_keywords(phrase)
+        return phrase[:80], kws
+
     cleaned = re.sub(
         r"\b(list|show|get|fetch|display|give|pull|browse|find|search|locate|"
         r"look\s+up|of|my|the|all|me|please|from|in|on|named|called|like|about|"
         r"with|for|documents?|docs|files?|sharepoint|onedrive|onenote|"
-        r"document\s+library|library)\b",
+        r"document\s+library|library|which|as|pdf|pptx|docx|xlsx|csv|txt|md)\b",
         " ",
         raw,
         flags=re.I,
@@ -186,11 +285,45 @@ def extract_library_query(user_message: str) -> str:
     cleaned = re.sub(r"[?!.,]+", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
     if len(cleaned) < 2:
-        return ""
-    # Keep short filename-like tokens (avoid swallowing whole sentences)
-    if len(cleaned) > 80:
-        cleaned = cleaned[:80]
-    return cleaned
+        return "", []
+    if len(cleaned) > 120:
+        cleaned = cleaned[:120]
+    kws = tokenize_search_keywords(cleaned)
+    display = " · ".join(kws) if len(kws) > 1 else (kws[0] if kws else cleaned[:80])
+    return display, kws
+
+
+def row_matches_keywords(row: dict[str, Any], keywords: list[str]) -> bool:
+    if not keywords:
+        return True
+    hay = " ".join(
+        [
+            (row.get("title") or "").lower(),
+            (row.get("folder") or "").lower(),
+            (row.get("site_name") or "").lower(),
+        ]
+    )
+    return all(kw in hay for kw in keywords)
+
+
+def keyword_match_score(row: dict[str, Any], keywords: list[str]) -> int:
+    title = (row.get("title") or "").lower()
+    score = sum(2 for kw in keywords if kw in title)
+    hay = " ".join(
+        [
+            title,
+            (row.get("folder") or "").lower(),
+            (row.get("site_name") or "").lower(),
+        ]
+    )
+    score += sum(1 for kw in keywords if kw in hay)
+    return score
+
+
+def extract_library_query(user_message: str) -> str:
+    """Filename/keyword for library search. Empty = browse all (paginated)."""
+    display, _ = parse_search_keywords(user_message)
+    return display
 
 
 def parse_library_page(user_message: str, current: int, page_count: int) -> int:
@@ -412,6 +545,42 @@ async def search_sharepoint_files(
     return out[:limit]
 
 
+async def search_onedrive_files(*, query: str, limit: int) -> list[dict[str, Any]]:
+    user = (settings.ms_graph_onedrive_user_id or "").strip()
+    if not user:
+        return []
+    q = (query or "").strip()
+    q = re.sub(r"[^a-zA-Z0-9._\- ]+", " ", q).strip()
+    if not q:
+        return await list_onedrive_files(limit=limit)
+    try:
+        items = await ms_graph.graph_paginate(
+            f"/users/{user}/drive/root/search(q='{q.replace(chr(39), ' ')}')",
+            params={
+                "$top": min(limit, 50),
+                "$select": "id,name,webUrl,size,file,folder,lastModifiedDateTime,parentReference",
+            },
+            max_pages=2,
+        )
+    except Exception:
+        logger.exception("OneDrive search failed q=%s", q[:40])
+        od = await list_onedrive_files(limit=max(limit, 50))
+        ql = q.lower()
+        return [
+            r
+            for r in od
+            if ql in (r.get("title") or "").lower() or ql in (r.get("folder") or "").lower()
+        ][:limit]
+    out: list[dict[str, Any]] = []
+    for it in items:
+        row = _drive_item_to_catalog(it, source=SOURCE_ONEDRIVE, site_name="OneDrive", folder="")
+        if row:
+            out.append(row)
+        if len(out) >= limit:
+            break
+    return out[:limit]
+
+
 async def list_onedrive_files(*, limit: int) -> list[dict[str, Any]]:
     user = (settings.ms_graph_onedrive_user_id or "").strip()
     if not user:
@@ -484,14 +653,20 @@ async def list_knowledge_catalog(
     *,
     limit: int | None = None,
     query: str | None = None,
+    keywords: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Unified catalog for Teams selection (numbered list). Optional filename query."""
+    """Unified catalog for Teams selection (numbered list). Optional filename keyword search."""
     if not ms_graph.graph_configured():
         raise RuntimeError("Microsoft Graph credentials not configured")
     cap = int(limit or settings.doc_knowledge_max_list or 100)
     cap = max(10, min(cap, 250))
     sources = _enabled_sources()
-    q = (query or "").strip()
+    display_q = (query or "").strip()
+    kws = list(keywords or [])
+    if not kws and display_q:
+        kws = tokenize_search_keywords(display_q)
+    if not display_q and kws:
+        display_q = " · ".join(kws)
     catalog: list[dict[str, Any]] = []
     seen: set[str] = set()
 
@@ -502,6 +677,12 @@ async def list_knowledge_catalog(
                 continue
             seen.add(key)
             catalog.append(row)
+
+    search_terms: list[str] = []
+    if kws:
+        search_terms = list(dict.fromkeys(kws))
+        if display_q and len(display_q) >= 3 and display_q not in search_terms:
+            search_terms.append(display_q)
 
     if SOURCE_SHAREPOINT in sources:
         max_sites = max(1, int(settings.doc_knowledge_max_sites or 8))
@@ -515,11 +696,24 @@ async def list_knowledge_catalog(
         per_site = max(8, cap // max(1, len(sites)))
         for site in sites:
             sid = site["id"]
-            if q:
+            if search_terms:
+                for term in search_terms[:6]:
+                    _add(
+                        await search_sharepoint_files(
+                            site_id=sid,
+                            query=term,
+                            limit=per_site,
+                            site_name=site.get("name") or "",
+                            site_web_url=site.get("web_url") or "",
+                        )
+                    )
+                    if len(catalog) >= cap:
+                        break
+            elif display_q:
                 _add(
                     await search_sharepoint_files(
                         site_id=sid,
-                        query=q,
+                        query=display_q,
                         limit=per_site,
                         site_name=site.get("name") or "",
                         site_web_url=site.get("web_url") or "",
@@ -531,30 +725,54 @@ async def list_knowledge_catalog(
                 break
 
     if SOURCE_ONEDRIVE in sources:
-        od = await list_onedrive_files(limit=max(8, cap // 4))
-        if q:
-            ql = q.lower()
-            od = [
-                r
-                for r in od
-                if ql in (r.get("title") or "").lower()
-                or ql in (r.get("folder") or "").lower()
-            ]
-        _add(od)
+        if search_terms:
+            for term in search_terms[:4]:
+                _add(await search_onedrive_files(query=term, limit=max(8, cap // 4)))
+        elif display_q:
+            _add(await search_onedrive_files(query=display_q, limit=max(8, cap // 4)))
+        else:
+            _add(await list_onedrive_files(limit=max(8, cap // 4)))
 
     if SOURCE_ONENOTE in sources:
         try:
             site_id, _ = await resolve_site_id()
             on = await list_onenote_pages(site_id=site_id, limit=max(8, cap // 4))
-            if q:
-                ql = q.lower()
+            if kws:
+                on = [r for r in on if row_matches_keywords(r, kws)]
+            elif display_q:
+                ql = display_q.lower()
                 on = [r for r in on if ql in (r.get("title") or "").lower()]
             _add(on)
         except Exception:
             logger.exception("OneNote catalog skipped")
 
-    if q:
-        ql = q.lower()
+    if kws and not catalog:
+        logger.info(
+            "Graph keyword search returned no files; listing drives for local keyword match"
+        )
+        fallback_cap = min(cap * 3, 250)
+        if SOURCE_SHAREPOINT in sources:
+            fb_sites = await list_accessible_sites(
+                max_sites=max(1, int(settings.doc_knowledge_max_sites or 8))
+            )
+            if not fb_sites:
+                try:
+                    sid, url = await resolve_site_id()
+                    fb_sites = [{"id": sid, "name": "SharePoint", "web_url": url}]
+                except Exception:
+                    fb_sites = []
+            per_site = max(25, fallback_cap // max(1, len(fb_sites)))
+            for site in fb_sites:
+                _add(await list_sharepoint_files(site_id=site["id"], limit=per_site))
+                if len(catalog) >= fallback_cap:
+                    break
+        if SOURCE_ONEDRIVE in sources and len(catalog) < fallback_cap:
+            _add(await list_onedrive_files(limit=max(25, fallback_cap // 2)))
+
+    if kws:
+        catalog = [r for r in catalog if row_matches_keywords(r, kws)]
+    elif display_q:
+        ql = display_q.lower()
         catalog = [
             r
             for r in catalog
@@ -565,6 +783,7 @@ async def list_knowledge_catalog(
 
     catalog.sort(
         key=lambda r: (
+            -keyword_match_score(r, kws) if kws else 0,
             r.get("source_type") or "",
             (r.get("site_name") or "").lower(),
             (r.get("title") or "").lower(),

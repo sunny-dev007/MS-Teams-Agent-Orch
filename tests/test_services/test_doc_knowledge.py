@@ -109,7 +109,14 @@ def test_source_tags_sp_od_on():
 
 
 def test_extract_library_query_and_page():
-    from agent.services.graph_docs import extract_library_query, format_file_size, parse_library_page
+    from agent.services.graph_docs import (
+        extract_library_query,
+        format_file_size,
+        parse_library_page,
+        parse_search_keywords,
+        row_matches_keywords,
+        tokenize_search_keywords,
+    )
 
     assert extract_library_query("list of my document") == ""
     assert extract_library_query("list my documents") == ""
@@ -119,6 +126,19 @@ def test_extract_library_query_and_page():
     assert parse_library_page("page 3", 0, 3) == 2
     assert parse_library_page("previous", 1, 3) == 0
     assert format_file_size(1536).endswith("KB")
+
+    _, kws = parse_search_keywords("pull the envision pdf file")
+    assert "envision" in kws
+    display, kws = parse_search_keywords(
+        "pull the document which named as - envision-radiology-from-chaos-to-cloud-excellence1"
+    )
+    assert "envision" in kws
+    assert "radiology" in kws
+    row = {"title": "envision-radiology-from-chaos-to-cloud-excellence1.pdf"}
+    assert row_matches_keywords(row, ["envision"])
+    assert row_matches_keywords(row, ["envision", "radiology"])
+    assert not row_matches_keywords(row, ["envision", "missing"])
+    assert "envision" in tokenize_search_keywords("envision-radiology-from-chaos")
 
 
 @pytest.mark.asyncio
@@ -134,6 +154,9 @@ async def test_planner_informal_list_and_search_docs():
     assert (
         await plan({"user_message": "find document developer-guide", "whatsapp_phone": ""})
     )["intent"] == "list_docs"
+    assert (await plan({"user_message": "pull the envision pdf file", "whatsapp_phone": ""}))[
+        "intent"
+    ] == "list_docs"
 
 
 @pytest.mark.asyncio

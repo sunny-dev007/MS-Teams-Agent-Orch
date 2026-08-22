@@ -58,6 +58,8 @@ _RUN_QA_RE = re.compile(
 _LIST_DOCS_RE = re.compile(
     r"(list\s+(?:of\s+)?(?:my\s+)?(?:documents?|docs|files)|"
     r"list\s+(?:sharepoint|onedrive|onenote)|"
+    r"(?:show|get|fetch|display|give|pull|find)\s+(?:me\s+)?(?:all\s+)?(?:my\s+)?(?:the\s+)?"
+    r"(?:\S+\s+){0,8}(?:pdf|file|docx?|document|spreadsheet)s?\b|"
     r"(?:show|get|fetch|display|give|pull)\s+(?:me\s+)?(?:all\s+)?(?:my\s+)?(?:the\s+)?"
     r"(?:sharepoint\s+|onedrive\s+|onenote\s+)?(?:documents?|docs)|"
     r"browse\s+(?:documents?|docs|sharepoint)|"
@@ -67,8 +69,11 @@ _LIST_DOCS_RE = re.compile(
     re.IGNORECASE,
 )
 _SEARCH_DOCS_RE = re.compile(
+    r"(?:find|search|locate|look\s+up|pull|get|fetch|show)\s+(?:the\s+)?(?:my\s+)?"
+    r"(?:\S+\s+){0,8}(?:pdf|file|docx?|document|spreadsheet)s?\b|"
     r"(?:find|search|locate|look\s+up)\s+(?:my\s+)?(?:documents?|docs|files?)\s+"
     r"(?:named|called|like|for|about|with)?\s*\S+|"
+    r"(?:named|called)\s+(?:as\s+)?[:=\-]?\s*\S+|"
     r"search\s+(?:(?:in|on)\s+)?(?:sharepoint|onedrive|onenote)|"
     r"(?:documents?|docs|files|sharepoint)\s+(?:named|called|like|about|with|for)\s+\S+",
     re.IGNORECASE,
