@@ -22,6 +22,9 @@ from agent.specialists.doc_ingest_agent import run_doc_ingest
 from agent.specialists.doc_rag_agent import run_doc_rag
 from agent.specialists.doc_insights_agent import run_doc_insights
 from agent.specialists.doc_upload_agent import run_doc_upload
+from agent.specialists.meeting_library_agent import run_meeting_library
+from agent.specialists.meeting_plan_agent import run_meeting_plan
+from agent.specialists.meeting_email_agent import run_meeting_email
 from agent.specialists.data_analyst_agent import run_data_analyst
 from agent.specialists.email_agent import run_email, run_send_email
 from agent.specialists.evaluator_agent import run_evaluator, run_task_status
@@ -111,6 +114,15 @@ def _route_after_plan(state: AgentState) -> str:
         return "doc_insights_agent"
     if intent == "upload_ingest_docs":
         return "doc_upload_agent"
+    # Meeting Intelligence Fabric (safe when ENABLE_MEETING_INTELLIGENCE=false)
+    if intent == "list_meetings":
+        return "meeting_library_agent"
+    if intent == "select_meetings":
+        return "meeting_library_agent"
+    if intent in ("create_meeting_plan", "create_board_from_plan"):
+        return "meeting_plan_agent"
+    if intent == "email_meeting_plan":
+        return "meeting_email_agent"
     if intent == "analyze_excel":
         return "data_analyst_agent"
     if intent == "check_outlook":
@@ -345,6 +357,9 @@ def build_graph() -> StateGraph:
     graph.add_node("doc_rag_agent", run_doc_rag)
     graph.add_node("doc_insights_agent", run_doc_insights)
     graph.add_node("doc_upload_agent", run_doc_upload)
+    graph.add_node("meeting_library_agent", run_meeting_library)
+    graph.add_node("meeting_plan_agent", run_meeting_plan)
+    graph.add_node("meeting_email_agent", run_meeting_email)
     graph.add_node("data_analyst_agent", run_data_analyst)
     graph.add_node("outlook_agent", run_outlook)
     graph.add_node("boards_agent", run_boards)
@@ -399,6 +414,9 @@ def build_graph() -> StateGraph:
         "doc_rag_agent": "doc_rag_agent",
         "doc_insights_agent": "doc_insights_agent",
         "doc_upload_agent": "doc_upload_agent",
+        "meeting_library_agent": "meeting_library_agent",
+        "meeting_plan_agent": "meeting_plan_agent",
+        "meeting_email_agent": "meeting_email_agent",
         "data_analyst_agent": "data_analyst_agent",
         "outlook_agent": "outlook_agent",
         "boards_agent": "boards_agent",
@@ -426,6 +444,9 @@ def build_graph() -> StateGraph:
     graph.add_edge("doc_rag_agent", "notify_result")
     graph.add_edge("doc_insights_agent", "notify_result")
     graph.add_edge("doc_upload_agent", "notify_result")
+    graph.add_edge("meeting_library_agent", "notify_result")
+    graph.add_edge("meeting_plan_agent", "notify_result")
+    graph.add_edge("meeting_email_agent", "notify_result")
     graph.add_edge("data_analyst_agent", "notify_result")
     graph.add_edge("outlook_agent", "notify_result")
     graph.add_edge("boards_agent", "notify_result")

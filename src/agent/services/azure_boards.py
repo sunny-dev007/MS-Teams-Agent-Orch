@@ -449,3 +449,63 @@ def build_coding_instruction(item: dict[str, Any]) -> str:
             "implement based on the title and typical best practices for this type."
         )
     return "\n".join(lines)
+
+
+async def create_work_item(
+    *,
+    project: str,
+    work_item_type: str,
+    title: str,
+    description: str = "",
+    tags: str = "",
+    parent_id: int | None = None,
+) -> dict[str, Any]:
+    """Create one AzDO work item (Feature / Task / User Story)."""
+    if not boards_configured():
+        raise RuntimeError("Azure DevOps org URL / PAT not configured")
+    proj = (project or "").strip()
+    if not proj:
+        raise ValueError("project is required")
+    wtype = (work_item_type or "Task").strip()
+    patch: list[dict[str, Any]] = [
+        {"op": "add", "path": "/fields/System.Title", "value": title[:255]},
+    ]
+    if description:
+        patch.append(
+            {
+                "op": "add",
+                "path": "/fields/System.Description",
+                "value": f"<div>{description.replace(chr(10), '<br/>')}</div>",
+            }
+        )
+    if tags:
+        patch.append({"op": "add", "path": "/fields/System.Tags", "value": tags})
+    if parent_id:
+        patch.append(
+            {
+                "op": "add",
+                "path": "/relations/-",
+                "value": {
+                    "rel": "System.LinkTypes.Hierarchy-Reverse",
+                    "url": f"{_org_url()}/_apis/wit/workitems/{int(parent_id)}",
+                },
+            }
+        )
+
+    url = (
+        f"{_org_url()}/{quote(proj)}/_apis/wit/workitems/${quote(wtype)}"
+        f"?api-version=7.1"
+    )
+    async with httpx.AsyncClient(timeout=45.0) as client:
+        resp = await client.post(
+            url,
+            headers={**_headers(), "Content-Type": "application/json-patch+json"},
+            json=patch,
+        )
+        if resp.status_code >= 400:
+            logger.error("AzDO create WI failed: %s %s", resp.status_code, resp.text[:400])
+            resp.raise_for_status()
+        row = resp.json()
+    item = _normalize_work_item(row, fallback_project=proj)
+    logger.info("Created AzDO %s #%s in %s", wtype, item.get("id"), proj)
+    return item

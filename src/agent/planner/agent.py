@@ -108,7 +108,39 @@ _DATA_ANALYST_RE = re.compile(
     r"transform\s+(?:this\s+|the\s+)?(?:excel|spreadsheet))",
     re.IGNORECASE,
 )
+# Meeting Intelligence Fabric — transcript list / plan / email / boards handoff
+_LIST_MEETINGS_RE = re.compile(
+    r"(list\s+(?:my\s+)?(?:recent\s+)?meetings?|show\s+meeting\s+transcripts?|"
+    r"meeting\s+transcripts?|recent\s+meetings?)",
+    re.IGNORECASE,
+)
+_SELECT_MEETINGS_RE = re.compile(
+    r"select\s+meetings?\s+[\d,\s]+|meetings?\s+[\d,\s]+(?:and|&)[\d,\s]+",
+    re.IGNORECASE,
+)
+_CREATE_PLAN_RE = re.compile(
+    r"(create\s+(?:an?\s+)?(?:implementation\s+)?plan|make\s+(?:an?\s+)?plan|"
+    r"implementation\s+plan\s+from\s+meetings?|plan\s+from\s+(?:the\s+)?meetings?)",
+    re.IGNORECASE,
+)
+_EMAIL_PLAN_RE = re.compile(
+    r"(email\s+(?:the\s+)?plan|send\s+(?:the\s+)?plan\s+to|mail\s+(?:the\s+)?plan)",
+    re.IGNORECASE,
+)
+_BOARD_FROM_PLAN_RE = re.compile(
+    r"(create\s+(?:a\s+)?(?:devops\s+)?board\s+from\s+(?:the\s+)?plan|"
+    r"prepare\s+(?:a\s+)?(?:complete\s+)?(?:devops\s+)?board|"
+    r"create\s+work\s+items?\s+from\s+(?:the\s+)?plan)",
+    re.IGNORECASE,
+)
+_MEETING_PICK_NUMS_RE = re.compile(r"^\s*[\d,\s]+(?:\s*(?:and|&)\s*[\d,\s]+)*\s*$")
 _DOC_PICK_NUMS_RE = re.compile(r"^\s*[\d,\s]+(?:\s*(?:and|&)\s*[\d,\s]+)*\s*$")
+_MEETING_PAGE_RE = re.compile(
+    r"^\s*(?:next(?:\s+page)?|more(?:\s+meetings?)?|previous|prev(?:ious)?\s*page|"
+    r"page\s+\d+)\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
+_EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}")
 # Teams productivity — Outlook + Azure Boards (bypass coding session)
 _OUTLOOK_RE = re.compile(
     r"(check\s+(?:my\s+)?outlook|outlook\s+(?:inbox|emails?|mail)|"
@@ -281,6 +313,44 @@ async def plan(state: AgentState) -> AgentState:
     if _DATA_ANALYST_RE.search(user_msg):
         return await _clear_for_kb("analyze_excel")
 
+    async def _clear_for_meeting(intent_name: str) -> AgentState:
+        handoff = ""
+        if phone:
+            try:
+                from agent.core.session import save_session
+                from agent.services.workspace_handoff import WS_MEETING, handoff_note_for
+
+                handoff = await handoff_note_for(phone, next_workspace=WS_MEETING)
+                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+            except Exception:
+                logger.exception("%s failed clearing session for %s", AGENT_NAME, intent_name)
+        out = {**state, "intent": intent_name, "planned_by": AGENT_NAME}
+        if handoff:
+            out["handoff_note"] = handoff
+        return out
+
+    if _settings.enable_meeting_intelligence:
+        if _LIST_MEETINGS_RE.search(user_msg):
+            return await _clear_for_meeting("list_meetings")
+        if _SELECT_MEETINGS_RE.search(user_msg):
+            return await _clear_for_meeting("select_meetings")
+        if _CREATE_PLAN_RE.search(user_msg):
+            has_meeting_ctx = any(
+                k in user_msg.lower() for k in ("meeting", "transcript", "implementation plan")
+            )
+            if phone and not has_meeting_ctx:
+                try:
+                    sess = await get_session(phone)
+                    has_meeting_ctx = bool((sess.get("data") or {}).get("meeting_selected"))
+                except Exception:
+                    pass
+            if has_meeting_ctx:
+                return await _clear_for_meeting("create_meeting_plan")
+        if _EMAIL_PLAN_RE.search(user_msg):
+            return await _clear_for_meeting("email_meeting_plan")
+        if _BOARD_FROM_PLAN_RE.search(user_msg):
+            return await _clear_for_meeting("create_board_from_plan")
+
     # Outlook / Boards — Teams productivity lane (priority over coding session)
     async def _clear_for_productivity(intent_name: str) -> AgentState:
         handoff = ""
@@ -311,6 +381,27 @@ async def plan(state: AgentState) -> AgentState:
         try:
             session = await get_session(phone)
             awaiting_early = session.get("awaiting")
+            if _settings.enable_meeting_intelligence:
+                if awaiting_early == "meeting_email_to" and _EMAIL_RE.search(user_msg):
+                    return {**state, "intent": "email_meeting_plan", "planned_by": AGENT_NAME}
+                if awaiting_early == "meeting_email_to":
+                    return {
+                        **state,
+                        "intent": "email_meeting_plan",
+                        "session_awaiting": "meeting_email_to",
+                        "session_data": session.get("data") or {},
+                        "planned_by": AGENT_NAME,
+                    }
+                if awaiting_early == "meeting_pick" and _MEETING_PAGE_RE.match(user_msg):
+                    return {
+                        **state,
+                        "intent": "list_meetings",
+                        "session_awaiting": "meeting_pick",
+                        "session_data": session.get("data") or {},
+                        "planned_by": AGENT_NAME,
+                    }
+                if awaiting_early == "meeting_pick" and _MEETING_PICK_NUMS_RE.match(user_msg):
+                    return {**state, "intent": "select_meetings", "planned_by": AGENT_NAME}
             if awaiting_early == "doc_pick" and _DOC_PAGE_RE.match(user_msg):
                 return {
                     **state,

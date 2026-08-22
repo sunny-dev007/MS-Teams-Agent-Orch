@@ -1,0 +1,19 @@
+{
+  "title": "Travel Planner AI Agent — Client Discovery Session",
+  "date": "2026-08-22",
+  "start_time": "10:00:00",
+  "end_time": "10:30:00",
+  "duration_minutes": 30,
+  "timezone": "Asia/Kolkata (IST)",
+  "format": "text/vtt",
+  "format_note": "Native Microsoft Teams / Microsoft Graph transcript format (WebVTT with speaker voice tags). DOCX export deprecated May 2023.",
+  "teams_filename": "Travel Planner AI Agent-20250822_100000-Meeting Transcript.vtt",
+  "sharepoint_default_path": "Shared Documents/Recordings/",
+  "sharepoint_test_path": "Shared Documents/meeting transcript/",
+  "attendees": [
+    { "name": "Sunny Kushwaha", "role": "AI Architect", "organization": "AI Enterprise Labs" },
+    { "name": "Priya Mehta", "role": "VP Product", "organization": "Global Voyager Inc." },
+    { "name": "Marcus Weber", "role": "Head of Digital Experience", "organization": "Global Voyager Inc." },
+    { "name": "Elena Rodriguez", "role": "Director, Travel Operations", "organization": "Global Voyager Inc." }
+  ]
+}

@@ -60,10 +60,16 @@ def _agent_rows() -> list[tuple[str, bool, str, str]]:
             "my work items",
         ),
         (
-            "Meeting Agent",
+            "Calendar Agent",
             True,
-            "Schedule calendar meetings",
+            "Schedule Google Calendar meetings (not transcript plans)",
             "schedule a meeting tomorrow 3pm with a@b.com",
+        ),
+        (
+            "Meeting Intelligence",
+            bool(settings.enable_meeting_intelligence),
+            "Teams transcripts → plan → SharePoint / email / DevOps board",
+            "list my recent meetings",
         ),
         (
             "Doc Library",

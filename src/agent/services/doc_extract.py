@@ -28,6 +28,7 @@ _R_NS = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
 
 _OOXML_EXTS = {".docx", ".pptx", ".xlsx"}
 _PDF_EXTS = {".pdf"}
+_VTT_EXTS = {".vtt"}
 _CSV_EXTS = {".csv", ".tsv"}
 _TEXT_EXTS = {
     ".txt",
@@ -82,6 +83,8 @@ def detect_format(data: bytes, *, filename: str = "", mime: str = "") -> str:
         return "legacy_ole"
     if ext in _CSV_EXTS or "csv" in mime_l or "tab-separated" in mime_l:
         return "csv"
+    if ext in _VTT_EXTS or "vtt" in mime_l or (data[:15].decode("utf-8", errors="ignore").upper().startswith("WEBVTT")):
+        return "vtt"
     if ext in {".md", ".markdown"} or "markdown" in mime_l:
         return "markdown"
     if ext in {".html", ".htm"} or "html" in mime_l:
@@ -286,6 +289,13 @@ def extract_csv(data: bytes, *, max_rows: int = 1000) -> str:
     return "\n".join(rows).strip()
 
 
+def extract_vtt(data: bytes) -> str:
+    from agent.services import vtt_parse
+
+    cues = vtt_parse.parse_vtt(data)
+    return vtt_parse.vtt_to_plain_text(cues)
+
+
 def extract_text_plain(data: bytes) -> str:
     return _decode_text(data).strip()
 
@@ -373,6 +383,9 @@ def extract_bytes(
         elif fmt == "csv":
             text = extract_csv(data)
             status = "csv_extracted"
+        elif fmt == "vtt":
+            text = extract_vtt(data)
+            status = "vtt_extracted"
         elif fmt in ("markdown", "text", "html"):
             text = extract_text_plain(data)
             if fmt == "html":

@@ -124,7 +124,10 @@ async def route_inbound_message(
         r"check\s+(?:my\s+)?outlook|outlook\s+(?:inbox|emails?|mail)|my\s+outlook|"
         r"my\s+work\s+items?|my\s+tickets?|my\s+action\s+items?|azure\s+boards?|"
         r"check\s+(?:my\s+)?boards?|boards?\s+assigned\s+to\s+me|"
-        r"work\s+items?\s+assigned|fetch\s+(?:my\s+)?(?:action\s+)?items?)",
+        r"work\s+items?\s+assigned|fetch\s+(?:my\s+)?(?:action\s+)?items?|"
+        r"list\s+(?:my\s+)?(?:recent\s+)?meetings?|show\s+meeting\s+transcripts?|"
+        r"select\s+meetings?\s+[\d,\s]+|make\s+(?:an?\s+)?plan|create\s+(?:an?\s+)?(?:implementation\s+)?plan|"
+        r"email\s+(?:the\s+)?plan|send\s+(?:the\s+)?plan\s+to|create\s+(?:devops\s+)?board\s+from\s+(?:the\s+)?plan)",
         message,
         re.I,
     ):

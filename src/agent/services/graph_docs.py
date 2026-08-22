@@ -794,6 +794,13 @@ async def list_knowledge_catalog(
     return catalog[:cap]
 
 
+async def list_meeting_transcripts(*, limit: int | None = None) -> list[dict[str, Any]]:
+    """Discover Teams `.vtt` transcripts (delegates to meeting_transcripts service)."""
+    from agent.services import meeting_transcripts
+
+    return await meeting_transcripts.list_meeting_transcript_files(limit=limit)
+
+
 def _is_downloadable(entry: dict[str, Any]) -> bool:
     if entry.get("source_type") == SOURCE_ONENOTE:
         return False

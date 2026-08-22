@@ -321,6 +321,7 @@ async def copilot_channel_health() -> dict[str, Any]:
             "release_handoff_enabled": bool(settings.enable_release_handoff),
             "doc_knowledge_enabled": bool(settings.enable_doc_knowledge),
             "data_analyst_agent_enabled": bool(settings.enable_data_analyst_agent),
+            "meeting_intelligence_enabled": bool(settings.enable_meeting_intelligence),
             "outlook_agent_enabled": bool(settings.enable_outlook_agent),
             "boards_agent_enabled": bool(settings.enable_boards_agent),
             "graph_configured": ms_graph.graph_configured(),

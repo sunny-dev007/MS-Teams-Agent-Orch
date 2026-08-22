@@ -18,6 +18,7 @@ WS_KNOWLEDGE = "knowledge"
 WS_DEV = "dev"
 WS_GENERAL = "general"
 WS_PRODUCTIVITY = "productivity"
+WS_MEETING = "meeting"
 
 _HANDOFF = {
     (WS_KNOWLEDGE, WS_DEV): (
@@ -46,6 +47,22 @@ _HANDOFF = {
     (WS_PRODUCTIVITY, WS_KNOWLEDGE): (
         "_Workspace switch:_ Productivity → **Knowledge**.\n"
         "Say *check my outlook* or *my work items* to return."
+    ),
+    (WS_KNOWLEDGE, WS_MEETING): (
+        "_Workspace switch:_ Knowledge → **Meeting Intelligence**.\n"
+        "Ingested docs stay available — say *ask docs …* anytime."
+    ),
+    (WS_MEETING, WS_KNOWLEDGE): (
+        "_Workspace switch:_ Meeting Intelligence → **Knowledge**.\n"
+        "Say *list my recent meetings* to return."
+    ),
+    (WS_MEETING, WS_DEV): (
+        "_Workspace switch:_ Meeting Intelligence → **Dev**.\n"
+        "Published plans remain in session — say *create devops board from plan* anytime."
+    ),
+    (WS_DEV, WS_MEETING): (
+        "_Workspace switch:_ Dev → **Meeting Intelligence**.\n"
+        "Coding gates stay open — say *status* or *stop* if needed."
     ),
 }
 
@@ -93,6 +110,10 @@ async def handoff_note_for(
         )
     if next_workspace == WS_DEV and awaiting == "doc_pick":
         extra = "\n_Note:_ Document pick list is still available — say *ingest N* to resume."
+    if next_workspace == WS_MEETING and awaiting == "doc_pick":
+        extra = "\n_Note:_ Document pick list cleared — say *list my documents* to restore."
+    if next_workspace == WS_KNOWLEDGE and awaiting == "meeting_pick":
+        extra = "\n_Note:_ Meeting pick list is still available — say *select meetings N* or *make a plan*."
 
     note = _HANDOFF.get((prev, next_workspace), "")
     return (note + extra).strip()

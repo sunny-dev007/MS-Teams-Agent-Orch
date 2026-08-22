@@ -1,0 +1,21 @@
+Synthesize an implementation plan from these meeting transcript(s).
+
+User focus (may be empty):
+{user_focus}
+
+Meetings block:
+{meetings_block}
+
+Return JSON with this schema:
+{{
+  "title": "",
+  "executive_summary": "",
+  "background": "",
+  "requirements": [],
+  "architecture_overview": "",
+  "phases": [{{"name": "", "duration_weeks": 0, "deliverables": []}}],
+  "risks": [],
+  "open_questions": [],
+  "action_items": [{{"owner": "", "task": "", "due": ""}}],
+  "assumptions": []
+}}

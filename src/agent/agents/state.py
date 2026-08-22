@@ -98,3 +98,10 @@ class AgentState(TypedDict, total=False):
     # Teams chat attachments (Copilot Studio → SharePoint upload path)
     attachments: list
     upload_summarize: bool
+
+    # Meeting Intelligence Fabric (optional — flag gated)
+    meeting_selected: list
+    meeting_plan_url: str
+    meeting_plan_docx_url: str
+    meeting_plan_title: str
+    meeting_client_name: str

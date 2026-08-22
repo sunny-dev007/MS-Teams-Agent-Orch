@@ -124,6 +124,17 @@ class Settings(BaseSettings):
     # Additive — default OFF; does not change Doc RAG, Dev, or WhatsApp coding.
     enable_data_analyst_agent: bool = False
 
+    # Meeting Intelligence Fabric (Teams transcripts → plan → SharePoint / email / Boards)
+    # Additive — default OFF; calendar scheduling (agents/meeting.py) unchanged.
+    enable_meeting_intelligence: bool = False
+    meeting_transcript_folders: str = "Recordings,meeting transcript"
+    meeting_plans_folder: str = "MeetingPlans"
+    meeting_list_max: int = 30
+    meeting_list_page_size: int = 10
+    meeting_metadata_cache_hours: int = 168
+    meeting_plan_default_format: str = "md,docx"
+    enable_meeting_plan_email: bool = True
+
     # Microsoft Graph (Docs Agent + Doc Knowledge) — app-only client credentials
     ms_graph_tenant_id: str = ""
     ms_graph_client_id: str = ""
