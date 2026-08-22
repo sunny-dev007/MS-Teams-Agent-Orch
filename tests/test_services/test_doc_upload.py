@@ -251,3 +251,95 @@ async def test_upload_and_ingest_happy_path(monkeypatch):
     assert result["status"] == "completed"
     assert "Doc Upload Agent" in result["message"]
     assert "report.pdf" in result["message"]
+
+
+def test_extract_share_links():
+    from agent.services.doc_upload import encode_sharing_url, extract_share_links
+
+    url = (
+        "https://suchitroy3gmail-my.sharepoint.com/:b:/g/personal/"
+        "sunny_aienterpriselabs_com/IQCy_kpRoFwWTIylegopenoXAdTuAR-Vec3v6gNbb-uBhHY?e=X3zbZE"
+    )
+    msg = f"please ingest this {url} into the system"
+    links = extract_share_links(msg)
+    assert len(links) == 1
+    assert links[0].startswith("https://")
+    assert encode_sharing_url(url).startswith("u!")
+
+
+@pytest.mark.asyncio
+async def test_planner_share_link_triggers_upload_ingest(monkeypatch):
+    from agent.config import settings
+    from agent.planner.agent import plan
+
+    async def _empty_session(_phone):
+        return {"phone": _phone, "awaiting": None, "provider": None, "data": {}}
+
+    monkeypatch.setattr("agent.core.session.get_session", _empty_session)
+    monkeypatch.setattr(settings, "enable_doc_knowledge", True)
+    url = (
+        "https://suchitroy3gmail-my.sharepoint.com/:b:/g/personal/"
+        "sunny_aienterpriselabs_com/IQCy_kpRoFwWTIylegopenoXAdTuAR-Vec3v6gNbb-uBhHY?e=X3zbZE"
+    )
+    out = await plan(
+        {
+            "user_message": f"please ingest into the system and summarise {url}",
+            "whatsapp_phone": "teams:user-link",
+        }
+    )
+    assert out["intent"] == "upload_ingest_docs"
+    assert out.get("upload_summarize") is True
+    assert out["attachments"][0]["share_url"] == url
+
+
+@pytest.mark.asyncio
+async def test_upload_share_link_happy_path(monkeypatch):
+    from agent.config import settings
+    from agent.services import doc_upload
+
+    url = "https://contoso-my.sharepoint.com/:b:/g/personal/user/file123?e=abc"
+    monkeypatch.setattr(settings, "enable_doc_knowledge", True)
+    monkeypatch.setattr(doc_upload.ms_graph, "graph_configured", lambda: True)
+    monkeypatch.setattr(
+        doc_upload,
+        "download_sharing_link",
+        AsyncMock(return_value=(b"%PDF-1.4 " + b"x" * 64, "application/pdf", "envision.pdf")),
+    )
+    monkeypatch.setattr(
+        doc_upload.graph_docs,
+        "upload_site_drive_item",
+        AsyncMock(
+            return_value={
+                "external_id": "item-1",
+                "source_type": "sharepoint",
+                "title": "envision.pdf",
+                "web_url": "https://contoso.sharepoint.com/envision.pdf",
+                "mime_type": "application/pdf",
+                "extension": ".pdf",
+                "folder": "UploadedDocs",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        doc_upload.doc_knowledge,
+        "ingest_catalog_entries",
+        AsyncMock(
+            return_value=[
+                {
+                    "id": "kb-1",
+                    "title": "envision.pdf",
+                    "status": "ready",
+                    "chunks": 3,
+                    "ingest_action": "created",
+                }
+            ]
+        ),
+    )
+
+    result = await doc_upload.upload_and_ingest_attachments(
+        [{"share_url": url, "filename": "upload.bin"}],
+        owner_session="teams:u",
+        summarize=False,
+    )
+    assert result["status"] == "completed"
+    assert "envision.pdf" in result["message"]

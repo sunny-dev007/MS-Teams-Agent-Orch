@@ -207,6 +207,21 @@ async def plan(state: AgentState) -> AgentState:
             logger.exception("%s failed saving pending attachments", AGENT_NAME)
 
     effective_atts = incoming_atts or pending_atts
+    link_atts = _doc_upload.attachments_from_share_links(user_msg)
+    if not effective_atts and link_atts:
+        effective_atts = link_atts
+        if phone:
+            try:
+                from agent.core.session import save_session
+
+                await save_session(
+                    phone,
+                    data={"pending_attachments": _doc_upload.attachments_for_session(link_atts)},
+                    merge_data=True,
+                )
+            except Exception:
+                logger.exception("%s failed saving share-link attachments", AGENT_NAME)
+
     if effective_atts and _settings.enable_doc_knowledge:
         wants_summarize = bool(
             _SUMMARIZE_DOCS_RE.search(user_msg)
@@ -220,15 +235,16 @@ async def plan(state: AgentState) -> AgentState:
             out["attachments"] = effective_atts
             out["upload_summarize"] = wants_summarize
             return out
-        if incoming_atts:
+        if incoming_atts or link_atts:
             names = ", ".join(
-                (a.get("filename") or a.get("name") or "file") for a in incoming_atts[:5]
+                (a.get("filename") or a.get("name") or a.get("share_url") or "file")[:48]
+                for a in (incoming_atts or link_atts)[:5]
             )
             return {
                 **state,
                 "intent": "general",
                 "notification_text": (
-                    f"*Doc Upload Agent* — received **{len(incoming_atts)}** file(s): {names}\n\n"
+                    f"*Doc Upload Agent* — received **{len(incoming_atts or link_atts)}** file(s): {names}\n\n"
                     "Say **ingest this** to upload to SharePoint and vectorize, or "
                     "**summarize this** for upload + ingest + executive summary."
                 ),

@@ -3,7 +3,7 @@
   "info": {
     "title": "Sunny Personal AI Agent",
     "description": "Coding / Azure DevOps / GitHub gate backend for Teams. Call PersonalAIAgent for repo work; return reply verbatim. Supports optional file attachments for Doc Upload (SharePoint + ingest).",
-    "version": "1.0.7"
+    "version": "1.0.8"
   },
   "host": "whatsapp-ai-agent-sunny.azurewebsites.net",
   "basePath": "/",
@@ -73,6 +73,11 @@
           "type": "string",
           "x-ms-summary": "Content Type",
           "description": "MIME type when known (e.g. application/pdf)"
+        },
+        "share_url": {
+          "type": "string",
+          "x-ms-summary": "Share URL",
+          "description": "Optional OneDrive/SharePoint sharing link (also auto-detected from message text)"
         }
       }
     },

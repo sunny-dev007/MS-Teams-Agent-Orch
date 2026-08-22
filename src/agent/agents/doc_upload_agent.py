@@ -42,6 +42,9 @@ async def upload_and_ingest_documents(state: AgentState) -> AgentState:
 
     phone = state.get("whatsapp_phone") or ""
     attachments = list(state.get("attachments") or [])
+    user_msg = state.get("user_message") or ""
+    if not attachments and user_msg:
+        attachments.extend(doc_upload.attachments_from_share_links(user_msg))
     if phone and not attachments:
         try:
             session = await get_session(phone)

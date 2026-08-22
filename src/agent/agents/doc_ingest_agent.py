@@ -51,7 +51,7 @@ async def ingest_documents(state: AgentState) -> AgentState:
 
     from agent.services import doc_upload as _doc_upload
 
-    if _doc_upload.message_expects_teams_attachment(msg):
+    if _doc_upload.message_expects_teams_attachment(msg) and not _doc_upload.extract_share_links(msg):
         return {
             **state,
             "status": "failed",

@@ -66,6 +66,75 @@ _UPLOAD_ACTION_RE = re.compile(
     r"\bput\s+(?:this|it)\s+in\s+(?:the\s+)?(?:library|knowledge|sharepoint)\b",
     re.I,
 )
+# Teams/Copilot often embeds OneDrive/SharePoint sharing links instead of base64 bytes.
+_SHARE_LINK_RE = re.compile(
+    r"https?://[^\s\]\)>\}\"']+(?:sharepoint\.com|1drv\.ms|onedrive\.live\.com)[^\s\]\)>\}\"']*",
+    re.I,
+)
+
+
+def is_microsoft_share_url(url: str) -> bool:
+    u = (url or "").lower()
+    return any(h in u for h in ("sharepoint.com", "1drv.ms", "onedrive.live.com"))
+
+
+def encode_sharing_url(url: str) -> str:
+    """Graph /shares/{shareId} token (u! + base64url)."""
+    encoded = base64.b64encode((url or "").encode("utf-8")).decode("ascii")
+    encoded = encoded.rstrip("=").replace("/", "_").replace("+", "-")
+    return f"u!{encoded}"
+
+
+def extract_share_links(message: str) -> list[str]:
+    """Pull OneDrive/SharePoint sharing URLs from Teams message text."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for match in _SHARE_LINK_RE.finditer(message or ""):
+        url = match.group(0).rstrip(".,);]}>\"'")
+        if url and url not in seen:
+            seen.add(url)
+            out.append(url)
+    return out
+
+
+def attachments_from_share_links(message: str) -> list[dict[str, Any]]:
+    """Build attachment stubs from sharing URLs embedded in the user message."""
+    rows: list[dict[str, Any]] = []
+    for url in extract_share_links(message):
+        rows.append(
+            {
+                "filename": "upload.bin",
+                "share_url": url,
+                "content_url": url,
+                "content": None,
+                "content_type": "",
+                "extension": "",
+                "source": "teams_share_link",
+            }
+        )
+    return rows
+
+
+async def download_sharing_link(url: str, *, max_bytes: int) -> tuple[bytes, str, str]:
+    """Resolve a sharing URL via Graph and download file bytes."""
+    if not ms_graph.graph_configured():
+        raise RuntimeError("Microsoft Graph is not configured")
+    share_id = encode_sharing_url(url)
+    item = await ms_graph.graph_request(
+        "GET",
+        f"/shares/{share_id}/driveItem?$select=id,name,file,size",
+    )
+    name = (item.get("name") or "upload.bin").strip()
+    size = int(item.get("size") or 0)
+    if size and size > max_bytes:
+        raise ValueError(f"Attachment exceeds {max_bytes // (1024 * 1024)} MB limit")
+    raw, ct = await ms_graph.graph_request_bytes(
+        "GET",
+        f"/shares/{share_id}/driveItem/content",
+    )
+    if len(raw) > max_bytes:
+        raise ValueError(f"Attachment exceeds {max_bytes // (1024 * 1024)} MB limit")
+    return raw, ct or "", name
 
 
 def normalize_attachment(raw: dict[str, Any]) -> dict[str, Any] | None:
@@ -110,6 +179,9 @@ def normalize_attachment(raw: dict[str, Any]) -> dict[str, Any] | None:
         or ""
     )
     content_url = raw.get("content_url") or raw.get("contentUrl") or raw.get("url") or ""
+    share_url = raw.get("share_url") or raw.get("shareUrl") or ""
+    if not share_url and is_microsoft_share_url(content_url):
+        share_url = content_url
 
     if content_b64:
         try:
@@ -117,8 +189,8 @@ def normalize_attachment(raw: dict[str, Any]) -> dict[str, Any] | None:
         except Exception:
             logger.warning("Invalid base64 attachment filename=%s", filename)
             return None
-    elif content_url:
-        content = None  # fetched later
+    elif content_url or share_url:
+        content = None  # fetched later (Graph for share links)
     else:
         return None
 
@@ -131,7 +203,8 @@ def normalize_attachment(raw: dict[str, Any]) -> dict[str, Any] | None:
     return {
         "filename": filename,
         "content": content,
-        "content_url": content_url,
+        "content_url": content_url or share_url,
+        "share_url": share_url or (content_url if is_microsoft_share_url(content_url) else ""),
         "content_type": content_type,
         "extension": ext,
     }
@@ -213,13 +286,13 @@ def message_expects_teams_attachment(message: str) -> bool:
 
 
 def attachment_not_received_reply() -> str:
-    """Honest failure when Teams/Copilot did not pass attachment bytes to the API."""
+    """Honest failure when Teams/Copilot did not pass attachment bytes or a sharing link."""
     return (
         "*Doc Upload Agent* — your message asks to ingest/summarize an **attached file**, "
-        "but **no file bytes** arrived from Teams.\n\n"
-        "The Copilot **PersonalAIAgent** action must map `attachments[]` with "
-        "`filename` + `content_base64` (connector swagger **v1.0.7**). "
-        "Text-only calls cannot upload to SharePoint.\n\n"
+        "but **no file bytes or SharePoint/OneDrive link** arrived from Teams.\n\n"
+        "Supported inputs:\n"
+        "• `attachments[]` with `filename` + `content_base64` (connector swagger **v1.0.7**)\n"
+        "• A **SharePoint/OneDrive sharing URL** in your message (auto-resolved via Graph)\n\n"
         "**Manual workaround:** upload to SharePoint → *list my documents* → *ingest N*.\n\n"
         f"**Supported ingestion formats:** {SUPPORTED_INGEST_FORMATS_LABEL}."
     )
@@ -253,7 +326,7 @@ def validate_attachment(att: dict[str, Any]) -> tuple[bool, str]:
         return False, unsupported_format_message(filename, ext=ext, mime=mime)
     content = att.get("content")
     if content is None:
-        if att.get("content_url"):
+        if att.get("share_url") or att.get("content_url"):
             return True, ""
         return False, "Attachment has no content."
     max_bytes = max(1, int(settings.doc_upload_max_bytes or 25 * 1024 * 1024))
@@ -305,7 +378,23 @@ async def upload_and_ingest_attachments(
         if not att:
             errors.append("Could not read one attachment (missing content).")
             continue
-        if att.get("content") is None and att.get("content_url"):
+        share_src = att.get("share_url") or att.get("content_url") or ""
+        if att.get("content") is None and is_microsoft_share_url(share_src):
+            try:
+                raw, ct, name = await download_sharing_link(share_src, max_bytes=max_bytes)
+                att["content"] = raw
+                att["filename"] = name
+                if ct:
+                    att["content_type"] = ct
+                if "." in name:
+                    att["extension"] = "." + name.rsplit(".", 1)[-1].lower()
+            except Exception as exc:
+                logger.exception("Graph share-link download failed url=%s", share_src[:80])
+                errors.append(
+                    f"Could not download Teams/SharePoint link `{share_src[:60]}…`: {exc}"
+                )
+                continue
+        elif att.get("content") is None and att.get("content_url"):
             try:
                 att["content"] = await _fetch_url_bytes(att["content_url"], max_bytes=max_bytes)
             except Exception as exc:

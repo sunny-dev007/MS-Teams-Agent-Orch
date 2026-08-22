@@ -23,7 +23,7 @@ When a user attaches a local file in Teams and asks to **ingest** or **summarize
 3. Runs the same ingest pipeline as Doc Ingest (extract → chunk → embed → Qdrant).
 4. If the user asked to summarize, runs Doc Insights on the freshly ingested file(s).
 
-Copilot Studio must pass attachment bytes in the HTTP tool body (Power Automate can base64-encode Teams attachments). Without `attachments[]`, the agent can still use files stored in session from a prior turn (`pending_attachments`).
+Copilot Studio must pass attachment bytes in the HTTP tool body (Power Automate can base64-encode Teams attachments). **Alternatively**, when Teams embeds a **OneDrive/SharePoint sharing link** in the message text, the agent resolves it via Graph, copies to `UploadedDocs`, and ingests. Without bytes or a link, the agent can still use files stored in session from a prior turn (`pending_attachments`).
 
 Max upload size default **25 MB** (`DOC_UPLOAD_MAX_BYTES`).
 

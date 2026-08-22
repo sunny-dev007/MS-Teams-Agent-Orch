@@ -37,6 +37,10 @@ class CopilotAttachment(BaseModel):
         description="Optional HTTPS URL to download attachment bytes",
     )
     content_type: str | None = Field(default=None, description="MIME type when known")
+    share_url: str | None = Field(
+        default=None,
+        description="OneDrive/SharePoint sharing link when Teams passes a URL instead of bytes",
+    )
 
 
 class CopilotMessageRequest(BaseModel):
