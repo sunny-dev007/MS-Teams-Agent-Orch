@@ -129,6 +129,8 @@ class Settings(BaseSettings):
     enable_meeting_intelligence: bool = False
     meeting_transcript_folders: str = "Recordings,meeting transcript"
     meeting_plans_folder: str = "MeetingPlans"
+    meeting_dev_plans_folder: str = "MeetingPlans/Development"
+    meeting_action_plans_folder: str = "MeetingActionPlans"
     meeting_list_max: int = 30
     meeting_list_page_size: int = 10
     meeting_metadata_cache_hours: int = 168

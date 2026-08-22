@@ -14,6 +14,91 @@ from agent.services import azure_boards
 
 logger = get_logger(__name__)
 
+AWAITING_BOARD_PROJECT = "meeting_board_project_pick"
+
+
+def pick_project(user_msg: str, projects: list[dict]) -> dict | None:
+    """Match user reply to an AzDO project (number or name)."""
+    if not projects:
+        return None
+    msg = (user_msg or "").strip()
+    if msg.isdigit():
+        idx = int(msg) - 1
+        if 0 <= idx < len(projects):
+            return projects[idx]
+    lower = msg.lower()
+    for p in projects:
+        if (p.get("name") or "").lower() == lower:
+            return p
+    for p in projects:
+        name = (p.get("name") or "").lower()
+        if lower and lower in name:
+            return p
+    return None
+
+
+def format_project_picker(projects: list[dict], *, plan_title: str = "") -> str:
+    lines = [
+        "*Meeting Intelligence* — choose an **Azure DevOps project**",
+        "_Your development plan will create a Feature + Tasks in the project you select._",
+    ]
+    if plan_title:
+        lines.append(f"_Plan:_ **{plan_title}**")
+    lines += ["", "| # | Project |", "| :---: | :--- |"]
+    for i, p in enumerate(projects, start=1):
+        lines.append(f"| {i} | {p.get('name')} |")
+    lines += [
+        "",
+        "Reply with a **number** (e.g. *2*) or the **project name**.",
+        "_Example:_ `Project-NIT` or `1`",
+    ]
+    return "\n".join(lines)
+
+
+async def resolve_board_project(
+    *,
+    user_message: str,
+    session_data: dict,
+    default_project: str = "",
+) -> tuple[dict | None, list[dict], bool]:
+    """Return (picked_project, all_projects, needs_picker).
+
+    needs_picker=True when caller should show the project table and wait.
+    """
+    projects = list(session_data.get("meeting_board_projects") or [])
+    preselected = (session_data.get("meeting_board_project") or "").strip()
+
+    if preselected and not user_message.strip():
+        return {"name": preselected}, projects, False
+
+    if not projects:
+        try:
+            projects = await azure_boards.list_org_projects()
+        except Exception:
+            logger.exception("Failed listing AzDO projects for meeting board handoff")
+            projects = []
+
+    configured = (default_project or "").strip()
+    if configured and len(projects) == 1:
+        return projects[0], projects, False
+    if configured and not projects:
+        return {"name": configured}, [], False
+
+    picked = pick_project(user_message, projects)
+    if picked:
+        return picked, projects, False
+
+    if len(projects) == 1:
+        return projects[0], projects, False
+
+    if len(projects) > 1:
+        return None, projects, True
+
+    if configured:
+        return {"name": configured}, [], False
+
+    return None, [], True
+
 
 async def create_board_from_plan(
     *,

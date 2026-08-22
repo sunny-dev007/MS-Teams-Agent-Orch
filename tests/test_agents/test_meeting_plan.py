@@ -20,9 +20,6 @@ async def test_library_select_invalid_pick(monkeypatch):
 
     monkeypatch.setattr(settings, "enable_meeting_intelligence", True)
 
-    async def fake_graph_configured():
-        return True
-
     async def fake_session(phone):
         return {
             "awaiting": "meeting_pick",
@@ -95,3 +92,75 @@ async def test_planner_list_meetings_beats_repo_session(monkeypatch):
         {"user_message": "list my recent meetings", "whatsapp_phone": "teams:u"}
     )
     assert out["intent"] == "list_meetings"
+
+
+@pytest.mark.asyncio
+async def test_board_project_picker_multiple_projects(monkeypatch):
+    from agent.agents import meeting_plan_agent as plan_agent
+    from agent.config import settings
+    from agent.services import meeting_board_bridge
+
+    monkeypatch.setattr(settings, "enable_meeting_intelligence", True)
+    monkeypatch.setattr(settings, "enable_boards_agent", True)
+
+    projects = [{"name": "Project-A"}, {"name": "Project-B"}]
+
+    async def fake_resolve(**kwargs):
+        return None, projects, True
+
+    async def fake_session(phone):
+        return {
+            "awaiting": "meeting_pick",
+            "data": {
+                "last_plan": {
+                    "plan_json": {"title": "Dev Plan", "executive_summary": "Build API"},
+                    "published": {},
+                    "meeting_intent": {
+                        "meeting_category": "development",
+                        "requires_devops_board": True,
+                    },
+                },
+                "meeting_intent": {
+                    "meeting_category": "development",
+                    "requires_devops_board": True,
+                },
+            },
+        }
+
+    saved = {}
+
+    async def fake_save(phone, **kwargs):
+        saved.update(kwargs)
+        return None
+
+    monkeypatch.setattr(plan_agent.ms_graph, "graph_configured", lambda: True)
+    monkeypatch.setattr(meeting_board_bridge, "resolve_board_project", fake_resolve)
+    monkeypatch.setattr(plan_agent, "get_session", fake_session)
+    monkeypatch.setattr(plan_agent, "save_session", fake_save)
+
+    out = await plan_agent.run_meeting_plan(
+        {
+            "user_message": "create devops board from plan",
+            "whatsapp_phone": "teams:u",
+            "intent": "create_board_from_plan",
+        }
+    )
+    assert out["session_awaiting"] == "meeting_board_project_pick"
+    assert "Project-A" in out["notification_text"]
+    assert saved.get("awaiting") == "meeting_board_project_pick"
+
+
+@pytest.mark.asyncio
+async def test_resolve_publish_folder_by_intent():
+    from agent.services import meeting_intent as mi
+
+    dev = mi.resolve_publish_folder(
+        {"meeting_category": "development", "sharepoint_folder_slug": "travel-agent"},
+        client_name="Global Voyager",
+    )
+    assert dev.startswith("MeetingPlans/Development/")
+    action = mi.resolve_publish_folder(
+        {"meeting_category": "business", "sharepoint_folder_slug": "client-discovery"},
+        client_name="Acme",
+    )
+    assert action.startswith("MeetingActionPlans/")

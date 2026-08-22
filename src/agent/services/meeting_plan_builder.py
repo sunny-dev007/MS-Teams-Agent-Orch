@@ -17,6 +17,7 @@ logger = get_logger(__name__)
 _PROMPT_DIR = Path(__file__).resolve().parent.parent / "prompts"
 _PLAN_SYSTEM = (_PROMPT_DIR / "meeting_plan_system.txt").read_text(encoding="utf-8")
 _PLAN_USER_TMPL = (_PROMPT_DIR / "meeting_plan_user.txt").read_text(encoding="utf-8")
+_ACTION_PLAN_TMPL = (_PROMPT_DIR / "meeting_action_plan_user.txt").read_text(encoding="utf-8")
 
 
 def _parse_json_response(text: str) -> dict[str, Any]:
@@ -61,11 +62,19 @@ async def build_plan_json(
     *,
     meetings_block: str,
     user_focus: str = "",
+    plan_kind: str = "implementation",
 ) -> dict[str, Any]:
-    user_prompt = _PLAN_USER_TMPL.format(
-        user_focus=user_focus or "(none — general implementation plan)",
-        meetings_block=meetings_block,
-    )
+    if plan_kind == "action":
+        user_prompt = (
+            f"User focus: {user_focus or '(none — general action plan)'}\n\n"
+            f"Meetings:\n{meetings_block}\n\n"
+            f"Template guidance:\n{_ACTION_PLAN_TMPL}"
+        )
+    else:
+        user_prompt = _PLAN_USER_TMPL.format(
+            user_focus=user_focus or "(none — general implementation plan)",
+            meetings_block=meetings_block,
+        )
     try:
         resp = await invoke_llm(
             [SystemMessage(content=_PLAN_SYSTEM), HumanMessage(content=user_prompt)],
@@ -81,7 +90,46 @@ async def build_plan_json(
         raise RuntimeError(user_facing_llm_error("meeting plan")) from exc
 
 
-def plan_to_markdown(plan: dict[str, Any]) -> str:
+def action_plan_to_markdown(plan: dict[str, Any]) -> str:
+    title = plan.get("title") or "Meeting Action Plan"
+    lines = [f"# {title}", ""]
+    for section, key in (("Executive summary", "executive_summary"), ("Context", "context")):
+        val = (plan.get(key) or "").strip()
+        if val:
+            lines += [f"## {section}", "", val, ""]
+    for section, key in (
+        ("Key decisions", "key_decisions"),
+        ("Follow-ups", "follow_ups"),
+        ("Risks", "risks"),
+        ("Next steps", "next_steps"),
+    ):
+        items = plan.get(key) or []
+        if items:
+            lines += [f"## {section}", ""]
+            lines += [f"- {x}" for x in items if str(x).strip()]
+            lines.append("")
+    actions = plan.get("action_items") or []
+    if actions:
+        lines += [
+            "## Action items",
+            "",
+            "| Priority | Owner | Task | Due |",
+            "| --- | --- | --- | --- |",
+        ]
+        for ai in actions:
+            if not isinstance(ai, dict):
+                continue
+            lines.append(
+                f"| {ai.get('priority') or 'Medium'} | {ai.get('owner') or 'TBD'} | "
+                f"{ai.get('task') or ''} | {ai.get('due') or 'TBD'} |"
+            )
+        lines.append("")
+    return "\n".join(lines).strip() + "\n"
+
+
+def plan_to_markdown(plan: dict[str, Any], *, plan_kind: str = "implementation") -> str:
+    if plan_kind == "action" or plan.get("meeting_category") in ("business", "general"):
+        return action_plan_to_markdown(plan)
     title = plan.get("title") or "Implementation Plan"
     lines = [f"# {title}", ""]
     for section, key in (

@@ -392,6 +392,14 @@ async def plan(state: AgentState) -> AgentState:
                         "session_data": session.get("data") or {},
                         "planned_by": AGENT_NAME,
                     }
+                if awaiting_early == "meeting_board_project_pick":
+                    return {
+                        **state,
+                        "intent": "create_board_from_plan",
+                        "session_awaiting": "meeting_board_project_pick",
+                        "session_data": session.get("data") or {},
+                        "planned_by": AGENT_NAME,
+                    }
                 if awaiting_early == "meeting_pick" and _MEETING_PAGE_RE.match(user_msg):
                     return {
                         **state,

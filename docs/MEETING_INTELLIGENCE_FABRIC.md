@@ -6,9 +6,11 @@ Feature-flagged module (`ENABLE_MEETING_INTELLIGENCE=false` by default). Does **
 
 1. `list my recent meetings` — scans SharePoint/OneDrive `Recordings/` and `meeting transcript/` for `.vtt` files
 2. `select meetings 1,3` — stores selection in session (`meeting_selected`)
-3. `make a plan` / `create implementation plan` — LLM plan → SharePoint `MeetingPlans/` (`.md` + `.docx`)
-4. `email the plan to alice@co.com` — Gmail (WhatsApp) or Graph `sendMail` (Teams)
-5. `create devops board from plan` — creates AzDO Feature + Tasks (requires `ENABLE_BOARDS_AGENT`)
+3. `make a plan` — classifies meeting intent:
+   - **Development** → implementation plan → SharePoint `MeetingPlans/Development/{topic}/` + optional AzDO board
+   - **Business / General** → action plan DOCX → SharePoint `MeetingActionPlans/{topic}/`
+4. `create devops board from plan` — lists your **Azure DevOps projects** (if multiple) → pick one → Feature + Tasks
+5. `email the plan to alice@co.com` — Gmail (WhatsApp) or Graph `sendMail` (Teams)
 
 ## Handoffs
 
