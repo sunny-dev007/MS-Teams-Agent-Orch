@@ -197,6 +197,9 @@ async def find_release_event(
     pipeline_id: str | None = None,
     build_id: str | None = None,
 ) -> dict[str, Any] | None:
+    """Lookup a release event by id — never returns a random latest row without keys."""
+    if not build_id and not pipeline_id and not pr_id:
+        return None
     await ensure_db_schema()
     async with async_session() as db:
         q = select(ReleaseEvent).order_by(ReleaseEvent.updated_at.desc()).limit(1)

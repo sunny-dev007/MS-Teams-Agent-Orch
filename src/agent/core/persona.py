@@ -347,7 +347,7 @@ def build_help_adaptive_card(*, include_off_agents: bool = True) -> dict[str, An
         {
             "type": "TextBlock",
             "text": (
-                "• **help** · **status** · **stop**\n"
+                "• **help** · **status** · **stop** · **back**\n"
                 "• **check my emails** · **check my repos**\n"
                 f"• **list my documents** (Knowledge {kb}) — tags SP / OD / ON\n"
                 "• **ask docs &lt;question&gt;** · **summarize docs &lt;focus&gt;**\n"

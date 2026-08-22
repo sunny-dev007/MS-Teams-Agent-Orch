@@ -171,6 +171,73 @@ async def test_copilot_help_returns_adaptive_card(copilot_env):
 
 
 @pytest.mark.asyncio
+async def test_copilot_status_drains_outbox_before_gate(copilot_env):
+    """Status must return completed work from outbox, not only gate hints."""
+    session = {
+        "phone": "teams:user-oid-1",
+        "awaiting": GATE_PLAN,
+        "provider": "azure_devops",
+        "data": {
+            "pending_task_id": "abc12345",
+            "channel": "teams",
+            "user_message": {"original": "release note for PR 51"},
+        },
+    }
+
+    with (
+        patch("agent.core.session.get_session", new_callable=AsyncMock, return_value=session),
+        patch("agent.core.session.save_session", new_callable=AsyncMock),
+        patch(
+            "agent.core.channel_outbox.drain_outbox",
+            new_callable=AsyncMock,
+            return_value=["*Documentation Agent* — enterprise release notes published."],
+        ),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/channels/copilot/message",
+                json={"user_id": "user-oid-1", "message": "Status"},
+                headers={"X-Copilot-Api-Key": "test-copilot-key"},
+            )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "release notes published" in data["reply"].lower()
+    assert "Gate 1" not in data["reply"]
+
+
+@pytest.mark.asyncio
+async def test_copilot_status_tolerates_corrupted_session_user_message(copilot_env):
+    """Regression: non-string user_message must not surface temporary error on Status."""
+    session = {
+        "phone": "teams:user-oid-1",
+        "awaiting": GATE_PLAN,
+        "provider": "azure_devops",
+        "data": {
+            "pending_task_id": "abc12345",
+            "channel": "teams",
+            "user_message": {"nested": "bad"},
+        },
+    }
+
+    with (
+        patch("agent.core.session.get_session", new_callable=AsyncMock, return_value=session),
+        patch("agent.core.session.save_session", new_callable=AsyncMock),
+        patch("agent.core.channel_outbox.drain_outbox", new_callable=AsyncMock, return_value=[]),
+    ):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/channels/copilot/message",
+                json={"user_id": "user-oid-1", "message": "Status"},
+                headers={"X-Copilot-Api-Key": "test-copilot-key"},
+            )
+    assert resp.status_code == 200
+    assert "temporary error" not in resp.json()["reply"].lower()
+    assert "PROCEED abc12345" in resp.json()["reply"]
+
+
+@pytest.mark.asyncio
 async def test_copilot_message_soft_fails_instead_of_500(copilot_env):
     """Handler exceptions must return HTTP 200 with an error reply (Studio tool UX)."""
     with (

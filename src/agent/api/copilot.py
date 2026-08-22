@@ -94,11 +94,20 @@ async def _run_scheduled_jobs(jobs: list[tuple], session_id: str) -> list[str]:
     # Repo picker / gate hints usually land within a few seconds.
     for _ in range(16):
         await asyncio.sleep(0.4)
-        batch = await drain_outbox(session_id)
+        try:
+            batch = await drain_outbox(session_id)
+        except Exception:
+            logger.exception("drain_outbox failed during scheduled jobs session=%s", session_id)
+            batch = []
         if batch:
             pending.extend(batch)
             # Keep waiting a bit if more is still arriving
-            if await peek_outbox_count(session_id) == 0 and pending:
+            try:
+                remaining = await peek_outbox_count(session_id)
+            except Exception:
+                logger.exception("peek_outbox_count failed session=%s", session_id)
+                remaining = 0
+            if remaining == 0 and pending:
                 break
         elif pending:
             break
@@ -138,13 +147,27 @@ async def copilot_message(
         )
 
 
+def _safe_session_status(session: dict[str, Any]) -> str:
+    from agent.workflow.resume_context import format_no_pending_task, format_session_status
+
+    try:
+        return format_session_status(session)
+    except Exception:
+        logger.exception(
+            "format_session_status failed session=%s awaiting=%s",
+            session.get("phone"),
+            session.get("awaiting"),
+        )
+        return format_no_pending_task()
+
+
 async def _handle_copilot_message(
     body: CopilotMessageRequest, session_id: str
 ) -> CopilotMessageResponse:
     from agent.core.channel_outbox import drain_outbox
     from agent.core.session import get_session, save_session
     from agent.workflow.gates import effective_awaiting
-    from agent.workflow.resume_context import format_no_pending_task, format_session_status
+    from agent.workflow.resume_context import format_no_pending_task, is_resume_status_message
 
     try:
         await save_session(
@@ -161,7 +184,14 @@ async def _handle_copilot_message(
         logger.exception("Failed saving Teams session metadata for %s", session_id)
 
     action = (body.action or "message").lower()
-    if action in ("poll", "status") or not (body.message or "").strip():
+    message = (body.message or "").strip()
+    # Status / poll must drain the outbox first (release notes, repo picker, etc.)
+    # before falling back to workflow gate hints.
+    if (
+        action in ("poll", "status")
+        or not message
+        or (action == "message" and is_resume_status_message(message))
+    ):
         pending = await drain_outbox(session_id)
         session = await get_session(session_id)
         gate = effective_awaiting(session)
@@ -170,7 +200,7 @@ async def _handle_copilot_message(
         if pending:
             reply = "\n\n---\n\n".join(pending)
         elif gate:
-            reply = format_session_status({**session, "awaiting": gate})
+            reply = _safe_session_status({**session, "awaiting": gate})
         else:
             reply = format_no_pending_task()
         return CopilotMessageResponse(
@@ -181,7 +211,6 @@ async def _handle_copilot_message(
             session_id=session_id,
         )
 
-    message = body.message.strip()
     jobs: list[tuple[Any, tuple, dict]] = []
 
     def schedule(func, *args, **kwargs):
@@ -218,7 +247,7 @@ async def _handle_copilot_message(
     elif gate:
         reply = (
             "Got it — I'm working on that in the background.\n\n"
-            + format_session_status({**session, "awaiting": gate})
+            + _safe_session_status({**session, "awaiting": gate})
             + "\n\n_Say **status** or call action=poll to pull later updates._"
         )
     else:

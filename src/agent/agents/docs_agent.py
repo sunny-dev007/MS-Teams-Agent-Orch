@@ -249,6 +249,21 @@ async def publish_release_notes(state: AgentState) -> AgentState:
         )
 
     if event is None:
+        if not pr_id and not ids.get("pipeline_id") and not ids.get("release_id"):
+            return {
+                **state,
+                "status": "failed",
+                "handled_by": AGENT_NAME,
+                "notification_text": (
+                    "*Documentation Agent* — release notes need a **PR or release id**.\n\n"
+                    "Examples:\n"
+                    "• *write release notes for PR 51*\n"
+                    "• *write release notes for rel_abc123*\n\n"
+                    "To **create a general document** (report, brief, memo), say:\n"
+                    "• *prepare a document about …* or *create report on …*\n\n"
+                    "_I will not replay a cached release note without an explicit PR/release id._"
+                ),
+            }
         title = f"Release notes — PR {pr_id or 'manual'}"
         event = await upsert_release_event(
             pr_id=pr_id,

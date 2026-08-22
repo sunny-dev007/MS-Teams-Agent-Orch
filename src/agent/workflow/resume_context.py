@@ -91,6 +91,27 @@ def is_restart_session_message(message: str) -> bool:
     return bool(RESTART_SESSION_PATTERN.match((message or "").strip()))
 
 
+def _safe_session_text(value: Any, *, limit: int = 0) -> str:
+    """Coerce session field values to display text (gate data may be non-string)."""
+    if value is None:
+        text = ""
+    elif isinstance(value, str):
+        text = value
+    elif isinstance(value, (int, float, bool)):
+        text = str(value)
+    else:
+        try:
+            import json
+
+            text = json.dumps(value, default=str)
+        except Exception:
+            text = str(value)
+    text = text.strip()
+    if limit and len(text) > limit:
+        return text[:limit]
+    return text
+
+
 def _provider_label(data: dict[str, Any], session_provider: str = "") -> str:
     p = (data.get("repo_provider") or session_provider or "").lower()
     if p in ("azure_devops", "azdo", "ado"):
@@ -147,8 +168,8 @@ def format_gate_hint(
     )
     provider = _provider_label(data, session_provider)
     repo = _repo_label(data)
-    request = (data.get("user_message") or "")[:120]
-    pr_url = data.get("pr_url") or ""
+    request = _safe_session_text(data.get("user_message"), limit=120)
+    pr_url = _safe_session_text(data.get("pr_url"))
 
     lines = [
         f"*Sunny's AI Agent* — Resume task `{tid}`",

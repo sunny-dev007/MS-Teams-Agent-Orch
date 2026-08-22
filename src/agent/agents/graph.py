@@ -22,6 +22,7 @@ from agent.specialists.doc_ingest_agent import run_doc_ingest
 from agent.specialists.doc_rag_agent import run_doc_rag
 from agent.specialists.doc_insights_agent import run_doc_insights
 from agent.specialists.doc_upload_agent import run_doc_upload
+from agent.specialists.doc_author_agent import run_doc_author
 from agent.specialists.meeting_library_agent import run_meeting_library
 from agent.specialists.meeting_plan_agent import run_meeting_plan
 from agent.specialists.meeting_email_agent import run_meeting_email
@@ -114,6 +115,8 @@ def _route_after_plan(state: AgentState) -> str:
         return "doc_insights_agent"
     if intent == "upload_ingest_docs":
         return "doc_upload_agent"
+    if intent == "create_sharepoint_document":
+        return "doc_author_agent"
     # Meeting Intelligence Fabric (safe when ENABLE_MEETING_INTELLIGENCE=false)
     if intent == "list_meetings":
         return "meeting_library_agent"
@@ -357,6 +360,7 @@ def build_graph() -> StateGraph:
     graph.add_node("doc_rag_agent", run_doc_rag)
     graph.add_node("doc_insights_agent", run_doc_insights)
     graph.add_node("doc_upload_agent", run_doc_upload)
+    graph.add_node("doc_author_agent", run_doc_author)
     graph.add_node("meeting_library_agent", run_meeting_library)
     graph.add_node("meeting_plan_agent", run_meeting_plan)
     graph.add_node("meeting_email_agent", run_meeting_email)
@@ -414,6 +418,7 @@ def build_graph() -> StateGraph:
         "doc_rag_agent": "doc_rag_agent",
         "doc_insights_agent": "doc_insights_agent",
         "doc_upload_agent": "doc_upload_agent",
+        "doc_author_agent": "doc_author_agent",
         "meeting_library_agent": "meeting_library_agent",
         "meeting_plan_agent": "meeting_plan_agent",
         "meeting_email_agent": "meeting_email_agent",
@@ -444,6 +449,7 @@ def build_graph() -> StateGraph:
     graph.add_edge("doc_rag_agent", "notify_result")
     graph.add_edge("doc_insights_agent", "notify_result")
     graph.add_edge("doc_upload_agent", "notify_result")
+    graph.add_edge("doc_author_agent", "notify_result")
     graph.add_edge("meeting_library_agent", "notify_result")
     graph.add_edge("meeting_plan_agent", "notify_result")
     graph.add_edge("meeting_email_agent", "notify_result")

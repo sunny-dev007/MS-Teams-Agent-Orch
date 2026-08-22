@@ -110,6 +110,8 @@ class Settings(BaseSettings):
     # Teams chat attachments → SharePoint folder before ingest (Doc Upload Agent)
     doc_upload_folder: str = "UploadedDocs"
     doc_upload_max_bytes: int = 26_214_400  # 25 MB
+    # Server-generated documents (Doc Author Agent) — Markdown + DOCX
+    doc_author_folder: str = "Documents/Generated"
 
     # Qdrant Cloud (optional vector backend for Doc Knowledge — defaults empty = SQLite cosine)
     # Use the *cluster* REST URL + Database API key (not only the Cloud Management key).

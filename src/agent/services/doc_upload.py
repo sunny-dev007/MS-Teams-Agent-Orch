@@ -257,6 +257,15 @@ def message_expects_teams_attachment(message: str) -> bool:
     msg = (message or "").strip()
     if not msg:
         return False
+    # Server-side document authoring — not an attachment upload.
+    if re.search(
+        r"(?:prepare|create|write|generate|draft|produce)\s+(?:an?\s+)?(?:\w+\s+){0,4}?"
+        r"(?:document|report|docx|write-?up|brief|memo)|"
+        r"(?:document|report)\s+(?:about|on|for)\s+",
+        msg,
+        re.I,
+    ):
+        return False
     if wants_upload_action(msg):
         return True
     # Corpus insights — summarize docs / doc insights (no attachment path).

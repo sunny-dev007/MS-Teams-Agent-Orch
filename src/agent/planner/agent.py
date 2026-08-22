@@ -45,9 +45,23 @@ _MEETING_RE = re.compile(
     re.IGNORECASE,
 )
 _RELEASE_NOTES_RE = re.compile(
-    r"(release\s*notes|write\s+(?:the\s+)?docs?|publish\s+(?:to\s+)?sharepoint|"
-    r"documentation\s+agent|create\s+(?:a\s+)?(?:release\s+)?document)",
+    r"(?:release\s*notes?|release\s*note\s+for|write\s+release\s*notes?|"
+    r"publish\s+release\s*notes?|generate\s+release\s*notes?|documentation\s+agent)",
     re.IGNORECASE,
+)
+_CREATE_DOCUMENT_RE = re.compile(
+    r"(?:"
+    r"(?:prepare|create|write|generate|draft|produce|save|publish)\s+"
+    r"(?:an?\s+)?(?:\w+\s+){0,4}?"
+    r"(?:document|report|docx|write-?up|brief|memo|summary\s+report)"
+    r"|(?:document|report)\s+(?:about|on|for|regarding)\s+"
+    r"|publish\s+(?:to\s+)?sharepoint(?!\s+release))",
+    re.IGNORECASE,
+)
+_RESUME_PREVIOUS_RE = re.compile(
+    r"(?i)^(?:back|resume\s+previous|continue\s+where|go\s+back|previous\s+step|"
+    r"return\s+to\s+previous|where\s+was\s+i)"
+    r"[\s!.?]*$"
 )
 _RUN_QA_RE = re.compile(
     r"(run\s+qa|start\s+qa|qa\s+agent|playwright|test\s+(?:this\s+)?(?:release|deploy))",
@@ -173,41 +187,95 @@ async def plan(state: AgentState) -> AgentState:
     if not user_msg:
         return {**state, "intent": "general", "error": "No message provided", "planned_by": AGENT_NAME}
 
+    if _RESUME_PREVIOUS_RE.match(user_msg):
+        from agent.services.conversation_context import resume_previous_context
+
+        restored = await resume_previous_context(phone)
+        if restored:
+            return {
+                **state,
+                "intent": "general",
+                "notification_text": restored.get("message") or "Resumed previous step.",
+                "planned_by": AGENT_NAME,
+            }
+        return {
+            **state,
+            "intent": "general",
+            "notification_text": (
+                "*No paused step* to resume.\n\n"
+                "Switch agents anytime — when you leave a pick list or wizard, "
+                "I save it so you can say **back** later.\n"
+                "Say *help* for commands."
+            ),
+            "planned_by": AGENT_NAME,
+        }
+
     # Release Agent Fabric — take priority over in-progress repo wizard / coding session
     # so "write release notes for PR N" always goes to Docs Agent → SharePoint, not a code PR.
     if _RELEASE_NOTES_RE.search(user_msg):
         if phone:
             try:
-                from agent.core.session import save_session
+                from agent.services.conversation_context import soft_fabric_switch
+                from agent.services.workspace_handoff import WS_KNOWLEDGE
 
-                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+                note = await soft_fabric_switch(
+                    phone, next_workspace=WS_KNOWLEDGE, reason="release notes"
+                )
+                out = {**state, "intent": "publish_release_notes", "planned_by": AGENT_NAME}
+                if note:
+                    out["handoff_note"] = note
+                return out
             except Exception:
-                logger.exception("%s failed clearing session for docs intent", AGENT_NAME)
+                logger.exception("%s failed fabric switch for docs intent", AGENT_NAME)
         return {**state, "intent": "publish_release_notes", "planned_by": AGENT_NAME}
     if _RUN_QA_RE.search(user_msg):
         if phone:
             try:
-                from agent.core.session import save_session
+                from agent.services.conversation_context import soft_fabric_switch
+                from agent.services.workspace_handoff import WS_KNOWLEDGE
 
-                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+                note = await soft_fabric_switch(phone, next_workspace=WS_KNOWLEDGE, reason="run QA")
+                out = {**state, "intent": "run_qa", "planned_by": AGENT_NAME}
+                if note:
+                    out["handoff_note"] = note
+                return out
             except Exception:
-                logger.exception("%s failed clearing session for qa intent", AGENT_NAME)
+                logger.exception("%s failed fabric switch for qa intent", AGENT_NAME)
         return {**state, "intent": "run_qa", "planned_by": AGENT_NAME}
+
+    # Server-side document authoring — before attachment/upload paths
+    if _CREATE_DOCUMENT_RE.search(user_msg) and not _RELEASE_NOTES_RE.search(user_msg):
+        if phone:
+            try:
+                from agent.services.conversation_context import soft_fabric_switch
+                from agent.services.workspace_handoff import WS_KNOWLEDGE
+
+                note = await soft_fabric_switch(
+                    phone, next_workspace=WS_KNOWLEDGE, reason="create document"
+                )
+                out = {
+                    **state,
+                    "intent": "create_sharepoint_document",
+                    "planned_by": AGENT_NAME,
+                }
+                if note:
+                    out["handoff_note"] = note
+                return out
+            except Exception:
+                logger.exception("%s failed fabric switch for doc author", AGENT_NAME)
+        return {**state, "intent": "create_sharepoint_document", "planned_by": AGENT_NAME}
 
     # Document Knowledge Fabric — priority over coding gates / repo wizard
     async def _clear_for_kb(intent_name: str) -> AgentState:
         handoff = ""
         if phone:
             try:
-                from agent.core.session import save_session
-                from agent.services.workspace_handoff import (
-                    WS_KNOWLEDGE,
-                    handoff_note_for,
-                )
+                from agent.services.conversation_context import soft_fabric_switch
+                from agent.services.workspace_handoff import WS_KNOWLEDGE
 
-                handoff = await handoff_note_for(phone, next_workspace=WS_KNOWLEDGE)
-                # clear coding awaiting; merge keeps data.doc_catalog for ingest picks
-                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+                handoff = await soft_fabric_switch(
+                    phone, next_workspace=WS_KNOWLEDGE, reason=intent_name
+                )
             except Exception:
                 logger.exception("%s failed clearing session for %s", AGENT_NAME, intent_name)
         out = {**state, "intent": intent_name, "planned_by": AGENT_NAME}
@@ -317,11 +385,12 @@ async def plan(state: AgentState) -> AgentState:
         handoff = ""
         if phone:
             try:
-                from agent.core.session import save_session
-                from agent.services.workspace_handoff import WS_MEETING, handoff_note_for
+                from agent.services.conversation_context import soft_fabric_switch
+                from agent.services.workspace_handoff import WS_MEETING
 
-                handoff = await handoff_note_for(phone, next_workspace=WS_MEETING)
-                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+                handoff = await soft_fabric_switch(
+                    phone, next_workspace=WS_MEETING, reason=intent_name
+                )
             except Exception:
                 logger.exception("%s failed clearing session for %s", AGENT_NAME, intent_name)
         out = {**state, "intent": intent_name, "planned_by": AGENT_NAME}
@@ -356,14 +425,12 @@ async def plan(state: AgentState) -> AgentState:
         handoff = ""
         if phone:
             try:
-                from agent.core.session import save_session
-                from agent.services.workspace_handoff import (
-                    WS_PRODUCTIVITY,
-                    handoff_note_for,
-                )
+                from agent.services.conversation_context import soft_fabric_switch
+                from agent.services.workspace_handoff import WS_PRODUCTIVITY
 
-                handoff = await handoff_note_for(phone, next_workspace=WS_PRODUCTIVITY)
-                await save_session(phone, awaiting=None, clear_awaiting=True, merge_data=True)
+                handoff = await soft_fabric_switch(
+                    phone, next_workspace=WS_PRODUCTIVITY, reason=intent_name
+                )
             except Exception:
                 logger.exception("%s failed clearing session for %s", AGENT_NAME, intent_name)
         out = {**state, "intent": intent_name, "planned_by": AGENT_NAME}

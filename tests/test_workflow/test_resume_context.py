@@ -31,6 +31,20 @@ def test_gate_hint_plan_includes_proceed():
     assert "GitHub" in text
 
 
+def test_gate_hint_tolerates_non_string_user_message():
+    """Regression: dict user_message in session must not crash Status / gate hints."""
+    text = format_gate_hint(
+        GATE_PLAN,
+        {
+            "pending_task_id": "abc123",
+            "repo_provider": "azure_devops",
+            "user_message": {"original": "release note for PR 51"},
+        },
+    )
+    assert "PROCEED abc123" in text
+    assert "release note" in text.lower()
+
+
 def test_gate_hint_deploy():
     text = format_gate_hint(
         "approval",

@@ -109,9 +109,11 @@ async def handoff_note_for(
             "Reply *status* to continue it, or *stop* to clear."
         )
     if next_workspace == WS_DEV and awaiting == "doc_pick":
-        extra = "\n_Note:_ Document pick list is still available — say *ingest N* to resume."
+        extra = "\n_Note:_ Document pick list paused — say **back** to resume, or *ingest N* if still loaded."
+    if next_workspace == WS_KNOWLEDGE and awaiting == "doc_pick":
+        extra = "\n_Note:_ Document pick list paused — say **back** to resume, or *ingest N* if catalog is still loaded."
     if next_workspace == WS_MEETING and awaiting == "doc_pick":
-        extra = "\n_Note:_ Document pick list cleared — say *list my documents* to restore."
+        extra = "\n_Note:_ Document pick list paused — say **back** to resume Knowledge."
     if next_workspace == WS_KNOWLEDGE and awaiting == "meeting_pick":
         extra = "\n_Note:_ Meeting pick list is still available — say *select meetings N* or *make a plan*."
 

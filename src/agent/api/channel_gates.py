@@ -106,9 +106,13 @@ async def route_inbound_message(
     import re
 
     if re.search(
-        r"(release\s*notes|write\s+(?:the\s+)?docs?|publish\s+(?:to\s+)?sharepoint|"
-        r"documentation\s+agent|create\s+(?:a\s+)?(?:release\s+)?document|"
+        r"(?:release\s*notes?|release\s*note\s+for|write\s+release\s*notes?|"
+        r"publish\s+release\s*notes?|generate\s+release\s*notes?|"
         r"run\s+qa|start\s+qa|qa\s+agent|playwright|"
+        r"(?:prepare|create|write|generate|draft|produce)\s+(?:an?\s+)?(?:\w+\s+){0,4}?"
+        r"(?:document|report|docx|write-?up|brief|memo)|"
+        r"(?:document|report)\s+(?:about|on|for)\s+|"
+        r"publish\s+(?:to\s+)?sharepoint(?!\s+release)|"
         r"list\s+(?:of\s+)?(?:my\s+)?(?:documents?|docs|files)|list\s+(?:sharepoint|onedrive|onenote)|"
         r"(?:show|get|fetch|display|pull)\s+(?:me\s+)?(?:all\s+)?(?:my\s+)?(?:documents?|docs)|"
         r"browse\s+(?:documents?|docs|sharepoint)|"
@@ -134,6 +138,9 @@ async def route_inbound_message(
         from agent.core.session import save_session
 
         try:
+            from agent.services.conversation_context import pause_current_context
+
+            await pause_current_context(session_id, reason="fabric intent")
             await save_session(session_id, awaiting=None, clear_awaiting=True, merge_data=True)
         except Exception:
             logger.exception("Failed clearing gate for fabric intent session=%s", session_id)

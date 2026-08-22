@@ -91,6 +91,41 @@ async def test_planner_routes_release_notes():
 
 
 @pytest.mark.asyncio
+async def test_planner_routes_singular_release_note():
+    from agent.planner.agent import plan
+
+    out = await plan({"user_message": "release note for PR 51", "whatsapp_phone": "teams:u"})
+    assert out["intent"] == "publish_release_notes"
+
+
+@pytest.mark.asyncio
+async def test_planner_routes_create_document_not_release_notes():
+    from agent.planner.agent import plan
+
+    out = await plan(
+        {"user_message": "prepare a document about enterprise security", "whatsapp_phone": "teams:u"}
+    )
+    assert out["intent"] == "create_sharepoint_document"
+
+
+@pytest.mark.asyncio
+async def test_planner_write_document_not_release_notes():
+    from agent.planner.agent import plan
+
+    out = await plan({"user_message": "write document about API design", "whatsapp_phone": "teams:u"})
+    assert out["intent"] == "create_sharepoint_document"
+    assert out["intent"] != "publish_release_notes"
+
+
+@pytest.mark.asyncio
+async def test_doc_upload_create_document_not_attachment():
+    from agent.services import doc_upload
+
+    assert not doc_upload.message_expects_teams_attachment("create document about sales")
+    assert not doc_upload.message_expects_teams_attachment("prepare a report on Q3")
+
+
+@pytest.mark.asyncio
 async def test_planner_release_notes_beats_repo_session(monkeypatch):
     """Mid repo-wizard session must not swallow SharePoint docs intent."""
     from agent.planner import agent as planner
