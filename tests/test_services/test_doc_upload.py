@@ -29,6 +29,17 @@ def test_validate_attachment_rejects_unknown():
     assert "Unsupported" in reason
 
 
+def test_attachments_session_roundtrip():
+    from agent.services.doc_upload import attachments_for_session, attachments_from_session
+
+    raw = {"filename": "guide.pdf", "content": b"%PDF-1.4 test", "extension": ".pdf"}
+    stored = attachments_for_session([raw])
+    assert stored[0]["content_base64"]
+    assert "content" not in stored[0]
+    restored = attachments_from_session(stored)
+    assert restored[0]["content"] == raw["content"]
+
+
 @pytest.mark.asyncio
 async def test_planner_upload_ingest_with_attachment(monkeypatch):
     from agent.config import settings

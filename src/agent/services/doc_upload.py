@@ -90,6 +90,37 @@ def normalize_attachment(raw: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def attachments_for_session(attachments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """JSON-safe attachment rows for conversation_sessions.data_json (no raw bytes)."""
+    out: list[dict[str, Any]] = []
+    for raw in attachments or []:
+        if not isinstance(raw, dict):
+            continue
+        row = dict(raw)
+        content = row.pop("content", None)
+        if isinstance(content, (bytes, bytearray)):
+            row["content_base64"] = base64.b64encode(bytes(content)).decode("ascii")
+        elif content is not None and not row.get("content_base64"):
+            row.pop("content", None)
+        out.append(row)
+    return out
+
+
+def attachments_from_session(stored: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Restore in-memory attachments (bytes) from session JSON rows."""
+    out: list[dict[str, Any]] = []
+    for raw in stored or []:
+        if not isinstance(raw, dict):
+            continue
+        if isinstance(raw.get("content"), (bytes, bytearray)):
+            out.append(dict(raw))
+            continue
+        norm = normalize_attachment(raw)
+        if norm:
+            out.append(norm)
+    return out
+
+
 async def _fetch_url_bytes(url: str, *, max_bytes: int) -> bytes:
     async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
         resp = await client.get(url)

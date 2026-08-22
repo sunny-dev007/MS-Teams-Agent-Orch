@@ -190,13 +190,15 @@ async def plan(state: AgentState) -> AgentState:
 
     # Teams chat attachments — upload to SharePoint then ingest (beats list/ingest without files)
     from agent.config import settings as _settings
+    from agent.services import doc_upload as _doc_upload
 
     incoming_atts: list = list(state.get("attachments") or [])
     pending_atts: list = []
     if phone:
         try:
             _sess = await get_session(phone)
-            pending_atts = list((_sess.get("data") or {}).get("pending_attachments") or [])
+            pending_raw = list((_sess.get("data") or {}).get("pending_attachments") or [])
+            pending_atts = _doc_upload.attachments_from_session(pending_raw)
         except Exception:
             logger.exception("%s failed reading pending attachments", AGENT_NAME)
 
@@ -206,7 +208,9 @@ async def plan(state: AgentState) -> AgentState:
 
             await save_session(
                 phone,
-                data={"pending_attachments": incoming_atts},
+                data={
+                    "pending_attachments": _doc_upload.attachments_for_session(incoming_atts),
+                },
                 merge_data=True,
             )
         except Exception:

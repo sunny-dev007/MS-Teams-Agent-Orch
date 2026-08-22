@@ -45,7 +45,8 @@ async def upload_and_ingest_documents(state: AgentState) -> AgentState:
     if phone and not attachments:
         try:
             session = await get_session(phone)
-            attachments = list((session.get("data") or {}).get("pending_attachments") or [])
+            pending_raw = list((session.get("data") or {}).get("pending_attachments") or [])
+            attachments = doc_upload.attachments_from_session(pending_raw)
         except Exception:
             logger.exception("Failed reading pending attachments")
 
