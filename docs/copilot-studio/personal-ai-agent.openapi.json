@@ -2,8 +2,8 @@
   "swagger": "2.0",
   "info": {
     "title": "Sunny Personal AI Agent",
-    "description": "Coding / Azure DevOps / GitHub gate backend for Teams. Call PersonalAIAgent for repo work; return reply verbatim.",
-    "version": "1.0.6"
+    "description": "Coding / Azure DevOps / GitHub gate backend for Teams. Call PersonalAIAgent for repo work; return reply verbatim. Supports optional file attachments for Doc Upload (SharePoint + ingest).",
+    "version": "1.0.7"
   },
   "host": "whatsapp-ai-agent-sunny.azurewebsites.net",
   "basePath": "/",
@@ -27,7 +27,7 @@
       "post": {
         "operationId": "PersonalAIAgent",
         "summary": "PersonalAIAgent",
-        "description": "Call for check my repos, Proceed, APPROVE, FIX TESTS, stop, status, and coding or deploy gates. Show the reply field to the user as-is.",
+        "description": "Call for check my repos, Proceed, APPROVE, FIX TESTS, stop, status, and coding or deploy gates. For Teams file upload + ingest, pass attachments[] with base64 content. Show the reply field to the user as-is.",
         "parameters": [
           {
             "name": "body",
@@ -50,6 +50,32 @@
     }
   },
   "definitions": {
+    "CopilotAttachment": {
+      "type": "object",
+      "required": ["filename"],
+      "properties": {
+        "filename": {
+          "type": "string",
+          "x-ms-summary": "Filename",
+          "description": "Original file name including extension (e.g. report.pdf)"
+        },
+        "content_base64": {
+          "type": "string",
+          "x-ms-summary": "Content Base64",
+          "description": "Base64-encoded file bytes from Teams chat attachment"
+        },
+        "content_url": {
+          "type": "string",
+          "x-ms-summary": "Content URL",
+          "description": "Optional HTTPS URL to download attachment bytes when base64 is not available"
+        },
+        "content_type": {
+          "type": "string",
+          "x-ms-summary": "Content Type",
+          "description": "MIME type when known (e.g. application/pdf)"
+        }
+      }
+    },
     "CopilotMessageRequest": {
       "type": "object",
       "required": ["user_id", "message"],
@@ -62,13 +88,31 @@
         "message": {
           "type": "string",
           "x-ms-summary": "Message",
-          "description": "Exact user message text"
+          "description": "Exact user message text (e.g. ingest this attached pdf)"
+        },
+        "conversation_id": {
+          "type": "string",
+          "x-ms-summary": "Conversation Id",
+          "description": "Optional Teams conversation id for correlation"
+        },
+        "display_name": {
+          "type": "string",
+          "x-ms-summary": "Display Name",
+          "description": "Signed-in user display name"
         },
         "action": {
           "type": "string",
           "x-ms-summary": "Action",
           "description": "message or status or poll",
           "default": "message"
+        },
+        "attachments": {
+          "type": "array",
+          "x-ms-summary": "Attachments",
+          "description": "Optional Teams chat files for Doc Upload Agent (SharePoint + ingest)",
+          "items": {
+            "$ref": "#/definitions/CopilotAttachment"
+          }
         }
       }
     },

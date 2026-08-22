@@ -4,14 +4,28 @@ Additive feature for Teams (and WhatsApp): **list → select → ingest/vectoriz
 
 **Default off.** Existing Dev coding, WhatsApp, Docs Agent, and QA Agent stay unchanged until you set `ENABLE_DOC_KNOWLEDGE=true`.
 
-## Architecture (four specialists)
+## Architecture (five specialists)
 
 | Agent | Intent | Teams phrases |
 |---|---|---|
 | **Doc Library** | `list_docs` | `list my documents`, `list of my document`, `show me my documents`, `find document &lt;keyword&gt;`, `next page` |
 | **Doc Ingest** | `ingest_docs` | `ingest 1,3`, `ingest all`, or bare `1, 3` after a list |
+| **Doc Upload** | `upload_ingest_docs` | Attach file in Teams + `ingest this`, `summarize this pdf`, `upload to SharePoint` |
 | **Doc RAG** | `ask_docs` | `ask docs what is our release process?` |
 | **Doc Insights** | `summarize_docs` | `summarize docs risks`, `doc insights` |
+
+### Teams chat upload (Doc Upload Agent)
+
+When a user attaches a local file in Teams and asks to **ingest** or **summarize**, the agent:
+
+1. Accepts optional `attachments[]` on `POST /api/channels/copilot/message` (base64 or URL — see swagger `1.0.7`).
+2. Uploads to SharePoint folder **`UploadedDocs`** (override: `DOC_UPLOAD_FOLDER`).
+3. Runs the same ingest pipeline as Doc Ingest (extract → chunk → embed → Qdrant).
+4. If the user asked to summarize, runs Doc Insights on the freshly ingested file(s).
+
+Copilot Studio must pass attachment bytes in the HTTP tool body (Power Automate can base64-encode Teams attachments). Without `attachments[]`, the agent can still use files stored in session from a prior turn (`pending_attachments`).
+
+Max upload size default **25 MB** (`DOC_UPLOAD_MAX_BYTES`).
 
 ### Source tags in lists
 
@@ -34,6 +48,7 @@ Teams message
     → planner keywords (beat repo/coding session)
     → LangGraph specialist → notify_result
          Library lists Graph files + stores catalog in session
+         Upload saves Teams attachments → SharePoint UploadedDocs → ingest
          Ingest downloads text, chunks, embeds → Qdrant (SQLite catalog)
          RAG embeds question → Qdrant top-k (SQLite cosine fallback)
          Insights synthesizes themes/risks/actions from corpus
@@ -56,6 +71,8 @@ az webapp config appsettings set -g ai-agent-rg -n whatsapp-ai-agent-sunny --set
   DOC_KNOWLEDGE_MAX_LIST=100 \
   DOC_KNOWLEDGE_PAGE_SIZE=10 \
   DOC_KNOWLEDGE_ALL_SITES=true \
+  DOC_UPLOAD_FOLDER=UploadedDocs \
+  DOC_UPLOAD_MAX_BYTES=26214400 \
   MS_GRAPH_ONEDRIVE_USER_ID=  # optional UPN/OID for OneDrive
 ```
 

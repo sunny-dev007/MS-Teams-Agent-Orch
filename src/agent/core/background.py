@@ -14,6 +14,7 @@ async def handle_whatsapp_message(parsed: dict) -> None:
 async def handle_channel_message(parsed: dict, source: str = "whatsapp") -> None:
     phone = parsed["phone"]
     message = (parsed["message"] or "").strip()
+    attachments = parsed.get("attachments") or []
     channel_source = source or "whatsapp"
 
     # Fast-path: greetings/help — always allowed.
@@ -86,6 +87,7 @@ async def handle_channel_message(parsed: dict, source: str = "whatsapp") -> None
             source=channel_source,
             user_message=message,
             whatsapp_phone=phone,
+            attachments=attachments or None,
         )
     except Exception as exc:
         logger.exception("Task %s failed", task_id)

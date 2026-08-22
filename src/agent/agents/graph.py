@@ -21,6 +21,7 @@ from agent.specialists.doc_library_agent import run_doc_library
 from agent.specialists.doc_ingest_agent import run_doc_ingest
 from agent.specialists.doc_rag_agent import run_doc_rag
 from agent.specialists.doc_insights_agent import run_doc_insights
+from agent.specialists.doc_upload_agent import run_doc_upload
 from agent.specialists.data_analyst_agent import run_data_analyst
 from agent.specialists.email_agent import run_email, run_send_email
 from agent.specialists.evaluator_agent import run_evaluator, run_task_status
@@ -108,6 +109,8 @@ def _route_after_plan(state: AgentState) -> str:
         return "doc_rag_agent"
     if intent == "summarize_docs":
         return "doc_insights_agent"
+    if intent == "upload_ingest_docs":
+        return "doc_upload_agent"
     if intent == "analyze_excel":
         return "data_analyst_agent"
     if intent == "check_outlook":
@@ -341,6 +344,7 @@ def build_graph() -> StateGraph:
     graph.add_node("doc_ingest_agent", run_doc_ingest)
     graph.add_node("doc_rag_agent", run_doc_rag)
     graph.add_node("doc_insights_agent", run_doc_insights)
+    graph.add_node("doc_upload_agent", run_doc_upload)
     graph.add_node("data_analyst_agent", run_data_analyst)
     graph.add_node("outlook_agent", run_outlook)
     graph.add_node("boards_agent", run_boards)
@@ -394,6 +398,7 @@ def build_graph() -> StateGraph:
         "doc_ingest_agent": "doc_ingest_agent",
         "doc_rag_agent": "doc_rag_agent",
         "doc_insights_agent": "doc_insights_agent",
+        "doc_upload_agent": "doc_upload_agent",
         "data_analyst_agent": "data_analyst_agent",
         "outlook_agent": "outlook_agent",
         "boards_agent": "boards_agent",
@@ -420,6 +425,7 @@ def build_graph() -> StateGraph:
     graph.add_edge("doc_ingest_agent", "notify_result")
     graph.add_edge("doc_rag_agent", "notify_result")
     graph.add_edge("doc_insights_agent", "notify_result")
+    graph.add_edge("doc_upload_agent", "notify_result")
     graph.add_edge("data_analyst_agent", "notify_result")
     graph.add_edge("outlook_agent", "notify_result")
     graph.add_edge("boards_agent", "notify_result")
@@ -521,6 +527,7 @@ async def run_graph(
     user_message: str,
     whatsapp_phone: str,
     repo_url: str = "",
+    attachments: list | None = None,
 ) -> None:
     import time
 
@@ -534,6 +541,8 @@ async def run_graph(
         "review_iteration": 0,
         "messages": [],
     }
+    if attachments:
+        initial_state["attachments"] = attachments
 
     compiled = await _get_compiled()
     config = {"configurable": {"thread_id": task_id}}

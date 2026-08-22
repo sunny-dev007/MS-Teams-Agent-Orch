@@ -115,6 +115,7 @@ async def route_inbound_message(
         r"(?:find|search)\s+(?:(?:the\s+|my\s+)?(?:document|doc|file)s?\s+)|"
         r"list\s+ingested|ingest\s+(?:\d+|all)|vectorize|ask\s+docs?|ask\s+knowledge|"
         r"summarize\s+docs?|summarise\s+docs?|doc\s+insights?|knowledge\s+base|"
+        r"ingest\s+this|summarize\s+this|upload(?:\s+to\s+sharepoint)?|attached\s+(?:file|pdf|document)|"
         r"convert\s+(?:this\s+|the\s+)?excel|analy[sz]e\s+(?:this\s+|the\s+)?(?:excel|spreadsheet|workbook)|"
         r"excel\s+(?:dashboard|analytics|analyst)|advanced\s+excel|data\s+analyst|"
         r"transform\s+(?:this\s+|the\s+)?(?:excel|spreadsheet)|re-?ingest|ingest\s+stale|"

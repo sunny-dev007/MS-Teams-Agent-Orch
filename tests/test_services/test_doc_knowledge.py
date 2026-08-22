@@ -197,6 +197,7 @@ async def test_graph_routes_knowledge_intents():
     assert _route_after_plan({"intent": "ingest_docs"}) == "doc_ingest_agent"
     assert _route_after_plan({"intent": "ask_docs"}) == "doc_rag_agent"
     assert _route_after_plan({"intent": "summarize_docs"}) == "doc_insights_agent"
+    assert _route_after_plan({"intent": "upload_ingest_docs"}) == "doc_upload_agent"
     assert _route_after_plan({"intent": "analyze_excel"}) == "data_analyst_agent"
 
 

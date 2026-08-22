@@ -650,24 +650,25 @@ async def fetch_document_bytes(entry: dict[str, Any]) -> tuple[bytes, str]:
     return raw, ct or ""
 
 
-async def upload_site_file(
+async def upload_site_drive_item(
     *,
     folder: str,
     filename: str,
     content: bytes,
     content_type: str,
-) -> str:
-    """Upload bytes under the configured SharePoint site drive. Returns webUrl or empty."""
+) -> dict[str, Any] | None:
+    """Upload bytes under the configured SharePoint site drive. Returns catalog row or None."""
     import httpx
 
     if not ms_graph.graph_configured():
-        return ""
+        return None
     site_id, _ = await resolve_site_id()
+    sid, site_name, site_web_url = await _site_meta(site_id)
     folder = (folder or "Analytics").strip().strip("/")
     try:
         await ms_graph.graph_request(
             "POST",
-            f"/sites/{site_id}/drive/root/children",
+            f"/sites/{sid}/drive/root/children",
             json_body={
                 "name": folder,
                 "folder": {},
@@ -680,7 +681,10 @@ async def upload_site_file(
     safe = "".join(ch if ch.isalnum() or ch in ".-_" else "-" for ch in filename)[:80]
     path = quote(f"/{folder}/{safe}", safe="/")
     token = await ms_graph.get_app_token()
-    url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{path}:/content"
+    url = (
+        f"https://graph.microsoft.com/v1.0/sites/{sid}/drive/root:{path}:/content"
+        "?@microsoft.graph.conflictBehavior=replace"
+    )
     headers = {
         "Authorization": f"Bearer {token}",
         "Content-Type": content_type or "application/octet-stream",
@@ -689,5 +693,32 @@ async def upload_site_file(
         resp = await client.put(url, headers=headers, content=content)
         if resp.status_code >= 400:
             logger.error("Site file upload failed %s %s", resp.status_code, resp.text[:400])
-            return ""
-        return resp.json().get("webUrl") or ""
+            return None
+        item = resp.json()
+    row = _drive_item_to_catalog(
+        item,
+        source=SOURCE_SHAREPOINT,
+        site_name=site_name,
+        site_web_url=site_web_url,
+        folder=folder,
+    )
+    if row:
+        row["upload_source"] = "teams_chat"
+    return row
+
+
+async def upload_site_file(
+    *,
+    folder: str,
+    filename: str,
+    content: bytes,
+    content_type: str,
+) -> str:
+    """Upload bytes under the configured SharePoint site drive. Returns webUrl or empty."""
+    row = await upload_site_drive_item(
+        folder=folder,
+        filename=filename,
+        content=content,
+        content_type=content_type,
+    )
+    return (row or {}).get("web_url") or ""

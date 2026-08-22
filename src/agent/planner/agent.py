@@ -103,6 +103,16 @@ _DATA_ANALYST_RE = re.compile(
     r"transform\s+(?:this\s+|the\s+)?(?:excel|spreadsheet))",
     re.IGNORECASE,
 )
+# Teams chat attachment → SharePoint upload (before catalog ingest picks)
+_TEAMS_UPLOAD_RE = re.compile(
+    r"(?:please\s+)?(?:ingest|index|vectorize|add\s+to\s+(?:the\s+)?(?:knowledge|kb)|"
+    r"upload(?:\s+(?:this|to\s+sharepoint|and\s+ingest)?)?|save(?:\s+to\s+sharepoint)?|"
+    r"process\s+(?:this|the)\s+(?:file|document|pdf|doc)|"
+    r"(?:this|the|attached|uploaded)\s+(?:file|pdf|document|docx|pptx|spreadsheet)|"
+    r"attached\s+(?:file|pdf|document)|"
+    r"put\s+(?:this|it)\s+in\s+(?:the\s+)?(?:library|knowledge|sharepoint))",
+    re.IGNORECASE,
+)
 _DOC_PICK_NUMS_RE = re.compile(r"^\s*[\d,\s]+(?:\s*(?:and|&)\s*[\d,\s]+)*\s*$")
 # Teams productivity — Outlook + Azure Boards (bypass coding session)
 _OUTLOOK_RE = re.compile(
@@ -177,6 +187,57 @@ async def plan(state: AgentState) -> AgentState:
         if handoff:
             out["handoff_note"] = handoff
         return out
+
+    # Teams chat attachments — upload to SharePoint then ingest (beats list/ingest without files)
+    from agent.config import settings as _settings
+
+    incoming_atts: list = list(state.get("attachments") or [])
+    pending_atts: list = []
+    if phone:
+        try:
+            _sess = await get_session(phone)
+            pending_atts = list((_sess.get("data") or {}).get("pending_attachments") or [])
+        except Exception:
+            logger.exception("%s failed reading pending attachments", AGENT_NAME)
+
+    if incoming_atts and phone:
+        try:
+            from agent.core.session import save_session
+
+            await save_session(
+                phone,
+                data={"pending_attachments": incoming_atts},
+                merge_data=True,
+            )
+        except Exception:
+            logger.exception("%s failed saving pending attachments", AGENT_NAME)
+
+    effective_atts = incoming_atts or pending_atts
+    if effective_atts and _settings.enable_doc_knowledge:
+        wants_summarize = bool(
+            _SUMMARIZE_DOCS_RE.search(user_msg)
+            or re.search(r"\bsummar(?:ize|ise)\b", user_msg, re.I)
+        )
+        wants_ingest = bool(_INGEST_DOCS_RE.search(user_msg) or _TEAMS_UPLOAD_RE.search(user_msg))
+        if wants_ingest or wants_summarize:
+            out = await _clear_for_kb("upload_ingest_docs")
+            out["attachments"] = effective_atts
+            out["upload_summarize"] = wants_summarize
+            return out
+        if incoming_atts:
+            names = ", ".join(
+                (a.get("filename") or a.get("name") or "file") for a in incoming_atts[:5]
+            )
+            return {
+                **state,
+                "intent": "general",
+                "notification_text": (
+                    f"*Doc Upload Agent* — received **{len(incoming_atts)}** file(s): {names}\n\n"
+                    "Say **ingest this** to upload to SharePoint and vectorize, or "
+                    "**summarize this** for upload + ingest + executive summary."
+                ),
+                "planned_by": AGENT_NAME,
+            }
 
     if _LIST_DOCS_RE.search(user_msg):
         return await _clear_for_kb("list_docs")

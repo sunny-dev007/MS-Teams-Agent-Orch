@@ -19,12 +19,26 @@ logger = get_logger(__name__)
 router = APIRouter(prefix="/api/channels/copilot", tags=["copilot"])
 
 
+class CopilotAttachment(BaseModel):
+    filename: str = Field(..., min_length=1, description="Original file name including extension")
+    content_base64: str | None = Field(
+        default=None,
+        description="Base64-encoded file bytes from Teams/Copilot Studio",
+    )
+    content_url: str | None = Field(
+        default=None,
+        description="Optional HTTPS URL to download attachment bytes",
+    )
+    content_type: str | None = Field(default=None, description="MIME type when known")
+
+
 class CopilotMessageRequest(BaseModel):
     user_id: str = Field(..., min_length=1, description="AAD object id or stable Copilot user id")
     message: str = ""
     conversation_id: str | None = None
     display_name: str | None = None
     action: Literal["message", "poll", "status"] = "message"
+    attachments: list[CopilotAttachment] = Field(default_factory=list)
 
 
 class CopilotMessageResponse(BaseModel):
@@ -162,6 +176,8 @@ async def _handle_copilot_message(
     def schedule(func, *args, **kwargs):
         jobs.append((func, args, kwargs))
 
+    graph_attachments = _attachments_for_graph(body)
+
     from agent.api.channel_gates import route_inbound_message
 
     await route_inbound_message(
@@ -173,6 +189,7 @@ async def _handle_copilot_message(
             "message": message,
             "message_id": body.conversation_id or "",
             "name": body.display_name or "",
+            "attachments": graph_attachments,
         },
         source="teams",
     )
@@ -216,6 +233,18 @@ async def _handle_copilot_message(
         session_id=session_id,
         adaptive_card=adaptive_card,
     )
+
+
+def _attachments_for_graph(body: CopilotMessageRequest) -> list[dict[str, Any]]:
+    """Normalize Copilot attachment payloads for the Doc Upload Agent."""
+    from agent.services import doc_upload
+
+    out: list[dict[str, Any]] = []
+    for att in body.attachments or []:
+        norm = doc_upload.normalize_attachment(att.model_dump(exclude_none=True))
+        if norm:
+            out.append(norm)
+    return out
 
 
 def _teams_adaptive_card_for_message(

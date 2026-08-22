@@ -107,6 +107,9 @@ class Settings(BaseSettings):
     doc_knowledge_fetch_k: int = 24  # over-fetch before MMR diversify
     doc_knowledge_multi_query: bool = True
     doc_knowledge_min_score: float = 0.15
+    # Teams chat attachments → SharePoint folder before ingest (Doc Upload Agent)
+    doc_upload_folder: str = "UploadedDocs"
+    doc_upload_max_bytes: int = 26_214_400  # 25 MB
 
     # Qdrant Cloud (optional vector backend for Doc Knowledge — defaults empty = SQLite cosine)
     # Use the *cluster* REST URL + Database API key (not only the Cloud Management key).

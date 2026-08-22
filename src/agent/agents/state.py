@@ -94,3 +94,7 @@ class AgentState(TypedDict, total=False):
     kb_docs_used: list
     kb_related_queries: list
     handoff_note: str
+
+    # Teams chat attachments (Copilot Studio → SharePoint upload path)
+    attachments: list
+    upload_summarize: bool

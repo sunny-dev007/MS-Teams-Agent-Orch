@@ -234,6 +234,7 @@ def build_help_menu(
             f"- {b('list my documents')} — library with SP / OD / ON tags",
             f"- {b('list ingested documents')} — already vectorized",
             f"- {b('ingest 1,3')} / {b('ingest all')} — Doc Ingest → Qdrant",
+            f"- Attach a file in Teams + {b('ingest this')} / {b('summarize this')} — Doc Upload → SharePoint",
             f"- {b('ask docs <question>')} — Doc RAG (citations + related)",
             f"- {b('summarize docs <focus>')} — Doc Insights",
             f"- {b('convert excel <n>')} — Data Analyst "
