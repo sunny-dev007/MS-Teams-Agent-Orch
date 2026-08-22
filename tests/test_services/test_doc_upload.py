@@ -40,6 +40,16 @@ def test_attachments_session_roundtrip():
     assert restored[0]["content"] == raw["content"]
 
 
+def test_wants_upload_action_phrases():
+    from agent.services.doc_upload import wants_upload_action
+
+    assert wants_upload_action("Please ingest this attached pdf file into the system")
+    assert wants_upload_action("upload to sharepoint")
+    assert wants_upload_action("process this document")
+    assert not wants_upload_action("here is the file")
+    assert not wants_upload_action("thanks for the update")
+
+
 @pytest.mark.asyncio
 async def test_planner_upload_ingest_with_attachment(monkeypatch):
     from agent.config import settings

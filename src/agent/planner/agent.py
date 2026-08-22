@@ -103,16 +103,6 @@ _DATA_ANALYST_RE = re.compile(
     r"transform\s+(?:this\s+|the\s+)?(?:excel|spreadsheet))",
     re.IGNORECASE,
 )
-# Teams chat attachment → SharePoint upload (before catalog ingest picks)
-_TEAMS_UPLOAD_RE = re.compile(
-    r"(?:please\s+)?(?:ingest|index|vectorize|add\s+to\s+(?:the\s+)?(?:knowledge|kb)|"
-    r"upload(?:\s+(?:this|to\s+sharepoint|and\s+ingest)?)?|save(?:\s+to\s+sharepoint)?|"
-    r"process\s+(?:this|the)\s+(?:file|document|pdf|doc)|"
-    r"(?:this|the|attached|uploaded)\s+(?:file|pdf|document|docx|pptx|spreadsheet)|"
-    r"attached\s+(?:file|pdf|document)|"
-    r"put\s+(?:this|it)\s+in\s+(?:the\s+)?(?:library|knowledge|sharepoint))",
-    re.IGNORECASE,
-)
 _DOC_PICK_NUMS_RE = re.compile(r"^\s*[\d,\s]+(?:\s*(?:and|&)\s*[\d,\s]+)*\s*$")
 # Teams productivity — Outlook + Azure Boards (bypass coding session)
 _OUTLOOK_RE = re.compile(
@@ -222,7 +212,9 @@ async def plan(state: AgentState) -> AgentState:
             _SUMMARIZE_DOCS_RE.search(user_msg)
             or re.search(r"\bsummar(?:ize|ise)\b", user_msg, re.I)
         )
-        wants_ingest = bool(_INGEST_DOCS_RE.search(user_msg) or _TEAMS_UPLOAD_RE.search(user_msg))
+        wants_ingest = bool(
+            _INGEST_DOCS_RE.search(user_msg) or _doc_upload.wants_upload_action(user_msg)
+        )
         if wants_ingest or wants_summarize:
             out = await _clear_for_kb("upload_ingest_docs")
             out["attachments"] = effective_atts

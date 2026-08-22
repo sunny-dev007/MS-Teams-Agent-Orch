@@ -39,6 +39,20 @@ _INGEST_PREFIX = re.compile(
     r"(?:this|the|attached|uploaded)?\s*(?:file|pdf|document|doc)?\s*(?:into\s+(?:the\s+)?system)?\s*[:\-]?\s*",
     re.I,
 )
+# Explicit upload/ingest verbs — must not match casual phrases like "here is the file".
+_UPLOAD_ACTION_RE = re.compile(
+    r"(?:^|\b)(?:please\s+)?(?:"
+    r"ingest|index|vectorize|"
+    r"add\s+to\s+(?:the\s+)?(?:knowledge|kb)|"
+    r"upload(?:\s+(?:this|to\s+sharepoint|and\s+ingest))?|"
+    r"save(?:\s+to\s+sharepoint)?|"
+    r"process\s+(?:this|the)\s+(?:file|document|pdf|doc)"
+    r")(?:\s|$)|"
+    r"\b(?:attached|uploaded)\s+(?:file|pdf|document|docx|pptx|spreadsheet)\b|"
+    r"\bthis\s+(?:attached\s+)?(?:file|pdf|document|docx|pptx|spreadsheet)\b|"
+    r"\bput\s+(?:this|it)\s+in\s+(?:the\s+)?(?:library|knowledge|sharepoint)\b",
+    re.I,
+)
 
 
 def normalize_attachment(raw: dict[str, Any]) -> dict[str, Any] | None:
@@ -119,6 +133,11 @@ def attachments_from_session(stored: list[dict[str, Any]]) -> list[dict[str, Any
         if norm:
             out.append(norm)
     return out
+
+
+def wants_upload_action(message: str) -> bool:
+    """True when the user explicitly asks to upload/ingest an attached Teams file."""
+    return bool(_UPLOAD_ACTION_RE.search((message or "").strip()))
 
 
 async def _fetch_url_bytes(url: str, *, max_bytes: int) -> bytes:
