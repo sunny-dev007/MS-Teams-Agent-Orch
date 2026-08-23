@@ -3,80 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Personal AI Agent Portal</title>
+    <title>Portal</title>
     <style>
+        :root {
+            --background-color: #ffffff;
+            --surface-color: #f0f0f0;
+            --text-color: #333333;
+            --accent-color: #008080; /* Teal */
+            --border-color: #cccccc;
+            --shadow-color: rgba(0, 0, 0, 0.1);
+        }
+
+        .dark-theme {
+            --background-color: #1e1e1e;
+            --surface-color: #2e2e2e;
+            --text-color: #ffffff;
+            --accent-color: #00cccc; /* Adjusted teal for contrast */
+            --border-color: #444444;
+            --shadow-color: rgba(0, 0, 0, 0.5);
+        }
+
         body {
-            margin: 0;
+            background-color: var(--background-color);
+            color: var(--text-color);
             font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
         }
-        .header {
-            position: sticky;
-            top: 0;
-            background-color: #004d40;
-            color: #ffffff;
-            padding: 10px 20px;
-            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
-            z-index: 1000;
-        }
-        .brand {
+
+        header {
+            background-color: var(--surface-color);
+            padding: 10px;
+            box-shadow: 0 2px 4px var(--shadow-color);
             display: flex;
             justify-content: space-between;
             align-items: center;
         }
-        .brand h1 {
-            margin: 0;
-            font-size: 1.5em;
+
+        .theme-toggle {
+            cursor: pointer;
+            background-color: var(--accent-color);
+            border: none;
+            padding: 5px 10px;
+            color: var(--text-color);
+            border-radius: 5px;
         }
-        .brand p {
-            margin: 0;
-            font-size: 0.9em;
-            opacity: 0.8;
-        }
-        .nav {
-            margin-top: 10px;
-        }
-        .nav a {
-            color: #ffffff;
-            text-decoration: none;
-            margin-right: 15px;
-            font-size: 0.9em;
-        }
-        .nav a:hover {
-            text-decoration: underline;
-        }
+
         .content {
             padding: 20px;
         }
-        .section {
-            margin-bottom: 40px;
+
+        .card {
+            background-color: var(--surface-color);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 2px 4px var(--shadow-color);
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
         }
     </style>
 </head>
 <body>
-    <div class="header">
-        <div class="brand">
-            <h1>Personal AI Agent</h1>
-            <p>Your smart assistant for engineering tasks</p>
-        </div>
-        <div class="nav">
-            <a href="#overview">Overview</a>
-            <a href="#capabilities">Capabilities</a>
-            <a href="#status">Status</a>
-        </div>
-    </div>
+    <header>
+        <h1>Portal</h1>
+        <button class="theme-toggle" onclick="toggleTheme()">Toggle Theme</button>
+    </header>
     <div class="content">
-        <div id="overview" class="section">
-            <h2>Overview</h2>
-            <p>Welcome to the Personal AI Agent portal. Here you can find information about the capabilities and status of your AI assistant.</p>
+        <div class="card">
+            <h2>Welcome to the Portal</h2>
+            <p>This is a sample content area.</p>
         </div>
-        <div id="capabilities" class="section">
-            <h2>Capabilities</h2>
-            <p>The Personal AI Agent can handle a variety of tasks including email management, meeting scheduling, and code development.</p>
-        </div>
-        <div id="status" class="section">
-            <h2>Status</h2>
-            <p>Check the current status of your AI agent and recent activities.</p>
+        <div class="card">
+            <h2>Another Section</h2>
+            <p>More content goes here.</p>
         </div>
     </div>
+    <script>
+        function toggleTheme() {
+            const body = document.body;
+            const isDark = body.classList.toggle('dark-theme');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        }
+
+        function applyStoredTheme() {
+            const storedTheme = localStorage.getItem('theme');
+            if (storedTheme === 'dark') {
+                document.body.classList.add('dark-theme');
+            }
+        }
+
+        applyStoredTheme();
+    </script>
 </body>
 </html>
