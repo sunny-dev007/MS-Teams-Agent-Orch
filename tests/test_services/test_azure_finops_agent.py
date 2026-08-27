@@ -256,12 +256,45 @@ async def test_menu_word_stays_on_action(monkeypatch):
 
 
 def test_format_costs_distinguishes_api_failure():
-    fail = agent._format_costs([], title="Cost by RG", days=30, ok=False, error="403")
+    # Chat must stay soft — no raw ARM / 429 / URL leakage even if error= is passed.
+    fail = agent._format_costs(
+        [],
+        title="Cost by RG",
+        days=30,
+        ok=False,
+        error="ARM error '429: Too many requests' for url 'https://management.azure.com/x'",
+        error_kind="throttled",
+        user_note=azure_finops.user_safe_cost_note("throttled"),
+    )
     empty = agent._format_costs([], title="Cost by RG", days=30, ok=True)
-    assert "failed" in fail.lower() or "not" in fail.lower()
-    assert "zero spend" in fail.lower() or "not the same" in fail.lower()
-    assert "no rows" in empty.lower() or "zero" in empty.lower()
-    assert "failed" not in empty.lower()
+    low = fail.lower()
+    assert "429" not in fail
+    assert "management.azure.com" not in fail
+    assert "arm error" not in low
+    assert "busy" in low or "delayed" in low or "unavailable" in low
+    assert "cost management reader" not in low  # RBAC hint is for forbidden only
+    assert "no rows" in empty.lower() or "zero" in empty.lower() or "last" in empty.lower()
+    assert "busy" not in empty.lower()
+
+
+@pytest.mark.asyncio
+async def test_query_costs_result_throttled_is_chat_safe(monkeypatch):
+    async def _boom(*_a, **_k):
+        raise Exception(
+            "ARM error '429: {\"error\":{\"code\":\"429\",\"message\":\"Too many requests. Please retry.\"}}' "
+            "for url 'https://management.azure.com/subscriptions/x/providers/Microsoft.CostManagement/query'"
+        )
+
+    azure_finops.clear_cost_query_cache()
+    monkeypatch.setattr(azure_finops, "arm_request", _boom)
+    out = await azure_finops.query_costs_result("sub-1", group_by="ResourceGroupName")
+    assert out["ok"] is False
+    assert out.get("error") in (None, "")
+    assert out.get("error_kind") == "throttled"
+    note = out.get("user_note") or ""
+    assert "429" not in note
+    assert "management.azure.com" not in note
+    assert "Cost Management Reader" not in note
 
 
 def test_recommendations_rank_paid_spend_over_free_sku():

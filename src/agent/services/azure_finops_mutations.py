@@ -381,22 +381,36 @@ async def apply_sku_change_plan(plan: dict[str, Any]) -> dict[str, Any]:
 
 
 async def deep_cost_scan(subscription_id: str) -> dict[str, Any]:
-    """Inventory + cost window. Prefer ResourceId costs; fall back to RG totals.
+    """Inventory + cost window with Cost Management–friendly query budget.
 
-    Azure often returns empty ResourceId rows while RG/Service costs are populated
-    (and in billing currency such as INR). Never report a fake 0.00 USD total when
-    RG costs exist.
+    Prefer one RG cost query; optionally try ResourceId only when RG succeeds.
+    On throttle/failure: keep inventory, attach chat-safe user_note (no ARM text).
     """
     sid = (subscription_id or "").strip()
     resources = await azure_finops.list_resources(sid)
-    cost_res_result = await azure_finops.query_costs_result(sid, group_by="ResourceId")
+
+    # 1) RG costs first (usually enough for totals + RG column join)
     cost_rg_result = await azure_finops.query_costs_result(
         sid, group_by="ResourceGroupName"
     )
-    cost_by_res = list(cost_res_result.get("rows") or [])
     cost_by_rg = list(cost_rg_result.get("rows") or [])
 
-    # Primary cost series for totals / alerts
+    cost_res_result: dict[str, Any] = {
+        "ok": False,
+        "rows": [],
+        "error_kind": None,
+        "user_note": None,
+    }
+    cost_by_res: list[dict[str, Any]] = []
+
+    # 2) ResourceId only if RG worked and was not a cache-only throttle recovery
+    rg_kind = cost_rg_result.get("error_kind")
+    if cost_rg_result.get("ok") and rg_kind != "throttled":
+        cost_res_result = await azure_finops.query_costs_result(
+            sid, group_by="ResourceId"
+        )
+        cost_by_res = list(cost_res_result.get("rows") or [])
+
     if cost_by_res:
         primary = cost_by_res
         cost_grain = "ResourceId"
@@ -438,17 +452,39 @@ async def deep_cost_scan(subscription_id: str) -> dict[str, Any]:
     }
     mutable = [r for r in resources if is_mutable_type(r.get("type") or "")]
     for r in mutable:
-        rg_key = str(r.get("rg") or "").lower()
-        hit = rg_cost_map.get(rg_key)
+        hit = rg_cost_map.get(str(r.get("rg") or "").lower())
         if hit:
             r["rg_window_cost"] = float(hit.get("cost") or 0)
             r["rg_currency"] = hit.get("currency") or currency
 
-    recs = azure_finops.build_recommendations(
-        resources, cost_by_resource=cost_by_res, cost_by_rg=cost_by_rg
+    # recommendations builder name may vary
+    build = getattr(azure_finops, "build_recommendations", None) or getattr(
+        azure_finops, "build_recommendations", None
     )
-    cost_ok = bool(cost_res_result.get("ok")) or bool(cost_rg_result.get("ok"))
-    cost_error = cost_res_result.get("error") or cost_rg_result.get("error")
+    if build:
+        try:
+            recs = build(
+                resources, cost_by_resource=cost_by_res, cost_by_rg=cost_by_rg
+            )
+        except TypeError:
+            recs = build(resources, cost_by_res, cost_by_rg)
+    else:
+        recs = []
+
+    cost_ok = bool(cost_rg_result.get("ok")) or bool(cost_res_result.get("ok"))
+    error_kind = (
+        cost_rg_result.get("error_kind")
+        or cost_res_result.get("error_kind")
+    )
+    user_note = (
+        cost_rg_result.get("user_note")
+        or cost_res_result.get("user_note")
+    )
+    if not cost_ok and not user_note and error_kind:
+        user_note = azure_finops.user_safe_cost_note(error_kind)
+    elif not cost_ok and not user_note:
+        user_note = azure_finops.user_safe_cost_note("unknown")
+
     return {
         "resource_count": len(resources),
         "mutable_count": len(mutable),
@@ -457,10 +493,12 @@ async def deep_cost_scan(subscription_id: str) -> dict[str, Any]:
         "currency": currency,
         "cost_grain": cost_grain,
         "cost_ok": cost_ok,
-        "cost_error": cost_error,
+        "cost_error": None,  # never expose ARM text
+        "error_kind": error_kind,
+        "user_note": user_note,
         "resource_id_rows": len(cost_by_res),
         "alerts": alerts[:15],
-        "recommendations": recs[:10],
+        "recommendations": (recs or [])[:10],
         "cost_by_rg": cost_by_rg[:15],
     }
 
@@ -546,8 +584,12 @@ def format_cost_scan(scan: dict[str, Any], *, sub_name: str) -> str:
             "totals/alerts use **resource group** costs (same currency as Portal)._"
         )
         lines.append("")
-    if scan.get("cost_ok") is False and scan.get("cost_error"):
-        lines.append(f"_Cost query issue:_ `{scan.get('cost_error')}`")
+    if scan.get("user_note"):
+        lines.append(f"_{scan.get('user_note')}_")
+        lines.append("")
+    elif scan.get("cost_ok") is False:
+        note = azure_finops.user_safe_cost_note(scan.get("error_kind") or "unknown")
+        lines.append(f"_{note}_")
         lines.append("")
 
     alerts = scan.get("alerts") or []
@@ -602,7 +644,7 @@ def format_cost_scan(scan: dict[str, Any], *, sub_name: str) -> str:
                 [
                     "**Mutations ON** — plan then approve (nothing writes until APPLY):",
                     "",
-                    "1. **downgrade 1 to B1** or **change sku <name> to F1**",
+                    "1. **change sku <name> to <lower-paid-tier>** (only when it reduces cost)",
                     "2. Review the plan (quota / region unchanged)",
                     "3. **APPLY PLAN <id>** — execute · **REJECT PLAN** — cancel",
                     "",
@@ -611,7 +653,7 @@ def format_cost_scan(scan: dict[str, Any], *, sub_name: str) -> str:
         else:
             lines.extend(
                 [
-                    "Example (when mutations enabled): **downgrade 1 to B1**",
+                    "Example (when mutations enabled): **change sku <name> to S1**",
                     "",
                     "_SKU resize is OFF_ (`ENABLE_AZURE_FINOPS_MUTATIONS=false`) — "
                     "this scan is **read-only**.",

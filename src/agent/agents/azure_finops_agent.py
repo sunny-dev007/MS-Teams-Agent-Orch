@@ -219,30 +219,29 @@ def _format_costs(
     days: int,
     ok: bool = True,
     error: str | None = None,
+    error_kind: str | None = None,
+    user_note: str | None = None,
 ) -> str:
     if not ok:
-        detail = (error or "").strip()
-        hint = (
-            f"\n_Detail:_ `{detail}`" if detail else ""
+        note = (user_note or "").strip() or azure_finops.user_safe_cost_note(
+            error_kind or "unknown"
         )
+        # Never append raw ARM / URL / status payloads (ignore `error` on purpose).
         return (
             f"*{title}*\n\n"
-            f"_Cost Management query failed_ (this is **not** the same as zero spend)."
-            f"{hint}\n"
-            "Retry in a minute. If it keeps failing, confirm the app has "
-            "**Cost Management Reader** (or Contributor) on the subscription, "
-            "and that Cost analysis works in the Azure Portal for this account."
+            f"_{note}_\n\n"
+            "Say **menu**, **deep scan**, or try **costs** again in a few minutes."
         )
     if not rows:
         return (
             f"*{title}*\n\n"
-            f"_Cost Management returned **no rows** for the last {days} days._\n"
-            "That usually means true zero spend in-window, or costs not yet "
-            "published (can lag 8–24h). If the Portal shows spend, retry shortly."
+            f"_No cost rows for the last {days} days yet._\n"
+            "That usually means true zero spend in-window, or costs not published "
+            "(can lag). If Portal shows spend, ask again shortly."
         )
     currency = rows[0].get("currency") or "USD"
     total = sum(float(r.get("cost") or 0) for r in rows)
-    top_n = int(settings.azure_finops_top_n)
+    top_n = int(getattr(settings, "azure_finops_top_n", 15) or 15)
     lines = [
         f"*{title}* — last **{days}** days",
         f"_Total (listed):_ **{_money(total, currency)}**",
@@ -255,6 +254,9 @@ def _format_costs(
             f"| {i} | {r.get('name')} | "
             f"{_money(float(r.get('cost') or 0), r.get('currency') or currency)} |"
         )
+    if user_note:
+        lines.append("")
+        lines.append(f"_{user_note}_")
     lines.append("")
     lines.append("Say **recommendations**, **deep scan**, **resource groups**, or **menu**.")
     return "\n".join(lines)
@@ -359,21 +361,30 @@ async def _show_costs(state: AgentState, *, phone: str, sub: dict) -> AgentState
     sid = sub.get("id") or ""
     days = int(settings.azure_finops_cost_days)
     by_rg = await azure_finops.query_costs_result(sid, group_by="ResourceGroupName")
-    by_svc = await azure_finops.query_costs_result(sid, group_by="ServiceName")
-    text = _format_costs(
-        by_rg.get("rows") or [],
-        title=f"Cost by resource group — {sub.get('name')}",
-        days=days,
-        ok=bool(by_rg.get("ok")),
-        error=by_rg.get("error"),
-    )
-    text += "\n\n" + _format_costs(
-        by_svc.get("rows") or [],
-        title=f"Cost by service — {sub.get('name')}",
-        days=days,
-        ok=bool(by_svc.get("ok")),
-        error=by_svc.get("error"),
-    )
+    texts = [
+        _format_costs(
+            by_rg.get("rows") or [],
+            title=f"Cost by resource group — {sub.get('name')}",
+            days=days,
+            ok=bool(by_rg.get("ok")),
+            error_kind=by_rg.get("error_kind"),
+            user_note=by_rg.get("user_note"),
+        )
+    ]
+    # Avoid a second Cost Management call when already throttled.
+    if by_rg.get("error_kind") != "throttled":
+        by_svc = await azure_finops.query_costs_result(sid, group_by="ServiceName")
+        texts.append(
+            _format_costs(
+                by_svc.get("rows") or [],
+                title=f"Cost by service — {sub.get('name')}",
+                days=days,
+                ok=bool(by_svc.get("ok")),
+                error_kind=by_svc.get("error_kind"),
+                user_note=by_svc.get("user_note"),
+            )
+        )
+    text = "\n\n".join(texts)
     await save_session(
         phone,
         awaiting=AWAITING_ACTION,
@@ -394,8 +405,12 @@ async def _show_recommendations(
 ) -> AgentState:
     sid = sub.get("id") or ""
     resources = await azure_finops.list_resources(sid)
-    cost_by_rg = await azure_finops.query_costs(sid, group_by="ResourceGroupName")
-    cost_by_res = await azure_finops.query_costs(sid, group_by="ResourceId")
+    cost_rg = await azure_finops.query_costs_result(sid, group_by="ResourceGroupName")
+    cost_by_rg = list(cost_rg.get("rows") or [])
+    cost_by_res: list = []
+    if cost_rg.get("error_kind") != "throttled" and cost_rg.get("ok"):
+        cost_res = await azure_finops.query_costs_result(sid, group_by="ResourceId")
+        cost_by_res = list(cost_res.get("rows") or [])
     recs = azure_finops.build_recommendations(
         resources,
         cost_by_resource=cost_by_res,

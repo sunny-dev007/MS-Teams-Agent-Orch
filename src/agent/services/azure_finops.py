@@ -7,6 +7,8 @@ Separate from azure_devops.py (AzDO PAT) and coding gates.
 
 from __future__ import annotations
 
+import asyncio
+import re
 import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -17,6 +19,15 @@ from agent.config import settings
 from agent.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+# Cost Management is tightly rate-limited (~tens of queries/min/sub).
+# Backend absorbs 429s: retry + spacing + short cache. Never surface raw ARM errors to chat.
+_COST_CACHE: dict[str, dict[str, Any]] = {}
+_COST_LOCK = asyncio.Lock()
+_LAST_COST_CALL_AT = 0.0
+_COST_CACHE_TTL_SEC = 300.0
+_COST_MIN_GAP_SEC = 2.5
+_COST_RETRY_MAX = 4
 
 _ARM = "https://management.azure.com"
 _ARM_SCOPE = "https://management.azure.com/.default"
@@ -90,11 +101,16 @@ async def arm_request(
     *,
     json_body: dict | None = None,
     params: dict | None = None,
+    max_retries: int | None = None,
 ) -> dict[str, Any]:
+    """ARM call with auth refresh + 429/503 backoff (Cost Management friendly)."""
     url = path if path.startswith("http") else f"{_ARM}{path}"
+    is_cost = "Microsoft.CostManagement" in url or "/providers/Microsoft.CostManagement/" in url
+    attempts = int(max_retries) if max_retries is not None else (_COST_RETRY_MAX if is_cost else 3)
     last_detail = ""
-    for attempt in range(2):
-        token = await get_arm_token(force_refresh=(attempt > 0))
+    last_resp: httpx.Response | None = None
+    for attempt in range(max(1, attempts)):
+        token = await get_arm_token(force_refresh=(attempt > 0 and last_resp is not None and last_resp.status_code in (401, 403)))
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -103,14 +119,25 @@ async def arm_request(
             resp = await client.request(
                 method, url, headers=headers, json=json_body, params=params
             )
+            last_resp = resp
             if resp.status_code < 400:
                 if resp.status_code == 204 or not resp.content:
                     return {}
                 return resp.json()
             last_detail = f"{resp.status_code}: {(resp.text or '')[:400]}"
-            logger.error("ARM %s %s -> %s", method, path, last_detail)
+            logger.error("ARM %s %s -> %s (attempt %s)", method, path, last_detail, attempt + 1)
             if resp.status_code in (401, 403) and attempt == 0:
                 clear_arm_token_cache()
+                continue
+            if resp.status_code in (429, 503) and attempt < attempts - 1:
+                wait = _retry_after_seconds(resp, attempt)
+                logger.warning(
+                    "ARM throttle/backoff status=%s wait=%.1fs path=%s",
+                    resp.status_code,
+                    wait,
+                    path,
+                )
+                await asyncio.sleep(wait)
                 continue
             raise httpx.HTTPStatusError(
                 f"ARM error '{last_detail}' for url '{url}'",
@@ -118,6 +145,89 @@ async def arm_request(
                 response=resp,
             )
     raise RuntimeError(f"ARM request failed: {last_detail}")
+
+
+def _retry_after_seconds(resp: httpx.Response, attempt: int) -> float:
+    raw = (resp.headers.get("Retry-After") or "").strip()
+    if raw.isdigit():
+        return min(30.0, max(1.0, float(raw)))
+    # exponential: 2, 4, 8, 16 (cap 20)
+    return min(20.0, float(2 ** (attempt + 1)))
+
+
+def classify_cost_failure(exc: BaseException | str | None) -> str:
+    """Map ARM failures to stable kinds: throttled | forbidden | transient | unknown."""
+    text = str(exc or "")
+    code = None
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        code = exc.response.status_code
+    if code is None:
+        m = re.search(r"\b(429|503|401|403|500|502|504)\b", text)
+        code = int(m.group(1)) if m else None
+    if code == 429 or "too many requests" in text.lower():
+        return "throttled"
+    if code in (401, 403):
+        return "forbidden"
+    if code in (500, 502, 503, 504):
+        return "transient"
+    return "unknown"
+
+
+def user_safe_cost_note(
+    kind: str | None,
+    *,
+    used_cache: bool = False,
+) -> str:
+    """Chat-safe copy — never includes URLs, JSON, or ARM status payloads."""
+    k = (kind or "").strip().lower()
+    if used_cache:
+        return (
+            "Showing the latest saved cost snapshot while Azure Cost Management "
+            "catches up. Ask again in a few minutes for a fresh refresh."
+        )
+    if k == "throttled":
+        return (
+            "Cost figures are briefly delayed (Azure Cost Management is busy). "
+            "Inventory below is current — ask **costs** or **deep scan** again "
+            "in a few minutes for amounts."
+        )
+    if k == "forbidden":
+        return (
+            "Cost data needs **Cost Management Reader** on this subscription. "
+            "Inventory is still available."
+        )
+    if k == "transient":
+        return (
+            "Cost figures are temporarily unavailable. "
+            "Inventory is ready — try **costs** again shortly."
+        )
+    return (
+        "Cost figures are temporarily unavailable. "
+        "Inventory is ready — try **costs** again shortly."
+    )
+
+
+def _cost_cache_key(subscription_id: str, group_by: str, days: int) -> str:
+    return f"{subscription_id}|{group_by}|{days}"
+
+
+def _get_cost_cache(key: str) -> dict[str, Any] | None:
+    row = _COST_CACHE.get(key)
+    if not row:
+        return None
+    if time.time() - float(row.get("ts") or 0) > _COST_CACHE_TTL_SEC:
+        return None
+    return row.get("result")
+
+
+def _set_cost_cache(key: str, result: dict[str, Any]) -> None:
+    if not result.get("ok"):
+        return
+    _COST_CACHE[key] = {"ts": time.time(), "result": dict(result)}
+
+
+def clear_cost_query_cache() -> None:
+    _COST_CACHE.clear()
 
 
 async def list_subscriptions() -> list[dict[str, Any]]:
@@ -217,12 +327,31 @@ async def query_costs_result(
     *,
     group_by: str = "ResourceGroupName",
     days: int | None = None,
+    use_cache: bool = True,
 ) -> dict[str, Any]:
-    """Cost Management Query with explicit success/failure (do not conflate API errors with zero spend)."""
+    """Cost Management Query with retry spacing, cache, and chat-safe failures.
+
+    Do not conflate API errors with zero spend. Never put raw ARM payloads in `error`
+    for UI — use `error_kind` + `user_note` instead (details stay in logs).
+    """
+    global _LAST_COST_CALL_AT
+
     sid = (subscription_id or "").strip()
     days_n = int(days if days is not None else settings.azure_finops_cost_days)
-    start, end = _cost_period(days_n)
     grouping_name = group_by
+    cache_key = _cost_cache_key(sid, grouping_name, days_n)
+
+    if use_cache:
+        cached = _get_cost_cache(cache_key)
+        if cached is not None:
+            out = dict(cached)
+            out["from_cache"] = True
+            out["error_kind"] = None
+            out["error"] = None
+            out["user_note"] = None
+            return out
+
+    start, end = _cost_period(days_n)
     body = {
         "type": "ActualCost",
         "timeframe": "Custom",
@@ -235,20 +364,48 @@ async def query_costs_result(
             "grouping": [{"type": "Dimension", "name": grouping_name}],
         },
     }
-    path = (
+    path_url = (
         f"/subscriptions/{sid}/providers/Microsoft.CostManagement/query"
         f"?api-version=2023-11-01"
     )
-    try:
-        resp = await arm_request("POST", path, json_body=body)
-    except Exception as exc:
-        logger.exception("Cost query failed sub=%s group=%s", sid, grouping_name)
-        return {
-            "ok": False,
-            "rows": [],
-            "error": str(exc)[:240],
-            "group_by": grouping_name,
-        }
+
+    async with _COST_LOCK:
+        gap = _COST_MIN_GAP_SEC - (time.time() - float(_LAST_COST_CALL_AT or 0.0))
+        if gap > 0:
+            await asyncio.sleep(gap)
+        try:
+            resp = await arm_request(
+                "POST", path_url, json_body=body, max_retries=_COST_RETRY_MAX
+            )
+            _LAST_COST_CALL_AT = time.time()
+        except Exception as exc:
+            _LAST_COST_CALL_AT = time.time()
+            kind = classify_cost_failure(exc)
+            logger.warning(
+                "Cost query failed sub=%s group=%s kind=%s err=%s",
+                sid,
+                grouping_name,
+                kind,
+                str(exc)[:240],
+            )
+            cached = _get_cost_cache(cache_key) if use_cache else None
+            if cached is not None:
+                out = dict(cached)
+                out["ok"] = True
+                out["from_cache"] = True
+                out["error_kind"] = kind
+                out["error"] = None
+                out["user_note"] = user_safe_cost_note(kind, used_cache=True)
+                return out
+            return {
+                "ok": False,
+                "rows": [],
+                "error": None,
+                "error_kind": kind,
+                "from_cache": False,
+                "user_note": user_safe_cost_note(kind),
+                "group_by": grouping_name,
+            }
 
     columns = [c.get("name") for c in (resp.get("properties") or {}).get("columns") or []]
     rows_out: list[dict[str, Any]] = []
@@ -274,13 +431,17 @@ async def query_costs_result(
             }
         )
     rows_out.sort(key=lambda r: -float(r.get("cost") or 0))
-    return {
+    result = {
         "ok": True,
         "rows": rows_out,
         "error": None,
+        "error_kind": None,
+        "from_cache": False,
+        "user_note": None,
         "group_by": grouping_name,
     }
-
+    _set_cost_cache(cache_key, result)
+    return result
 
 
 async def query_costs(
