@@ -10,6 +10,7 @@ import re
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import qa_agent_offline
 from agent.core.logging import get_logger
 from agent.models.release_event import (
     STATUS_QA_FAILED,
@@ -36,12 +37,7 @@ async def run_qa_smoke(state: AgentState) -> AgentState:
             **state,
             "status": "skipped",
             "handled_by": AGENT_NAME,
-            "notification_text": (
-                "*QA Agent* is installed but **disabled** (ENABLE_QA_AGENT=false).\n\n"
-                "When enabled it runs smoke checks against the release `app_url` "
-                "and attaches a report to the ReleaseEvent.\n"
-                "Dev Agent and WhatsApp paths are unchanged."
-            ),
+            "notification_text": qa_agent_offline(),
         }
 
     msg = state.get("user_message") or ""

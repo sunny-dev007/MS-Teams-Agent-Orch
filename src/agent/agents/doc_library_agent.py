@@ -9,6 +9,7 @@ import re
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import doc_knowledge_offline
 from agent.core.channel_identity import is_teams_session
 from agent.core.logging import get_logger
 from agent.core.session import get_session, save_session
@@ -19,12 +20,7 @@ logger = get_logger(__name__)
 
 AGENT_NAME = "doc_library_agent"
 
-_DISABLED = (
-    "*Doc Library Agent* is installed but **disabled** (ENABLE_DOC_KNOWLEDGE=false).\n\n"
-    "When enabled: *list my documents* → pick numbers → *ingest 1,2* → "
-    "*ask docs …* / *summarize docs …*.\n"
-    "Dev Agent and WhatsApp coding paths are unchanged."
-)
+_DISABLED = doc_knowledge_offline(agent_label="Doc Library Agent")
 
 _PAGE_NAV_RE = re.compile(
     r"^\s*(next(?:\s+page)?|more(?:\s+documents?)?|previous|"

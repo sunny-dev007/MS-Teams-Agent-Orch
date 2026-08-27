@@ -10,6 +10,7 @@ import re
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import doc_knowledge_offline
 from agent.core.logging import get_logger
 from agent.services import doc_knowledge
 
@@ -30,11 +31,7 @@ async def summarize_documents(state: AgentState) -> AgentState:
             **state,
             "status": "skipped",
             "handled_by": AGENT_NAME,
-            "notification_text": (
-                "*Doc Insights Agent* is installed but **disabled** "
-                "(ENABLE_DOC_KNOWLEDGE=false).\n"
-                "Existing Dev/WhatsApp flows are unchanged."
-            ),
+            "notification_text": doc_knowledge_offline(agent_label="Doc Insights Agent"),
         }
 
     raw = state.get("user_message") or ""

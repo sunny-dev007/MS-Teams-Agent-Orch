@@ -174,6 +174,22 @@ _BOARDS_TICKET_RE = re.compile(
     re.IGNORECASE,
 )
 
+_AZURE_FINOPS_RE = re.compile(
+    r"(?:azure\s+)?(?:subscriptions?|subs?\b)|cloud\s+portal|azure\s+portal|"
+    r"(?:list|show)\s+(?:my\s+)?(?:azure\s+)?subscriptions?|"
+    r"(?:azure\s+)?costs?|finops|cost\s+(?:summary|report|breakdown)|"
+    r"finops\s+recommend|azure\s+inventory|azure\s+resources?|"
+    r"(?:azure\s+)?devops\s+overview|azdo\s+overview|"
+    r"\bdeep\s+(?:cost\s+)?scan\b|"
+    r"(?:deep\s+)?(?:scan|audit)\s+(?:my\s+)?azure|high\s+cost\s+alert|"
+    r"sudden\s+(?:cost|spend)|expensive\s+resources?|"
+    r"scan\s+(?:all\s+)?(?:my\s+)?resources?|"
+    r"\b(?:downgrade|upgrade|resize|change\s+sku|set\s+sku)\b|"
+    r"^\s*apply\s+plan\s+[a-z0-9\-]+\s*$|^\s*reject\s+plan(?:\s+[a-z0-9\-]+)?\s*$",
+    re.I,
+)
+
+
 
 def is_simple_greeting(message: str) -> bool:
     return bool(_GREETING_RE.match((message or "").strip()))
@@ -442,6 +458,32 @@ async def plan(state: AgentState) -> AgentState:
         return await _clear_for_productivity("check_outlook")
     if _BOARDS_RE.search(user_msg):
         return await _clear_for_productivity("list_boards")
+
+    # FinOps mid-flow MUST run before _AZURE_FINOPS_RE — word cmds like
+    # "costs" / "recommendations" match that regex and would wipe awaiting
+    # via soft_fabric_switch, resetting users to the subscription picker.
+    if phone:
+        try:
+            session = await get_session(phone)
+            awaiting_early = session.get("awaiting")
+            if awaiting_early in (
+                "azure_finops_sub_pick",
+                "azure_finops_action_pick",
+                "azure_finops_rg_pick",
+                "azure_finops_mutate_plan",
+            ):
+                return {
+                    **state,
+                    "intent": "azure_finops",
+                    "session_awaiting": awaiting_early,
+                    "session_data": session.get("data") or {},
+                    "planned_by": AGENT_NAME,
+                }
+        except Exception:
+            logger.exception("%s failed FinOps awaiting peek", AGENT_NAME)
+
+    if _AZURE_FINOPS_RE.search(user_msg):
+        return await _clear_for_productivity("azure_finops")
 
     # Bare number picks while awaiting doc_pick → ingest
     if phone:

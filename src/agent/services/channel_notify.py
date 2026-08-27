@@ -20,8 +20,16 @@ async def send_channel_message(session_id: str, text: str) -> None:
         from agent.core.channel_outbox import enqueue_outbox
 
         await enqueue_outbox(session_id, text)
-        return
+    else:
+        from agent.services.whatsapp import send_message
 
-    from agent.services.whatsapp import send_message
+        await send_message(session_id, text)
 
-    await send_message(session_id, text)
+    # Additive: keep last N bubbles for multi-agent context (flagged; never raises).
+    try:
+        from agent.services import agent_runtime as runtime
+
+        if runtime.orchestration_enabled():
+            await runtime.append_bubble(session_id, role="assistant", text=text)
+    except Exception:
+        logger.exception("append_bubble failed session=%s", session_id)

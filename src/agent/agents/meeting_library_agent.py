@@ -10,6 +10,7 @@ import re
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import meeting_intelligence_offline
 from agent.core.channel_identity import is_teams_session
 from agent.core.logging import get_logger
 from agent.core.session import get_session, save_session
@@ -19,12 +20,7 @@ logger = get_logger(__name__)
 
 AGENT_NAME = "meeting_library_agent"
 
-_DISABLED = (
-    "*Meeting Intelligence* is installed but **disabled** (ENABLE_MEETING_INTELLIGENCE=false).\n\n"
-    "When enabled: *list my recent meetings* → *select meetings 1,3* → "
-    "*make a plan* → *email the plan to …* / *create devops board from plan*.\n"
-    "Calendar scheduling (*schedule a meeting*) is unchanged."
-)
+_DISABLED = meeting_intelligence_offline()
 
 _PAGE_NAV_RE = re.compile(
     r"^\s*(next(?:\s+page)?|more(?:\s+meetings?)?|previous|"

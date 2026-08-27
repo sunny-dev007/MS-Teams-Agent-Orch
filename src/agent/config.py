@@ -86,6 +86,28 @@ class Settings(BaseSettings):
     boards_work_item_top: int = 15
     azdo_boards_project: str = ""  # optional project filter for WIQL
 
+    # Azure FinOps / Cloud Portal Agent — subscriptions → RGs → resources → cost → recommendations
+    # Additive — default OFF; does not change Dev/WhatsApp/Outlook/Boards when false.
+    enable_azure_finops_agent: bool = False
+    # SKU resize / infra change with human-in-the-loop APPLY PLAN (default OFF).
+    # Requires enable_azure_finops_agent=true + Contributor (or write) RBAC. Deletes stay blocked.
+    enable_azure_finops_mutations: bool = False
+    enable_azure_finops_allow_delete: bool = False  # keep false — delete needs separate consent flow
+    azure_finops_high_cost_share: float = 0.25  # alert if resource share of window cost >= this
+    azure_finops_high_cost_abs: float = 50.0  # or absolute cost in currency units
+    # Optional dedicated ARM SP (falls back to MS Graph app credentials when empty)
+    azure_arm_tenant_id: str = ""
+    azure_arm_client_id: str = ""
+    azure_arm_client_secret: SecretStr = SecretStr("")
+    azure_finops_cost_days: int = 30
+    azure_finops_top_n: int = 15
+
+    # Agent run orchestration — busy same-agent, Status, recent bubbles (additive).
+    # Does not change coding PROCEED/APPROVE gates or FinOps APPLY PLAN semantics.
+    # Opt-in: keep false so main deploy does not change existing agent UX until App Setting is set.
+    enable_agent_run_orchestration: bool = False
+    agent_recent_bubbles: int = 20  # keep last N user/assistant bubbles for context
+
     # Document Knowledge Fabric (SharePoint/OneDrive/OneNote → ingest → RAG/Insights)
     # Additive — defaults OFF; never affects WhatsApp/Dev coding path when false.
     enable_doc_knowledge: bool = False

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import meeting_intelligence_offline
 from agent.core.channel_identity import is_teams_session
 from agent.core.logging import get_logger
 from agent.core.session import get_session, save_session
@@ -13,10 +14,7 @@ logger = get_logger(__name__)
 
 AGENT_NAME = "meeting_email_agent"
 
-_DISABLED = (
-    "*Meeting Email Agent* is disabled (ENABLE_MEETING_INTELLIGENCE=false).\n"
-    "Gmail / Outlook send paths for other agents are unchanged."
-)
+_DISABLED = meeting_intelligence_offline(agent_label="Meeting Email Agent")
 
 
 async def run_meeting_email(state: AgentState) -> AgentState:

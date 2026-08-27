@@ -59,7 +59,8 @@ async def test_docs_agent_disabled_message(monkeypatch):
         {"user_message": "write release notes for PR 1", "whatsapp_phone": "teams:u"}
     )
     assert out["status"] == "skipped"
-    assert "disabled" in (out.get("notification_text") or "").lower()
+    text = (out.get("notification_text") or "").lower()
+    assert "turned off" in text or "disabled" in text
 
 
 @pytest.mark.asyncio
@@ -70,7 +71,8 @@ async def test_qa_agent_disabled_message(monkeypatch):
     monkeypatch.setattr(settings, "enable_qa_agent", False)
     out = await run_qa_smoke({"user_message": "run QA for release", "whatsapp_phone": "teams:u"})
     assert out["status"] == "skipped"
-    assert "disabled" in (out.get("notification_text") or "").lower()
+    text = (out.get("notification_text") or "").lower()
+    assert "turned off" in text or "disabled" in text
 
 
 @pytest.mark.asyncio

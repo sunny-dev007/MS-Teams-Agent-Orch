@@ -6,6 +6,7 @@ import re
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import meeting_intelligence_offline
 from agent.core.logging import get_logger
 from agent.core.session import get_session, save_session
 from agent.services import (
@@ -21,10 +22,7 @@ logger = get_logger(__name__)
 
 AGENT_NAME = "meeting_plan_agent"
 
-_DISABLED = (
-    "*Meeting Plan Agent* is disabled (ENABLE_MEETING_INTELLIGENCE=false).\n"
-    "Calendar scheduling is unchanged."
-)
+_DISABLED = meeting_intelligence_offline(agent_label="Meeting Plan Agent")
 
 _FOCUS_RE = re.compile(
     r"(?:focus(?:\s+on)?|about|for)\s+(.+)$",

@@ -46,29 +46,70 @@ async def handle_channel_message(parsed: dict, source: str = "whatsapp") -> None
         from agent.core.session import get_session
         from agent.services.channel_notify import send_channel_message
         from agent.workflow.gates import should_block_new_task
-        from agent.workflow.resume_context import format_session_status, is_resume_status_message
+        from agent.workflow.resume_context import (
+            format_session_status,
+            is_resume_status_message,
+        )
 
         session = await get_session(phone)
         if should_block_new_task(session):
             await send_channel_message(phone, format_session_status(session))
             return
         if is_resume_status_message(message):
-            await send_channel_message(
-                phone,
-                format_session_status(session)
-                if session.get("awaiting")
-                else "*No active task.* Reply *check my repos* to start.",
-            )
+            await send_channel_message(phone, format_session_status(session))
             return
     except Exception:
         logger.exception("Session guard failed — continuing with graph")
 
     task_id = str(uuid.uuid4())[:8]
+    agent_key = ""
+
+    # Additive orchestration (flagged). Same-agent busy → wait + soft queue.
+    # Other agents remain allowed. Coding gates / FinOps APPLY PLAN unchanged.
+    try:
+        from agent.core.session import get_session
+        from agent.services import agent_runtime as runtime
+        from agent.services.channel_notify import send_channel_message
+
+        if runtime.orchestration_enabled():
+            session = await get_session(phone)
+            agent_key = runtime.resolve_agent_key(session, message)
+            busy = (
+                runtime.find_busy_same_agent(session, agent_key=agent_key)
+                if agent_key
+                else None
+            )
+            if busy:
+                await runtime.enqueue_run(
+                    phone,
+                    agent_key=agent_key,
+                    user_message=message,
+                    task_id=task_id,
+                )
+                await send_channel_message(
+                    phone,
+                    runtime.format_busy_wait(busy, other_ok=True, queued=True),
+                )
+                return
+            await runtime.append_bubble(
+                phone, role="user", text=message, agent=agent_key
+            )
+            if agent_key:
+                await runtime.register_run(
+                    phone,
+                    agent_key=agent_key,
+                    task_id=task_id,
+                    user_message=message,
+                )
+    except Exception:
+        logger.exception("Orchestration guard failed — continuing with graph")
+
     logger.info(
-        "Processing task %s from %s source=%s (msg=%s)",
+        "Processing task %s from %s source=%s agent=%s (msg=%s)",
         task_id,
         phone,
         channel_source,
+        agent_key or "-",
         message[:80],
     )
 
@@ -105,6 +146,16 @@ async def handle_channel_message(parsed: dict, source: str = "whatsapp") -> None
             await send_channel_message(phone, msg)
         except Exception:
             logger.exception("Failed error reply for task %s", task_id)
+    finally:
+        if agent_key:
+            try:
+                from agent.services import agent_runtime as runtime
+
+                await runtime.finish_run(
+                    phone, agent_key=agent_key, task_id=task_id
+                )
+            except Exception:
+                logger.exception("finish_run failed task=%s", task_id)
 
 
 async def handle_gmail_notification(history_id: str) -> None:
