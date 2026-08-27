@@ -325,7 +325,7 @@ async def copilot_channel_health() -> dict[str, Any]:
     """Liveness + light auth/config probes for Copilot / ops checks."""
     azdo_configured = bool(settings.azdo_org_url and settings.azdo_pat.get_secret_value())
     github_configured = bool(settings.github_token.get_secret_value())
-    from agent.services import azure_boards, ms_graph, qdrant_store
+    from agent.services import azure_boards, azure_finops, ms_graph, qdrant_store
 
     graph_roles: list[str] = []
     graph_has_mail_read = False
@@ -353,6 +353,14 @@ async def copilot_channel_health() -> dict[str, Any]:
             "meeting_intelligence_enabled": bool(settings.enable_meeting_intelligence),
             "outlook_agent_enabled": bool(settings.enable_outlook_agent),
             "boards_agent_enabled": bool(settings.enable_boards_agent),
+            "azure_finops_agent_enabled": bool(settings.enable_azure_finops_agent),
+            "azure_finops_arm_configured": azure_finops.arm_configured(),
+            "azure_finops_mutations_enabled": bool(
+                getattr(settings, "enable_azure_finops_mutations", False)
+            ),
+            "azure_finops_allow_delete": bool(
+                getattr(settings, "enable_azure_finops_allow_delete", False)
+            ),
             "graph_configured": ms_graph.graph_configured(),
             "graph_has_mail_read_role": graph_has_mail_read,
             "graph_token_roles": graph_roles,

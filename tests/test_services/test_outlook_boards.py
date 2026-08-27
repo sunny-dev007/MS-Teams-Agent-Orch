@@ -147,6 +147,9 @@ async def test_outlook_disabled_message(monkeypatch):
         {"user_message": "check my outlook", "whatsapp_phone": "teams:oid-1"}
     )
     assert out["status"] == "skipped"
+    text = (out.get("notification_text") or out.get("message") or "").lower()
+    assert "turned off" in text or "disabled" in text
+    assert "enable_outlook_agent=true" in text
 
 
 @pytest.mark.asyncio

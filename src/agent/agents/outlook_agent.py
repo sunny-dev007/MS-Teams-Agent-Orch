@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import outlook_offline
 from agent.core.channel_identity import is_teams_session
 from agent.core.logging import get_logger
 from agent.services import outlook_mail
@@ -16,11 +17,7 @@ logger = get_logger(__name__)
 
 AGENT_NAME = "outlook_agent"
 
-_DISABLED = (
-    "*Outlook Agent* is installed but **disabled** (ENABLE_OUTLOOK_AGENT=false).\n\n"
-    "When enabled on Teams: *check my outlook* or *check my emails*.\n"
-    "WhatsApp continues to use Gmail (*check my emails*)."
-)
+_DISABLED = outlook_offline()
 
 
 def _teams_user_id(state: AgentState) -> str:

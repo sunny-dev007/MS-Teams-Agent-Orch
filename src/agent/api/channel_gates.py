@@ -105,7 +105,7 @@ async def route_inbound_message(
     # Fabric Docs/QA/Knowledge intents bypass coding gates — must not become a code PR.
     import re
 
-    if re.search(
+    _FABRIC_INTENT_RE = re.compile(
         r"(?:release\s*notes?|release\s*note\s+for|write\s+release\s*notes?|"
         r"publish\s+release\s*notes?|generate\s+release\s*notes?|"
         r"run\s+qa|start\s+qa|qa\s+agent|playwright|"
@@ -131,19 +131,44 @@ async def route_inbound_message(
         r"work\s+items?\s+assigned|fetch\s+(?:my\s+)?(?:action\s+)?items?|"
         r"list\s+(?:my\s+)?(?:recent\s+)?meetings?|show\s+meeting\s+transcripts?|"
         r"select\s+meetings?\s+[\d,\s]+|make\s+(?:an?\s+)?plan|create\s+(?:an?\s+)?(?:implementation\s+)?plan|"
-        r"email\s+(?:the\s+)?plan|send\s+(?:the\s+)?plan\s+to|create\s+(?:devops\s+)?board\s+from\s+(?:the\s+)?plan)",
-        message,
+        r"email\s+(?:the\s+)?plan|send\s+(?:the\s+)?plan\s+to|create\s+(?:devops\s+)?board\s+from\s+(?:the\s+)?plan|azure\s+subscriptions?|azure\s+costs?|cloud\s+portal|azure\s+portal|finops|azure\s+inventory|azure\s+resources?|(?:azure\s+)?devops\s+overview|azdo\s+overview|"
+        r"\bdeep\s+(?:cost\s+)?scan\b|(?:deep\s+)?(?:scan|audit)\s+(?:my\s+)?azure|high\s+cost\s+alert|sudden\s+(?:cost|spend)|expensive\s+resources?|scan\s+(?:all\s+)?(?:my\s+)?resources?|"
+        r"\b(?:downgrade|upgrade|resize|change\s+sku|set\s+sku)\b|"
+        r"apply\s+plan\s+[a-z0-9\-]+|reject\s+plan|"
+        r"\b(?:costs?|recommendations?|resource\s+groups?|\brgs?\b|inventory|menu|back)\b)",
         re.I,
-    ):
-        from agent.core.session import save_session
+    )
+    _FINOPS_AWAITING = {
+        "azure_finops_sub_pick",
+        "azure_finops_action_pick",
+        "azure_finops_rg_pick",
+        "azure_finops_mutate_plan",
+    }
 
+    if _FABRIC_INTENT_RE.search(message):
+        from agent.core.session import get_session, save_session
+
+        # Preserve FinOps multi-step awaiting — word cmds ("costs", "recommendations")
+        # match fabric phrases; clearing awaiting forced a reset to the sub picker.
+        preserve_finops = False
         try:
-            from agent.services.conversation_context import pause_current_context
-
-            await pause_current_context(session_id, reason="fabric intent")
-            await save_session(session_id, awaiting=None, clear_awaiting=True, merge_data=True)
+            peek = await get_session(session_id)
+            preserve_finops = (peek.get("awaiting") or "") in _FINOPS_AWAITING
         except Exception:
-            logger.exception("Failed clearing gate for fabric intent session=%s", session_id)
+            logger.exception("Failed peeking session for fabric intent session=%s", session_id)
+
+        if not preserve_finops:
+            try:
+                from agent.services.conversation_context import pause_current_context
+
+                await pause_current_context(session_id, reason="fabric intent")
+                await save_session(
+                    session_id, awaiting=None, clear_awaiting=True, merge_data=True
+                )
+            except Exception:
+                logger.exception(
+                    "Failed clearing gate for fabric intent session=%s", session_id
+                )
         payload = graph_payload or {
             "phone": session_id,
             "message": message,

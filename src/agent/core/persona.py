@@ -60,6 +60,12 @@ def _agent_rows() -> list[tuple[str, bool, str, str]]:
             "my work items",
         ),
         (
+            "Azure FinOps Agent",
+            bool(settings.enable_azure_finops_agent),
+            "Subscriptions → cost → deep scan → optional SKU plan (APPLY PLAN HITL)",
+            "azure subscriptions",
+        ),
+        (
             "Calendar Agent",
             True,
             "Schedule Google Calendar meetings (not transcript plans)",

@@ -10,6 +10,7 @@ import re
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import boards_offline
 from agent.core.channel_identity import is_teams_session
 from agent.core.logging import get_logger
 from agent.core.session import save_session
@@ -23,11 +24,7 @@ AGENT_NAME = "boards_agent"
 AWAITING_PROJECT = "boards_project_pick"
 AWAITING_TICKET = "boards_ticket_pick"
 
-_DISABLED = (
-    "*Boards Agent* is installed but **disabled** (ENABLE_BOARDS_AGENT=false).\n\n"
-    "When enabled: *my work items* / *my action items* / *my tickets*.\n"
-    "Dev coding path (*check my repos*) is unchanged."
-)
+_DISABLED = boards_offline()
 
 _TICKET_RE = re.compile(
     r"(?:^|\b)(?:#|ticket\s+|work\s*item\s+|wi\s+|start\s+|work\s+on\s+|implement\s+)?"

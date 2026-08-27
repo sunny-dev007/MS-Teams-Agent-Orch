@@ -9,6 +9,7 @@ import re
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import doc_knowledge_offline
 from agent.core.logging import get_logger
 from agent.core.session import get_session, save_session
 from agent.services import doc_knowledge, graph_docs, ms_graph
@@ -28,11 +29,7 @@ async def ingest_documents(state: AgentState) -> AgentState:
             **state,
             "status": "skipped",
             "handled_by": AGENT_NAME,
-            "notification_text": (
-                "*Doc Ingest Agent* is installed but **disabled** "
-                "(ENABLE_DOC_KNOWLEDGE=false).\n"
-                "Dev/WhatsApp coding paths are unchanged."
-            ),
+            "notification_text": doc_knowledge_offline(agent_label="Doc Ingest Agent"),
         }
 
     if not ms_graph.graph_configured():

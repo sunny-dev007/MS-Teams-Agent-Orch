@@ -252,9 +252,37 @@ def format_gate_hint(
 def format_session_status(session: dict[str, Any]) -> str:
     awaiting = session.get("awaiting")
     data = session.get("data") or {}
-    if not awaiting:
-        return format_no_pending_task()
-    return format_gate_hint(awaiting, data, session.get("provider") or "")
+    if str(awaiting or "").startswith("azure_finops"):
+        base = _format_finops_status(awaiting, data)
+    elif not awaiting:
+        base = format_no_pending_task()
+    else:
+        base = format_gate_hint(awaiting, data, session.get("provider") or "")
+
+    # Additive orchestration block (running / queued / bubble buffer).
+    try:
+        from agent.services import agent_runtime as runtime
+
+        orch = runtime.format_orchestration_status(session)
+        if orch:
+            return f"{base}\n\n---\n\n{orch}"
+    except Exception:
+        pass
+    return base
+
+
+def _format_finops_status(awaiting: str | None, data: dict[str, Any]) -> str:
+    sub = (data.get("azure_finops_sub") or {}).get("name") or "—"
+    lines = [
+        "*Azure FinOps Agent* — session status",
+        "",
+        f"• Step: `{awaiting or '—'}`",
+        f"• Subscription: **{sub}**",
+        "",
+        "Continue with **1–6**, *costs*, *deep scan*, *recommendations*, or *menu*.",
+        "_Say *stop* to clear this FinOps flow (coding gates unchanged)._",
+    ]
+    return "\n".join(lines)
 
 
 def format_session_cleared(*, had_task_id: str = "", had_gate: str = "") -> str:

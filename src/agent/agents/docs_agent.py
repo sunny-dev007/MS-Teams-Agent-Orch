@@ -20,6 +20,7 @@ import httpx
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import docs_agent_offline
 from agent.core.logging import get_logger
 from agent.models.release_event import (
     STATUS_DOCS_PUBLISHED,
@@ -212,12 +213,7 @@ async def publish_release_notes(state: AgentState) -> AgentState:
             **state,
             "status": "skipped",
             "handled_by": AGENT_NAME,
-            "notification_text": (
-                "*Documentation Agent* is installed but **disabled** "
-                "(ENABLE_DOCS_AGENT=false).\n\n"
-                "Ask your admin to enable it after Graph credentials are set. "
-                "Existing Dev / WhatsApp flows are unchanged."
-            ),
+            "notification_text": docs_agent_offline(),
         }
 
     if not ms_graph.docs_agent_ready():

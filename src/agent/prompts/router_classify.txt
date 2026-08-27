@@ -16,6 +16,7 @@ Classify the user's WhatsApp message into exactly one intent:
 - "summarize_docs": executive insights/summary over ingested documents
 - "check_outlook": Teams Outlook inbox for the signed-in user (not Gmail)
 - "list_boards": Azure Boards — pick project then list assigned action items
+- "azure_finops": Azure subscriptions, resource groups, resource inventory, cost, FinOps recommendations, deep cost scan, SKU resize plan / APPLY PLAN / REJECT PLAN (HITL), DevOps overview
 - "boards_start_dev": start Dev Agent from a Boards ticket id (e.g. #42)
 - "general": general conversation or help
 

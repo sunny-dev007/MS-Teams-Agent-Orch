@@ -18,6 +18,7 @@ from openpyxl import Workbook, load_workbook
 
 from agent.agents.state import AgentState
 from agent.config import settings
+from agent.core.agent_availability import data_analyst_offline
 from agent.core.logging import get_logger
 from agent.core.session import get_session
 from agent.services import graph_docs, ms_graph
@@ -35,13 +36,7 @@ PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "excel_analyst_system.t
 _NUMS_RE = re.compile(r"\b(\d+)\b")
 _MAX_BYTES = 12 * 1024 * 1024
 
-_DISABLED = (
-    "*Data Analyst Agent* is installed but **disabled** "
-    "(ENABLE_DATA_ANALYST_AGENT=false).\n\n"
-    "When enabled: *list my documents* → *convert excel 6* to publish an "
-    "executive analytics workbook to SharePoint `/Analytics`.\n"
-    "Dev Agent, WhatsApp coding, Doc RAG, and Outlook/Boards are unchanged."
-)
+_DISABLED = data_analyst_offline()
 
 
 def _is_excel_row(row: dict) -> bool:

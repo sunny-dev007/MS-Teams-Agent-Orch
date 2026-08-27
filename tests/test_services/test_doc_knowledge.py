@@ -48,7 +48,8 @@ async def test_library_disabled_message(monkeypatch):
     monkeypatch.setattr(settings, "enable_doc_knowledge", False)
     out = await list_documents({"user_message": "list my documents", "whatsapp_phone": "teams:u"})
     assert out["status"] == "skipped"
-    assert "disabled" in out["notification_text"].lower()
+    text = out["notification_text"].lower()
+    assert "turned off" in text or "disabled" in text
 
 
 def test_source_tags_sp_od_on():
