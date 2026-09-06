@@ -20,10 +20,20 @@ from agent.api.tasks import router as tasks_router
 from agent.api.whatsapp import router as whatsapp_router
 from agent.api.copilot import router as copilot_router
 from agent.api.teams_bot import router as teams_bot_router
-from agent.api.extension import router as extension_router
-from agent.api.eval_api import router as eval_router
 from agent.core.logging import setup_logging
 from agent.models.db import init_db
+
+# Optional surfaces (chrome extension / eval harness). Missing modules must not
+# block WhatsApp, Copilot Studio, or Orbit Teams boot / CI import checks.
+try:
+    from agent.api.extension import router as extension_router
+except Exception:  # pragma: no cover - optional package surface
+    extension_router = None
+
+try:
+    from agent.api.eval_api import router as eval_router
+except Exception:  # pragma: no cover - optional package surface
+    eval_router = None
 
 
 @asynccontextmanager
@@ -123,5 +133,7 @@ app.include_router(gmail_router)
 app.include_router(tasks_router)
 app.include_router(copilot_router)
 app.include_router(teams_bot_router)
-app.include_router(extension_router)
-app.include_router(eval_router)
+if extension_router is not None:
+    app.include_router(extension_router)
+if eval_router is not None:
+    app.include_router(eval_router)
