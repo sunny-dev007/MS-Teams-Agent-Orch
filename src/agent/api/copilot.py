@@ -83,16 +83,30 @@ async def _safe_job(func, args, kwargs) -> None:
         logger.exception("Copilot scheduled job failed: %s", getattr(func, "__name__", func))
 
 
+def _is_instant_working_ack(text: str) -> bool:
+    """True for the immediate 'Got it, Sunny — working on it…' bubble."""
+    t = (text or "").strip().lower()
+    return t.startswith("got it, sunny — working on it") or t.startswith(
+        "got it, sunny - working on it"
+    )
+
+
 async def _run_scheduled_jobs(jobs: list[tuple], session_id: str) -> list[str]:
-    """Fire background work; wait briefly and collect outbox so Teams gets real content."""
+    """Fire background work; wait briefly and collect outbox so Teams gets real content.
+
+    Do not stop after only the instant working-ack — gate pickers / agent replies
+    usually arrive 1–several seconds later. Orbit also pushes late completions
+    proactively via Bot Framework when a conversation reference exists.
+    """
     from agent.core.channel_outbox import drain_outbox, peek_outbox_count
 
     for func, args, kwargs in jobs:
         asyncio.create_task(_safe_job(func, args, kwargs))
 
     pending: list[str] = []
-    # Repo picker / gate hints usually land within a few seconds.
-    for _ in range(16):
+    # Wait long enough for gate pickers (provider/project/repo). Orbit also pushes
+    # late completions proactively; this drain is the safety net if proactive fails.
+    for _ in range(30):
         await asyncio.sleep(0.4)
         try:
             batch = await drain_outbox(session_id)
@@ -101,16 +115,19 @@ async def _run_scheduled_jobs(jobs: list[tuple], session_id: str) -> list[str]:
             batch = []
         if batch:
             pending.extend(batch)
-            # Keep waiting a bit if more is still arriving
             try:
                 remaining = await peek_outbox_count(session_id)
             except Exception:
                 logger.exception("peek_outbox_count failed session=%s", session_id)
                 remaining = 0
-            if remaining == 0 and pending:
+            meaningful = [p for p in pending if not _is_instant_working_ack(p)]
+            # Only stop early once we have real content and the outbox is quiet.
+            if remaining == 0 and meaningful:
                 break
         elif pending:
-            break
+            meaningful = [p for p in pending if not _is_instant_working_ack(p)]
+            if meaningful:
+                break
     return pending
 
 
@@ -242,19 +259,40 @@ async def _handle_copilot_message(
     data = session.get("data") or {}
     tid = data.get("pending_task_id")
 
+    has_orbit_ref = False
+    try:
+        from agent.services.teams_proactive import load_conversation_reference
+
+        has_orbit_ref = bool(await load_conversation_reference(session_id))
+    except Exception:
+        has_orbit_ref = False
+
     if pending:
         reply = "\n\n---\n\n".join(pending)
     elif gate:
-        reply = (
-            "Got it — I'm working on that in the background.\n\n"
-            + _safe_session_status({**session, "awaiting": gate})
-            + "\n\n_Say **status** or call action=poll to pull later updates._"
-        )
+        if has_orbit_ref:
+            reply = (
+                "Got it — I'm working on that in the background.\n\n"
+                + _safe_session_status({**session, "awaiting": gate})
+                + "\n\n_Orbit will message you here automatically when the next step is ready._"
+            )
+        else:
+            reply = (
+                "Got it — I'm working on that in the background.\n\n"
+                + _safe_session_status({**session, "awaiting": gate})
+                + "\n\n_Say **status** or call action=poll to pull later updates._"
+            )
     else:
-        reply = (
-            "Got it — I'm working on that.\n"
-            "Say **status** in a moment if you need the latest update."
-        )
+        if has_orbit_ref:
+            reply = (
+                "Got it — I'm working on that.\n"
+                "I'll push the update here automatically when it's ready."
+            )
+        else:
+            reply = (
+                "Got it — I'm working on that.\n"
+                "Say **status** in a moment if you need the latest update."
+            )
 
     adaptive_card = _teams_adaptive_card_for_message(message, session)
 
@@ -360,6 +398,15 @@ async def copilot_channel_health() -> dict[str, Any]:
             ),
             "azure_finops_allow_delete": bool(
                 getattr(settings, "enable_azure_finops_allow_delete", False)
+            ),
+            "eval_harness_enabled": bool(
+                getattr(settings, "enable_eval_harness", False)
+            ),
+            "eval_llm_judge_enabled": bool(
+                getattr(settings, "enable_eval_llm_judge", False)
+            ),
+            "eval_foundry_enabled": bool(
+                getattr(settings, "enable_eval_foundry", False)
             ),
             "graph_configured": ms_graph.graph_configured(),
             "graph_has_mail_read_role": graph_has_mail_read,

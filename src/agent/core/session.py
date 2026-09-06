@@ -184,6 +184,29 @@ async def clear_session(phone: str) -> None:
         logger.exception("Durable gate clear failed for %s", phone)
 
 
+async def list_active_teams_sessions(limit: int = 40) -> list[str]:
+    """Teams sessions with an open awaiting gate (for Orbit progress heartbeats)."""
+
+    async def _list() -> list[str]:
+        async with async_session() as db:
+            result = await db.execute(
+                select(ConversationSession.phone)
+                .where(
+                    ConversationSession.phone.startswith("teams:"),
+                    ConversationSession.awaiting.is_not(None),
+                )
+                .order_by(ConversationSession.updated_at.desc())
+                .limit(limit)
+            )
+            return [str(r[0]) for r in result.all() if r and r[0]]
+
+    try:
+        return await _with_schema_retry("list_active_teams_sessions", _list)
+    except Exception:
+        logger.exception("list_active_teams_sessions failed")
+        return []
+
+
 async def list_recent_task_summaries(limit: int = 5) -> list[dict]:
     from agent.models.task import Task
 

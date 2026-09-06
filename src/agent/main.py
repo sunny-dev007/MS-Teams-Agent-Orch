@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -18,6 +19,9 @@ from agent.api.portal import router as portal_router
 from agent.api.tasks import router as tasks_router
 from agent.api.whatsapp import router as whatsapp_router
 from agent.api.copilot import router as copilot_router
+from agent.api.teams_bot import router as teams_bot_router
+from agent.api.extension import router as extension_router
+from agent.api.eval_api import router as eval_router
 from agent.core.logging import setup_logging
 from agent.models.db import init_db
 
@@ -70,6 +74,21 @@ async def lifespan(app: FastAPI):
         except Exception:
             log.exception("Failed resuming pending AzDO CI watches")
 
+        try:
+            from agent.config import settings as _settings
+
+            if getattr(_settings, "enable_teams_bot_channel", False) and getattr(
+                _settings, "enable_orbit_outbox_flusher", True
+            ):
+                from agent.services.orbit_delivery import run_orbit_delivery_loop
+
+                asyncio.create_task(
+                    run_orbit_delivery_loop(), name="orbit-delivery-loop"
+                )
+                log.info("Orbit delivery loop scheduled (outbox flush + progress)")
+        except Exception:
+            log.exception("Failed starting Orbit delivery loop")
+
     # Bind /health quickly — Oryx site-start probe must not wait on Meta/AzDO/network.
     asyncio.create_task(_deferred_startup())
 
@@ -88,6 +107,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allows all origins (including chrome-extension://)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 app.add_middleware(NgrokBypassMiddleware)
 
 app.include_router(portal_router)
@@ -96,3 +122,6 @@ app.include_router(whatsapp_router)
 app.include_router(gmail_router)
 app.include_router(tasks_router)
 app.include_router(copilot_router)
+app.include_router(teams_bot_router)
+app.include_router(extension_router)
+app.include_router(eval_router)

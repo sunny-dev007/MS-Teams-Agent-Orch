@@ -108,6 +108,21 @@ class Settings(BaseSettings):
     enable_agent_run_orchestration: bool = False
     agent_recent_bubbles: int = 20  # keep last N user/assistant bubbles for context
 
+    # AI Evaluation Harness (guardrails / red-team / metrics / leadership dashboard).
+    # Additive — default OFF; never changes WhatsApp/Teams agent routing when false.
+    enable_eval_harness: bool = False
+    # Optional Azure AI Foundry LLM-as-judge (legacy lightweight judge via invoke_llm).
+    enable_eval_llm_judge: bool = False
+    # Prefer azure-ai-evaluation SDK against Foundry / Azure OpenAI (production demo path).
+    enable_eval_foundry: bool = False
+    # Foundry project endpoint, e.g.
+    # https://<account>.services.ai.azure.com/api/projects/<project>
+    azure_ai_project_endpoint: str = ""
+    # Cap Foundry LLM turns in full suite (rest still get deterministic guards).
+    eval_foundry_suite_max_turns: int = 3
+    eval_latency_slo_ms: int = 8000
+    eval_scenarios_dir: str = "evals/scenarios"
+
     # Document Knowledge Fabric (SharePoint/OneDrive/OneNote → ingest → RAG/Insights)
     # Additive — defaults OFF; never affects WhatsApp/Dev coding path when false.
     enable_doc_knowledge: bool = False
@@ -175,6 +190,19 @@ class Settings(BaseSettings):
     # NoDecode: pydantic-settings otherwise JSON-parses list env vars and crashes on a plain UUID/CSV
     # (that crash took down the whole App Service, including WhatsApp).
     allowed_teams_user_ids: Annotated[list[str], NoDecode] = []
+
+    # Azure Bot → Teams (parallel to Copilot Studio; does not replace AI Dev Agent)
+    enable_teams_bot_channel: bool = False
+    microsoft_app_id: str = ""
+    microsoft_app_password: SecretStr = SecretStr("")
+    microsoft_app_tenant_id: str = ""
+    teams_bot_display_name: str = "Orbit"
+    # Orbit delivery: flush undelivered Teams outbox via proactive push so users
+    # do not need to type "status". WhatsApp / Copilot Studio poll paths unchanged.
+    enable_orbit_outbox_flusher: bool = True
+    orbit_outbox_flush_seconds: int = 20
+    enable_orbit_progress_ticker: bool = True
+    orbit_progress_ticker_seconds: int = 90
 
     @property
     def effective_api_key(self) -> str:

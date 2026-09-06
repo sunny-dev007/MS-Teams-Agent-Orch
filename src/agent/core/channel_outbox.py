@@ -91,3 +91,81 @@ async def peek_outbox_count(session_id: str) -> int:
             )
         ).all()
         return len(rows)
+
+
+async def list_pending_outbox_sessions(*, prefix: str = "teams:", limit: int = 50) -> list[str]:
+    """Distinct session ids with undelivered outbox (oldest activity first)."""
+    await ensure_db_schema()
+    async with async_session() as db:
+        rows = (
+            await db.execute(
+                select(ChannelOutbox.session_id)
+                .where(
+                    ChannelOutbox.delivered.is_(False),
+                    ChannelOutbox.session_id.startswith(prefix),
+                )
+                .group_by(ChannelOutbox.session_id)
+                .order_by(func.min(ChannelOutbox.id).asc())
+                .limit(limit)
+            )
+        ).all()
+        return [str(r[0]) for r in rows if r and r[0]]
+
+
+async def peek_outbox_texts(
+    session_id: str,
+    *,
+    limit: int = 20,
+    min_age_seconds: int = 0,
+) -> list[tuple[int, str]]:
+    """Undelivered (id, text) pairs oldest-first — does not mark delivered.
+
+    ``min_age_seconds`` skips fresh rows so an active Orbit HTTP turn can drain
+    them first (avoids duplicate proactive + in-turn delivery).
+    """
+    if not session_id:
+        return []
+    await ensure_db_schema()
+    async with async_session() as db:
+        rows = (
+            await db.execute(
+                select(ChannelOutbox)
+                .where(
+                    ChannelOutbox.session_id == session_id,
+                    ChannelOutbox.delivered.is_(False),
+                )
+                .order_by(ChannelOutbox.id.asc())
+                .limit(limit * 3 if min_age_seconds > 0 else limit)
+            )
+        ).scalars().all()
+        out: list[tuple[int, str]] = []
+        now = datetime.datetime.now(datetime.timezone.utc)
+        for row in rows:
+            if min_age_seconds > 0 and row.created_at is not None:
+                created = row.created_at
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=datetime.timezone.utc)
+                age = (now - created).total_seconds()
+                if age < min_age_seconds:
+                    continue
+            out.append((int(row.id), str(row.text)))
+            if len(out) >= limit:
+                break
+        return out
+
+
+async def mark_outbox_ids_delivered(ids: list[int]) -> int:
+    if not ids:
+        return 0
+    await ensure_db_schema()
+    async with async_session() as db:
+        result = await db.execute(
+            update(ChannelOutbox)
+            .where(
+                ChannelOutbox.id.in_(ids),
+                ChannelOutbox.delivered.is_(False),
+            )
+            .values(delivered=True)
+        )
+        await db.commit()
+        return int(result.rowcount or 0)
