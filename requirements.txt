@@ -1,5 +1,7 @@
 fastapi>=0.115
-starlette>=0.40.0,<0.50
+# Do not pin starlette separately — FastAPI selects a compatible version.
+# An explicit pin previously broke App Service boot:
+# ImportError: cannot import name 'status' from 'starlette' (unknown location)
 uvicorn[standard]>=0.30
 langgraph>=0.2
 langgraph-checkpoint-sqlite>=2.0
