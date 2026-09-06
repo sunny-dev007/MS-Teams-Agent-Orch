@@ -3,49 +3,102 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Portal</title>
+    <title>WhatsApp AI Agent Portal</title>
     <style>
-        .status-board {
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            line-height: 1.6;
+        }
+        .container {
+            width: 80%;
+            margin: auto;
+            overflow: hidden;
+        }
+        header {
+            background: #333;
+            color: #fff;
+            padding-top: 30px;
+            min-height: 70px;
+            border-bottom: #0779e4 3px solid;
+        }
+        header a {
+            color: #fff;
+            text-decoration: none;
+            text-transform: uppercase;
+            font-size: 16px;
+        }
+        .content {
+            padding: 20px;
+        }
+        .command-catalog {
+            margin-top: 40px;
+        }
+        .command-catalog h2 {
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+        }
+        .command-group {
             display: flex;
-            flex-direction: column;
-            align-items: center;
+            justify-content: space-between;
             margin-top: 20px;
         }
-        .badge {
-            display: inline-block;
-            padding: 10px 20px;
-            margin: 5px;
+        .command-column {
+            flex: 1;
+            margin: 0 10px;
+        }
+        .command-column h3 {
+            margin-bottom: 10px;
+        }
+        .command {
+            background: #f4f4f4;
+            padding: 10px;
+            margin-bottom: 10px;
             border-radius: 5px;
-            color: white;
-            font-weight: bold;
+            font-family: monospace;
         }
-        .operational {
-            background-color: green;
-        }
-        .demo {
-            background-color: blue;
-        }
-        .last-updated {
-            margin-top: 10px;
+        .note {
             font-size: 0.9em;
             color: #555;
         }
     </style>
 </head>
 <body>
-    <div class="status-board">
-        <div class="badge operational">WhatsApp: Operational</div>
-        <div class="badge operational">Teams: Operational</div>
-        <div class="badge demo">Knowledge: Demo</div>
-        <div class="badge operational">Boards: Operational</div>
-        <div class="badge demo">Dev Agent: Demo</div>
-        <div class="badge operational">Docs: Operational</div>
-        <div class="last-updated">Last updated: June 2024</div>
+    <header>
+        <div class="container">
+            <h1>WhatsApp AI Agent Portal</h1>
+        </div>
+    </header>
+    <div class="container content">
+        <section class="capabilities">
+            <h2>Capabilities</h2>
+            <p>Explore the various capabilities of the WhatsApp AI Agent...</p>
+        </section>
+        <section class="command-catalog">
+            <h2>Command Catalog</h2>
+            <p class="note">These are example commands for WhatsApp/Teams chat.</p>
+            <div class="command-group">
+                <div class="command-column">
+                    <h3>Session</h3>
+                    <div class="command">list my documents</div>
+                    <div class="command">help</div>
+                    <div class="command">my work items</div>
+                </div>
+                <div class="command-column">
+                    <h3>Knowledge</h3>
+                    <div class="command">ask docs what is our release process?</div>
+                    <div class="command">summarize docs risks</div>
+                    <div class="command">doc insights</div>
+                </div>
+                <div class="command-column">
+                    <h3>Productivity</h3>
+                    <div class="command">check my emails</div>
+                    <div class="command">schedule a meeting tomorrow 3pm with bob@co.com</div>
+                    <div class="command">add error handling to the auth module</div>
+                </div>
+            </div>
+        </section>
     </div>
-    <!--
-    Status section updated to include a visual status board with health badges.
-    Each badge indicates the status of a system component using color and text.
-    The section is designed to be scannable in 2 seconds and works with JavaScript disabled.
-    -->
 </body>
 </html>
