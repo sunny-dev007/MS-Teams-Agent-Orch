@@ -2,13 +2,16 @@
 # Post-deploy live checks for WhatsApp AI Agent App Service.
 # Kept OUT of azure-pipelines.yml so nested scripts cannot break YAML parsing.
 #
+# App contract (src/agent/core/security.py):
+#   ALLOWED_TEAMS_USER_IDS empty  => allow ALL Teams/Copilot users (open mode)
+#   ALLOWED_TEAMS_USER_IDS set    => only listed AAD oid / UPN may call
+#
+# This script MUST match that contract. An empty allowlist is valid production
+# config for a personal agent — never fail the pipeline solely because it is empty.
+#
 # Graceful on B1 cold starts: retries timeouts / 5xx; never treats curl
 # timeout as "000000" (curl -w already prints 000 — do not || echo 000).
 set -euo pipefail
-
-APP_NAME="${1:?app name required}"
-RESOURCE_GROUP="${2:?resource group required}"
-BASE_URL="https://${APP_NAME}.azurewebsites.net"
 
 # curl http_code helper: on timeout/network fail curl often prints 000 via -w
 # AND exits non-zero. Appending another 000 via "|| echo 000" yields "000000".
@@ -20,7 +23,6 @@ http_code() {
   if [ -z "${code}" ]; then
     code="000"
   fi
-  # Strip accidental CR / whitespace
   code=$(printf '%s' "${code}" | tr -d '\r\n ')
   printf '%s' "${code}"
 }
@@ -61,90 +63,147 @@ wait_for_http() {
   return 1
 }
 
-az webapp start --resource-group "${RESOURCE_GROUP}" --name "${APP_NAME}" || true
+# Parse ALLOWED_TEAMS_USER_IDS (JSON array or CSV) → first id (may be empty).
+first_allowlisted_user() {
+  local raw="${1:-}"
+  ALLOW_RAW="${raw}" python3 - <<'PY'
+import json, os
+r = (os.environ.get("ALLOW_RAW") or "").strip()
+ids = []
+if not r:
+    print("")
+    raise SystemExit(0)
+try:
+    if r.startswith("["):
+        parsed = json.loads(r)
+        if isinstance(parsed, list):
+            ids = [str(x).strip() for x in parsed if str(x).strip()]
+    if not ids:
+        ids = [
+            p.strip().strip('"').strip("'")
+            for p in r.replace(";", ",").split(",")
+            if p.strip()
+        ]
+except Exception:
+    ids = [
+        p.strip().strip('"').strip("'")
+        for p in r.replace(";", ",").split(",")
+        if p.strip()
+    ]
+print(ids[0] if ids else "")
+PY
+}
 
-echo "Waiting for /health then Copilot channel (Oryx antenv build may take 10-20 min on B1)..."
-for i in $(seq 1 80); do
-  CODE=$(http_code /tmp/health.json --max-time 20 "${BASE_URL}/health")
-  echo "attempt $i -> /health HTTP $CODE"
-  if [ "$CODE" = "200" ]; then
-    cat /tmp/health.json
-    echo
+run_verify() {
+  local APP_NAME="${1:?app name required}"
+  local RESOURCE_GROUP="${2:?resource group required}"
+  local BASE_URL="https://${APP_NAME}.azurewebsites.net"
 
-    if ! wait_for_http \
-      "copilot health" /tmp/copilot_health.json "200" 30 10 \
-      --max-time 20 "${BASE_URL}/api/channels/copilot/health"; then
-      echo "Copilot /api/channels/copilot/health did not return 200 after /health OK"
-      exit 1
-    fi
-    cat /tmp/copilot_health.json
-    echo
+  az webapp start --resource-group "${RESOURCE_GROUP}" --name "${APP_NAME}" || true
 
-    # Auth + authorization + real "check my repos" must not 500.
-    # Keys stay in App Service settings — never bake into the repo.
-    COPILOT_KEY=$(az webapp config appsettings list \
-      --resource-group "${RESOURCE_GROUP}" \
-      --name "${APP_NAME}" \
-      --query "[?name=='COPILOT_API_KEY'].value | [0]" -o tsv)
-    ALLOW_RAW=$(az webapp config appsettings list \
-      --resource-group "${RESOURCE_GROUP}" \
-      --name "${APP_NAME}" \
-      --query "[?name=='ALLOWED_TEAMS_USER_IDS'].value | [0]" -o tsv)
-    if [ -z "${COPILOT_KEY}" ]; then
-      echo "COPILOT_API_KEY missing on App Service — cannot verify auth"
-      exit 1
-    fi
-    USER_ID=$(ALLOW_RAW="${ALLOW_RAW}" python3 -c "import json,os; r=(os.environ.get('ALLOW_RAW') or '').strip(); ids=[];
-ids=json.loads(r) if r.startswith('[') else [];
-ids=[str(x).strip() for x in ids if str(x).strip()] if ids else [p.strip().strip(chr(34)).strip(chr(39)) for p in r.split(',') if p.strip()];
-print(ids[0] if ids else '')")
-    if [ -z "${USER_ID}" ]; then
-      echo "ALLOWED_TEAMS_USER_IDS empty — cannot verify authorization"
-      exit 1
-    fi
+  echo "Waiting for /health then Copilot channel (Oryx antenv build may take 10-20 min on B1)..."
+  local i CODE COPILOT_KEY ALLOW_RAW ALLOWLIST_SIZE USER_ID OPEN_MODE MSG_URL
+  for i in $(seq 1 80); do
+    CODE=$(http_code /tmp/health.json --max-time 20 "${BASE_URL}/health")
+    echo "attempt $i -> /health HTTP $CODE"
+    if [ "$CODE" = "200" ]; then
+      cat /tmp/health.json
+      echo
 
-    MSG_URL="${BASE_URL}/api/channels/copilot/message"
+      if ! wait_for_http \
+        "copilot health" /tmp/copilot_health.json "200" 30 10 \
+        --max-time 20 "${BASE_URL}/api/channels/copilot/health"; then
+        echo "Copilot /api/channels/copilot/health did not return 200 after /health OK"
+        return 1
+      fi
+      cat /tmp/copilot_health.json
+      echo
 
-    # First POST after deploy often times out on B1 while worker warms — retry.
-    if ! wait_for_http \
-      "copilot auth missing key" /tmp/copilot_unauth.json "401" 12 15 \
-      --max-time 45 -X POST "${MSG_URL}" \
-      -H "Content-Type: application/json" \
-      -d "{\"user_id\":\"${USER_ID}\",\"message\":\"ping\"}"; then
-      echo "Expected 401 without X-Copilot-Api-Key (after retries)"
-      exit 1
-    fi
+      # Auth + authorization + real "check my repos" must not 500.
+      # Keys stay in App Service settings — never bake into the repo.
+      COPILOT_KEY=$(az webapp config appsettings list \
+        --resource-group "${RESOURCE_GROUP}" \
+        --name "${APP_NAME}" \
+        --query "[?name=='COPILOT_API_KEY'].value | [0]" -o tsv)
+      ALLOW_RAW=$(az webapp config appsettings list \
+        --resource-group "${RESOURCE_GROUP}" \
+        --name "${APP_NAME}" \
+        --query "[?name=='ALLOWED_TEAMS_USER_IDS'].value | [0]" -o tsv)
 
-    if ! wait_for_http \
-      "copilot auth bad user" /tmp/copilot_forbidden.json "403" 8 10 \
-      --max-time 45 -X POST "${MSG_URL}" \
-      -H "Content-Type: application/json" \
-      -H "X-Copilot-Api-Key: ${COPILOT_KEY}" \
-      -d '{"user_id":"not-allowlisted-user","message":"ping"}'; then
-      echo "Expected 403 for non-allowlisted user (after retries)"
-      exit 1
-    fi
+      if [ -z "${COPILOT_KEY}" ] || [ "${COPILOT_KEY}" = "null" ]; then
+        echo "COPILOT_API_KEY missing on App Service — cannot verify auth"
+        return 1
+      fi
 
-    if ! wait_for_http \
-      "copilot check my repos" /tmp/copilot_repos.json "200" 8 20 \
-      --max-time 120 -X POST "${MSG_URL}" \
-      -H "Content-Type: application/json" \
-      -H "X-Copilot-Api-Key: ${COPILOT_KEY}" \
-      -d "{\"user_id\":\"${USER_ID}\",\"message\":\"check my repos\"}"; then
-      echo "check my repos must return 200 (not 500) after retries"
-      exit 1
-    fi
-    cat /tmp/copilot_repos.json
-    echo
-    python3 -c "import json; b=json.load(open('/tmp/copilot_repos.json')); r=(b.get('reply') or '').strip();
+      ALLOWLIST_SIZE=$(python3 -c "import json; b=json.load(open('/tmp/copilot_health.json')); print(int(b.get('allowlist_size') or 0))" 2>/dev/null || echo 0)
+      USER_ID=$(first_allowlisted_user "${ALLOW_RAW}")
+
+      # Empty allowlist = open mode (allow all). Intentional for a personal agent.
+      OPEN_MODE=0
+      if [ -z "${USER_ID}" ] || [ "${ALLOWLIST_SIZE}" = "0" ]; then
+        OPEN_MODE=1
+        USER_ID="pipeline-verify-user"
+        echo "ALLOWED_TEAMS_USER_IDS empty / allowlist_size=${ALLOWLIST_SIZE} — open mode (allow all)"
+        echo "Skipping locked-down 403 allowlist probe; using synthetic user_id=${USER_ID}"
+      else
+        echo "Allowlist mode — verifying with user_id=${USER_ID} (allowlist_size=${ALLOWLIST_SIZE})"
+      fi
+
+      MSG_URL="${BASE_URL}/api/channels/copilot/message"
+
+      # First POST after deploy often times out on B1 while worker warms — retry.
+      if ! wait_for_http \
+        "copilot auth missing key" /tmp/copilot_unauth.json "401" 12 15 \
+        --max-time 45 -X POST "${MSG_URL}" \
+        -H "Content-Type: application/json" \
+        -d "{\"user_id\":\"${USER_ID}\",\"message\":\"ping\"}"; then
+        echo "Expected 401 without X-Copilot-Api-Key (after retries)"
+        return 1
+      fi
+
+      if [ "${OPEN_MODE}" = "1" ]; then
+        # Open mode: skip 403 allowlist probe (empty list means allow-all).
+        # Authenticated "check my repos" below still proves the channel works.
+        echo "Open mode — not expecting 403 for unknown user_id (allow-all contract)"
+      else
+        # Locked-down mode: non-allowlisted user must be rejected before the agent runs.
+        if ! wait_for_http \
+          "copilot auth bad user" /tmp/copilot_forbidden.json "403" 8 10 \
+          --max-time 45 -X POST "${MSG_URL}" \
+          -H "Content-Type: application/json" \
+          -H "X-Copilot-Api-Key: ${COPILOT_KEY}" \
+          -d '{"user_id":"not-allowlisted-user","message":"ping"}'; then
+          echo "Expected 403 for non-allowlisted user (after retries)"
+          return 1
+        fi
+      fi
+
+      if ! wait_for_http \
+        "copilot check my repos" /tmp/copilot_repos.json "200" 8 20 \
+        --max-time 120 -X POST "${MSG_URL}" \
+        -H "Content-Type: application/json" \
+        -H "X-Copilot-Api-Key: ${COPILOT_KEY}" \
+        -d "{\"user_id\":\"${USER_ID}\",\"message\":\"check my repos\"}"; then
+        echo "check my repos must return 200 (not 500) after retries"
+        return 1
+      fi
+      cat /tmp/copilot_repos.json
+      echo
+      python3 -c "import json; b=json.load(open('/tmp/copilot_repos.json')); r=(b.get('reply') or '').strip();
 assert r, 'check my repos returned empty reply'; print('check my repos reply chars=', len(r))"
-    echo "Post-deploy verify OK"
-    exit 0
-  fi
-  if [ "$CODE" = "403" ]; then
-    az webapp start --resource-group "${RESOURCE_GROUP}" --name "${APP_NAME}" || true
-  fi
-  sleep 15
-done
-echo "Health check failed after deploy (Oryx may still be building — check Kudu logs)"
-exit 1
+      echo "Post-deploy verify OK (open_mode=${OPEN_MODE})"
+      return 0
+    fi
+    if [ "$CODE" = "403" ]; then
+      az webapp start --resource-group "${RESOURCE_GROUP}" --name "${APP_NAME}" || true
+    fi
+    sleep 15
+  done
+  echo "Health check failed after deploy (Oryx may still be building — check Kudu logs)"
+  return 1
+}
+
+# Allow unit tests to `source` helpers without executing main.
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  run_verify "$@"
+fi

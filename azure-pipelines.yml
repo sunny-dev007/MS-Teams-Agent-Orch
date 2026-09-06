@@ -285,5 +285,8 @@ stages:
                 set -euo pipefail
                 # Keep complex checks in infra/*.sh — unindented heredocs inside YAML break ADO parsing
                 # and produce "Informational run" / canceled pipelines with no stages.
+                #
+                # Empty ALLOWED_TEAMS_USER_IDS is valid (open mode = allow all).
+                # infra/verify_post_deploy.sh must NOT fail the pipeline for that.
                 chmod +x "$(Build.SourcesDirectory)/infra/verify_post_deploy.sh"
                 bash "$(Build.SourcesDirectory)/infra/verify_post_deploy.sh" "$(appName)" "$(resourceGroup)"
