@@ -876,6 +876,34 @@ async def fetch_document_bytes(entry: dict[str, Any]) -> tuple[bytes, str]:
     return raw, ct or ""
 
 
+async def _ensure_site_folder_path(site_id: str, folder: str) -> None:
+    """Create nested SharePoint folders one segment at a time (no '/' in names)."""
+    parts = [p for p in (folder or "").strip().strip("/").split("/") if p]
+    if not parts:
+        return
+    built: list[str] = []
+    for part in parts:
+        built.append(part)
+        parent = "/".join(built[:-1])
+        item_path = (
+            f"/sites/{site_id}/drive/root/children"
+            if not parent
+            else f"/sites/{site_id}/drive/root:/{quote(parent, safe='/')}:/children"
+        )
+        try:
+            await ms_graph.graph_request(
+                "POST",
+                item_path,
+                json_body={
+                    "name": part,
+                    "folder": {},
+                    "@microsoft.graph.conflictBehavior": "fail",
+                },
+            )
+        except Exception:
+            logger.info("%s folder may already exist", "/".join(built))
+
+
 async def upload_site_drive_item(
     *,
     folder: str,
@@ -891,18 +919,9 @@ async def upload_site_drive_item(
     site_id, _ = await resolve_site_id()
     sid, site_name, site_web_url = await _site_meta(site_id)
     folder = (folder or "Analytics").strip().strip("/")
-    try:
-        await ms_graph.graph_request(
-            "POST",
-            f"/sites/{sid}/drive/root/children",
-            json_body={
-                "name": folder,
-                "folder": {},
-                "@microsoft.graph.conflictBehavior": "fail",
-            },
-        )
-    except Exception:
-        logger.info("%s folder may already exist", folder)
+    # Graph folder "name" cannot contain '/'. Create nested paths segment-by-segment
+    # (e.g. Documents/Generated) so Doc Author uploads succeed reliably.
+    await _ensure_site_folder_path(sid, folder)
 
     safe = "".join(ch if ch.isalnum() or ch in ".-_" else "-" for ch in filename)[:80]
     path = quote(f"/{folder}/{safe}", safe="/")

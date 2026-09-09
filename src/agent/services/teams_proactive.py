@@ -156,7 +156,9 @@ async def try_send_proactive_teams_message(session_id: str, text: str) -> bool:
 
         service_url = getattr(reference, "service_url", None)
         if service_url:
-            from botbuilder.core import MicrosoftAppCredentials
+            # botbuilder.core no longer re-exports this — connector.auth is the
+            # supported location (wrong import silently blocked all Orbit pushes).
+            from botframework.connector.auth import MicrosoftAppCredentials
 
             MicrosoftAppCredentials.trust_service_url(service_url)
         await adapter.continue_conversation(reference, _logic, app_id)

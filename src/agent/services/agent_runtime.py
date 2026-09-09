@@ -312,7 +312,17 @@ def format_orchestration_status(session: dict[str, Any]) -> str:
 
 
 def infer_agent_key_from_message(message: str) -> str:
+    import re
+
     msg = (message or "").lower()
+    # Doc Author / Knowledge first — "prepare document for cost …" must not
+    # sticky-queue under Azure FinOps (cost/subscription keywords).
+    if re.search(
+        r"(?:prepare|create|write|generate|draft|produce)\s+(?:an?\s+)?(?:\w+\s+){0,4}?"
+        r"(?:document|report|docx|write-?up|brief|memo)",
+        msg,
+    ) or any(k in msg for k in ("sharepoint", "ingest", "ask docs", "list my document")):
+        return "list_docs"
     if any(
         k in msg
         for k in (

@@ -94,3 +94,10 @@ def test_conversation_reference_roundtrip_keeps_service_url():
     data = teams_proactive._reference_to_dict(ref)
     restored = teams_proactive._reference_from_dict(data)
     assert restored.service_url == "https://smba.trafficmanager.net/in/"
+
+
+def test_microsoft_app_credentials_import_for_proactive():
+    """Regression: wrong botbuilder.core import broke all Orbit background pushes."""
+    from botframework.connector.auth import MicrosoftAppCredentials
+
+    assert hasattr(MicrosoftAppCredentials, "trust_service_url")
