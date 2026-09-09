@@ -371,6 +371,7 @@ async def _show_costs(state: AgentState, *, phone: str, sub: dict) -> AgentState
             user_note=by_rg.get("user_note"),
         )
     ]
+    by_svc: dict = {"rows": [], "ok": False}
     # Avoid a second Cost Management call when already throttled.
     if by_rg.get("error_kind") != "throttled":
         by_svc = await azure_finops.query_costs_result(sid, group_by="ServiceName")
@@ -388,7 +389,11 @@ async def _show_costs(state: AgentState, *, phone: str, sub: dict) -> AgentState
     await save_session(
         phone,
         awaiting=AWAITING_ACTION,
-        data={"azure_finops_sub": sub},
+        data={
+            "azure_finops_sub": sub,
+            "azure_finops_last_costs_rg": list(by_rg.get("rows") or []),
+            "azure_finops_last_costs_svc": list(by_svc.get("rows") or []),
+        },
         merge_data=True,
     )
     return {
@@ -419,7 +424,12 @@ async def _show_recommendations(
     await save_session(
         phone,
         awaiting=AWAITING_ACTION,
-        data={"azure_finops_sub": sub},
+        data={
+            "azure_finops_sub": sub,
+            "azure_finops_last_costs_rg": cost_by_rg,
+            "azure_finops_last_costs_res": cost_by_res,
+            "azure_finops_last_recs": recs,
+        },
         merge_data=True,
     )
     return {

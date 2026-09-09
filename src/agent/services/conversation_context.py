@@ -30,6 +30,47 @@ PAUSABLE_AWAITINGS = frozenset(
         "meeting_title",
         "meeting_when",
         "meeting_attendees",
+        "azure_finops_sub_pick",
+        "azure_finops_action_pick",
+        "azure_finops_rg_pick",
+        "azure_finops_mutate_plan",
+    }
+)
+
+# Session data keys restored with a paused step (pick lists / wizard state).
+_SNAPSHOT_DATA_KEYS = frozenset(
+    {
+        "active_workspace",
+        "doc_catalog",
+        "doc_page",
+        "doc_list",
+        "projects",
+        "repos",
+        "project_list",
+        "repo_list",
+        "azdo_project",
+        "azdo_repo_id",
+        "pending_code_instruction",
+        "boards_projects",
+        "boards_tickets",
+        "boards_project",
+        "meeting_list",
+        "meeting_page",
+        "selected_meetings",
+        "finops_subscriptions",
+        "finops_subscription_id",
+        "finops_rgs",
+        "finops_plan_id",
+        "finops_action",
+        "azure_finops_sub",
+        "azure_finops_subs",
+        "azure_finops_rgs",
+        "azure_finops_plan",
+        "azure_finops_mutable",
+        "azure_finops_last_costs_rg",
+        "azure_finops_last_costs_svc",
+        "azure_finops_last_costs_res",
+        "azure_finops_last_recs",
     }
 )
 
@@ -49,11 +90,19 @@ _AWAITING_LABELS = {
     "meeting_title": "Calendar meeting title",
     "meeting_when": "Calendar meeting time",
     "meeting_attendees": "Calendar meeting attendees",
+    "azure_finops_sub_pick": "Azure FinOps subscription pick",
+    "azure_finops_action_pick": "Azure FinOps action menu",
+    "azure_finops_rg_pick": "Azure FinOps resource group pick",
+    "azure_finops_mutate_plan": "Azure FinOps change plan",
 }
 
 
 def label_for_awaiting(awaiting: str | None) -> str:
     return _AWAITING_LABELS.get(awaiting or "", awaiting or "conversation")
+
+
+def _snapshot_data(data: dict[str, Any]) -> dict[str, Any]:
+    return {k: data[k] for k in _SNAPSHOT_DATA_KEYS if k in data and data[k] is not None}
 
 
 async def pause_current_context(phone: str | None, *, reason: str = "") -> dict[str, Any] | None:
@@ -74,10 +123,12 @@ async def pause_current_context(phone: str | None, *, reason: str = "") -> dict[
     stack: list[dict[str, Any]] = list(data.get("paused_contexts") or [])
     entry = {
         "awaiting": awaiting,
+        "provider": session.get("provider") or "",
         "workspace": (data.get("active_workspace") or "general"),
         "label": label_for_awaiting(awaiting),
         "reason": (reason or "")[:120],
         "saved_at": time.time(),
+        "data_snapshot": _snapshot_data(data),
     }
     stack.append(entry)
     data["paused_contexts"] = stack[-_MAX_STACK:]
@@ -164,17 +215,24 @@ async def resume_previous_context(phone: str | None) -> dict[str, Any] | None:
     awaiting = entry.get("awaiting")
     workspace = entry.get("workspace") or "general"
     label = entry.get("label") or label_for_awaiting(awaiting)
+    provider = entry.get("provider") or ""
+    snap = dict(entry.get("data_snapshot") or {})
 
-    await save_session(
-        phone,
-        awaiting=awaiting,
-        data={
-            "paused_contexts": stack,
-            "active_workspace": workspace,
-        },
-        merge_data=True,
-    )
-    logger.info("Resumed context phone=%s awaiting=%s", phone, awaiting)
+    restore_data: dict[str, Any] = {
+        "paused_contexts": stack,
+        "active_workspace": workspace,
+        **snap,
+    }
+    save_kwargs: dict[str, Any] = {
+        "awaiting": awaiting,
+        "data": restore_data,
+        "merge_data": True,
+    }
+    if provider:
+        save_kwargs["provider"] = provider
+
+    await save_session(phone, **save_kwargs)
+    logger.info("Resumed context phone=%s awaiting=%s provider=%s", phone, awaiting, provider)
 
     hint = _resume_instruction(awaiting)
     return {
@@ -203,4 +261,6 @@ def _resume_instruction(awaiting: str | None) -> str:
         return "Reply with the Azure Boards project number or name."
     if awaiting == "boards_ticket_pick":
         return "Reply with the work item number to start Dev on that ticket."
+    if awaiting and awaiting.startswith("azure_finops"):
+        return "Continue Azure FinOps — reply with a pick or say *menu* for options."
     return "Continue where you left off, or say *help* for commands."

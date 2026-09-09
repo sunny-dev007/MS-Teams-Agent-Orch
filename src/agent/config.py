@@ -53,18 +53,21 @@ class Settings(BaseSettings):
     azure_openai_endpoint: str = ""
     azure_openai_api_key: SecretStr = SecretStr("")
     openai_api_key: SecretStr = SecretStr("")
-    azure_openai_deployment: str = "gpt-4o"
+    azure_openai_deployment: str = "gpt-4o-mini"
     azure_openai_api_version: str = "2024-10-21"
-    # Optional stronger models for planning / PR review (e.g. gpt-4.1); falls back to deployment above
+    # Optional stronger models for planning / PR review; empty = use azure_openai_deployment
     azure_openai_planning_deployment: str = ""
     azure_openai_review_deployment: str = ""
-    # Doc Knowledge RAG / Insights — prefer high-quality Foundry chat deployment
+    # Doc Knowledge RAG / Insights — empty = fall back to planning / default
     azure_openai_rag_deployment: str = ""
     # Comma-separated fallback deployments when primary hits rate limits (see Azure AI Foundry)
     azure_openai_fallback_deployments: str = ""
     azure_openai_planning_fallbacks: str = ""
     azure_openai_review_fallbacks: str = ""
     azure_openai_rag_fallbacks: str = ""
+    # Orbit-only LLM upgrades (AI Dev Agent / Copilot Studio ignore these)
+    orbit_chat_deployment: str = "gpt-4o"
+    orbit_doc_deployment: str = "gpt-4.1"
     llm_max_retries_per_deployment: int = 2
     llm_retry_base_delay_sec: float = 1.5
 

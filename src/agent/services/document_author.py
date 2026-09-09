@@ -60,13 +60,17 @@ def document_filenames(title: str) -> tuple[str, str]:
 
 
 async def generate_markdown(topic: str, *, conversation_context: str = "") -> tuple[str, str]:
+    from agent.services.orbit_turn import is_orbit_surface
+
+    # Orbit gets gpt-4.1 via doc_author role; Copilot Studio keeps shared default model.
+    role = "doc_author" if is_orbit_surface() else "default"
     user_parts = [f"Document request:\n{topic}"]
     if conversation_context:
         user_parts.append(f"\nRecent conversation context (use if relevant):\n{conversation_context[:3000]}")
     response = await invoke_llm(
         [SystemMessage(content=_SYSTEM), HumanMessage(content="\n".join(user_parts))],
         temperature=0.3,
-        role="default",
+        role=role,
     )
     md = (response.content or "").strip()
     if not md:
@@ -122,11 +126,100 @@ async def create_sharepoint_document(
     message: str,
     *,
     conversation_context: str = "",
+    session_data: dict[str, Any] | None = None,
+    channel_surface: str = "",
 ) -> dict[str, Any]:
     if not ms_graph.doc_knowledge_ready():
         raise RuntimeError(
             "Microsoft Graph / SharePoint is not configured for document publishing."
         )
+    data = session_data or {}
+    surface = (channel_surface or str(data.get("channel_surface") or "")).strip().lower()
+
+    # Orbit-only: FinOps cost / optimisation DOCX with charts + live Cost Management.
+    # Copilot Studio (AI Dev Agent) keeps the previous generic author path unchanged.
+    if surface == "orbit":
+        from agent.services import finops_document
+
+        if finops_document.wants_finops_cost_report(message, session_data=data):
+            return await _create_orbit_finops_document(message, session_data=data)
+
     topic = extract_topic(message)
     title, markdown = await generate_markdown(topic, conversation_context=conversation_context)
     return await publish_document(title, markdown)
+
+
+async def _create_orbit_finops_document(
+    message: str,
+    *,
+    session_data: dict[str, Any],
+) -> dict[str, Any]:
+    """Orbit FinOps report — isolated path; never used by Copilot Studio."""
+    from agent.services import finops_document
+
+    if not settings.enable_azure_finops_agent:
+        raise RuntimeError(
+            "Azure FinOps Agent is disabled. Enable ENABLE_AZURE_FINOPS_AGENT to "
+            "author cost-optimisation documents from live spend data."
+        )
+    if not azure_finops_ready_safe():
+        raise RuntimeError(
+            "Azure ARM / Cost Management credentials are not configured for FinOps reports."
+        )
+
+    bundle = await finops_document.gather_finops_bundle(session_data=session_data)
+    narrative = await finops_document.polish_narrative(bundle, message)
+    markdown = finops_document.build_markdown(bundle, narrative=narrative)
+    charts = finops_document.render_charts(bundle)
+    title = "Cost Optimisation Recommendations"
+
+    target = (settings.doc_author_folder or "Documents/Generated").strip().strip("/")
+    md_name, docx_name = document_filenames(title)
+
+    md_entry = await graph_docs.upload_site_drive_item(
+        folder=target,
+        filename=md_name,
+        content=markdown.encode("utf-8"),
+        content_type="text/markdown; charset=utf-8",
+    )
+    md_url = (md_entry or {}).get("web_url") or ""
+
+    docx_bytes = finops_document.render_finops_docx(bundle, markdown, charts)
+    if not docx_bytes:
+        docx_bytes = render_docx_bytes(
+            {"title": title, "executive_summary": narrative[:400]},
+            markdown,
+            plan_kind="action",
+        )
+    docx_url = ""
+    if docx_bytes:
+        docx_entry = await graph_docs.upload_site_drive_item(
+            folder=target,
+            filename=docx_name,
+            content=docx_bytes,
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+        docx_url = (docx_entry or {}).get("web_url") or ""
+
+    return {
+        "title": title,
+        "folder": target,
+        "md_url": md_url,
+        "docx_url": docx_url,
+        "md_filename": md_name,
+        "docx_filename": docx_name,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "report_kind": "orbit_finops_cost",
+        "charts": sorted(charts.keys()),
+        "currency": bundle.get("currency"),
+        "total_cost": bundle.get("total"),
+    }
+
+
+def azure_finops_ready_safe() -> bool:
+    try:
+        from agent.services.azure_finops import azure_finops_ready
+
+        return bool(azure_finops_ready())
+    except Exception:
+        return False

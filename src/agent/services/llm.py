@@ -19,6 +19,8 @@ _DEFAULT_PLANNING_FALLBACKS = ("gpt-4.1", "gpt-4o", "gpt-4", "gpt-5")
 _DEFAULT_REVIEW_FALLBACKS = ("gpt-4.1", "gpt-4o", "gpt-4", "gpt-5")
 _DEFAULT_RAG_FALLBACKS = ("gpt-4.1", "gpt-5", "gpt-4o", "gpt-4", "gpt-4.1-mini")
 _DEFAULT_FALLBACKS = ("gpt-4o", "gpt-4.1", "gpt-4", "gpt-5", "gpt-4.1-mini")
+# Authored DOCX / FinOps reports: gpt-4.1 first, then gpt-4o (matches AI Dev Agent quality).
+_DEFAULT_DOC_AUTHOR_FALLBACKS = ("gpt-4.1", "gpt-4o", "gpt-4", "gpt-5", "gpt-4o-mini")
 
 _RATE_LIMIT_RE = re.compile(
     r"(rate.?limit|too_many_requests|429|quota|capacity|throttl)",
@@ -35,9 +37,32 @@ def _parse_deployments(raw: str) -> list[str]:
 
 
 def deployment_chain(*, role: str = "default") -> list[str]:
-    """Ordered deployments to try for a role (primary first, then fallbacks)."""
+    """Ordered deployments to try for a role (primary first, then fallbacks).
+
+    Orbit Teams Bot can use ORBIT_CHAT_DEPLOYMENT / ORBIT_DOC_DEPLOYMENT without
+    changing Copilot Studio (AI Dev Agent) shared AZURE_OPENAI_* defaults.
+    """
+    from agent.services.orbit_turn import is_orbit_surface
+
+    orbit = is_orbit_surface()
     primary = settings.azure_openai_deployment
-    if role == "planning" and settings.azure_openai_planning_deployment:
+
+    if orbit and role in ("doc_author", "planning", "rag", "review"):
+        primary = (
+            (settings.orbit_doc_deployment or "").strip()
+            or settings.azure_openai_planning_deployment
+            or settings.azure_openai_rag_deployment
+            or "gpt-4.1"
+        )
+        fallbacks = _parse_deployments(settings.azure_openai_planning_fallbacks)
+        if not fallbacks:
+            fallbacks = list(_DEFAULT_DOC_AUTHOR_FALLBACKS)
+    elif orbit and role == "default":
+        primary = (settings.orbit_chat_deployment or "").strip() or "gpt-4o"
+        fallbacks = _parse_deployments(settings.azure_openai_fallback_deployments)
+        if not fallbacks:
+            fallbacks = list(_DEFAULT_FALLBACKS)
+    elif role == "planning" and settings.azure_openai_planning_deployment:
         primary = settings.azure_openai_planning_deployment
         fallbacks = _parse_deployments(settings.azure_openai_planning_fallbacks)
         if not fallbacks:
@@ -53,7 +78,6 @@ def deployment_chain(*, role: str = "default") -> list[str]:
         if not fallbacks:
             fallbacks = list(_DEFAULT_RAG_FALLBACKS)
     elif role == "rag":
-        # Prefer planning-quality model when dedicated RAG deployment unset
         primary = (
             settings.azure_openai_rag_deployment
             or settings.azure_openai_planning_deployment
@@ -70,6 +94,16 @@ def deployment_chain(*, role: str = "default") -> list[str]:
         fallbacks = _parse_deployments(settings.azure_openai_planning_fallbacks)
         if not fallbacks:
             fallbacks = list(_DEFAULT_PLANNING_FALLBACKS)
+    elif role == "doc_author":
+        # Non-Orbit Doc Author: keep shared default deployment (no forced gpt-4.1).
+        primary = (
+            settings.azure_openai_planning_deployment
+            or settings.azure_openai_rag_deployment
+            or settings.azure_openai_deployment
+        )
+        fallbacks = _parse_deployments(settings.azure_openai_fallback_deployments)
+        if not fallbacks:
+            fallbacks = list(_DEFAULT_FALLBACKS)
     else:
         fallbacks = _parse_deployments(settings.azure_openai_fallback_deployments)
         if not fallbacks:

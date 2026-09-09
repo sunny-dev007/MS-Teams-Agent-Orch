@@ -122,14 +122,25 @@ async def handle_channel_message(parsed: dict, source: str = "whatsapp") -> None
 
     try:
         from agent.agents.graph import run_graph
+        from agent.core.session import get_session
+        from agent.services.orbit_turn import channel_surface_scope
 
-        await run_graph(
-            task_id=task_id,
-            source=channel_source,
-            user_message=message,
-            whatsapp_phone=phone,
-            attachments=attachments or None,
-        )
+        surface = ""
+        try:
+            sess = await get_session(phone)
+            surface = str((sess.get("data") or {}).get("channel_surface") or "")
+        except Exception:
+            surface = ""
+
+        # Propagate orbit|copilot so Orbit-only LLM upgrades apply inside the graph.
+        with channel_surface_scope(surface):
+            await run_graph(
+                task_id=task_id,
+                source=channel_source,
+                user_message=message,
+                whatsapp_phone=phone,
+                attachments=attachments or None,
+            )
     except Exception as exc:
         logger.exception("Task %s failed", task_id)
         try:

@@ -185,6 +185,25 @@ class OrbitTeamsBot:
         is_cancel = is_cancel_session_message(text)
 
         try:
+            from agent.core.session import save_session
+
+            # Mark Orbit surface so Doc Author can use FinOps cost-pack path
+            # without changing Copilot Studio (AI Dev Agent) behaviour.
+            await save_session(
+                session_id,
+                data={
+                    "channel": "teams",
+                    "channel_surface": "orbit",
+                    "teams_user_id": aad_id,
+                    "teams_conversation_id": conversation_id or "",
+                    "display_name": display_name or "",
+                },
+                merge_data=True,
+            )
+        except Exception:
+            logger.exception("Orbit failed marking channel_surface session=%s", session_id)
+
+        try:
             from agent.services.teams_proactive import save_conversation_reference
 
             await save_conversation_reference(session_id, activity)
@@ -213,7 +232,9 @@ class OrbitTeamsBot:
             from agent.services.orbit_turn import orbit_turn
 
             with orbit_turn():
-                result = await _handle_copilot_message(body, session_id)
+                result = await _handle_copilot_message(
+                    body, session_id, channel_surface="orbit"
+                )
         except Exception:
             logger.exception("Orbit pipeline failed session=%s", session_id)
             await turn_context.send_activity(

@@ -179,7 +179,23 @@ def _safe_session_status(session: dict[str, Any]) -> str:
 
 
 async def _handle_copilot_message(
-    body: CopilotMessageRequest, session_id: str
+    body: CopilotMessageRequest,
+    session_id: str,
+    *,
+    channel_surface: str = "copilot",
+) -> CopilotMessageResponse:
+    from agent.services.orbit_turn import channel_surface_scope
+
+    surface = (channel_surface or "copilot").strip().lower() or "copilot"
+    with channel_surface_scope(surface):
+        return await _handle_copilot_message_inner(body, session_id, surface=surface)
+
+
+async def _handle_copilot_message_inner(
+    body: CopilotMessageRequest,
+    session_id: str,
+    *,
+    surface: str,
 ) -> CopilotMessageResponse:
     from agent.core.channel_outbox import drain_outbox
     from agent.core.session import get_session, save_session
@@ -191,6 +207,7 @@ async def _handle_copilot_message(
             session_id,
             data={
                 "channel": "teams",
+                "channel_surface": surface,
                 "teams_user_id": body.user_id,
                 "teams_conversation_id": body.conversation_id or "",
                 "display_name": body.display_name or "",
@@ -297,8 +314,9 @@ async def _handle_copilot_message(
     adaptive_card = _teams_adaptive_card_for_message(message, session)
 
     logger.info(
-        "Copilot message session=%s awaiting=%s pending=%s card=%s",
+        "Copilot message session=%s surface=%s awaiting=%s pending=%s card=%s",
         session_id,
+        surface,
         gate,
         len(pending),
         bool(adaptive_card),
