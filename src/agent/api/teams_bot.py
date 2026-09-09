@@ -478,6 +478,8 @@ async def teams_bot_diagnostics() -> dict[str, Any]:
 
     recent = list(_turn_events[-10:])
     failures = sum(1 for e in recent if not e.get("ok"))
+    from agent.services.teams_proactive import proactive_credentials_probe
+
     return {
         "status": "ok" if teams_bot_enabled() and password_configured and adapter_ok else "error",
         "enabled": teams_bot_enabled(),
@@ -499,6 +501,7 @@ async def teams_bot_diagnostics() -> dict[str, Any]:
         "orbit_outbox_flush_seconds": int(
             getattr(settings, "orbit_outbox_flush_seconds", 20) or 20
         ),
+        "proactive_credentials": proactive_credentials_probe(),
         "recent_turns": recent,
         "recent_failure_count": failures,
         "hint": (

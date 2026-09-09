@@ -98,6 +98,13 @@ def test_conversation_reference_roundtrip_keeps_service_url():
 
 def test_microsoft_app_credentials_import_for_proactive():
     """Regression: wrong botbuilder.core import broke all Orbit background pushes."""
-    from botframework.connector.auth import MicrosoftAppCredentials
+    from agent.services.teams_proactive import (
+        proactive_credentials_probe,
+        resolve_microsoft_app_credentials,
+    )
 
-    assert hasattr(MicrosoftAppCredentials, "trust_service_url")
+    cls = resolve_microsoft_app_credentials()
+    assert hasattr(cls, "trust_service_url")
+    probe = proactive_credentials_probe()
+    assert probe["ok"] is True
+    assert probe["has_trust_service_url"] is True

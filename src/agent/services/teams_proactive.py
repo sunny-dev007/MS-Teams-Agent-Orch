@@ -113,6 +113,44 @@ async def load_conversation_reference(session_id: str) -> dict[str, Any] | None:
         return None
 
 
+def resolve_microsoft_app_credentials():
+    """Resolve MicrosoftAppCredentials across botbuilder package layouts.
+
+    Newer botbuilder builds no longer re-export this from ``botbuilder.core``.
+    Prefer ``botframework.connector.auth``, fall back to core for older installs.
+    """
+    try:
+        from botframework.connector.auth import MicrosoftAppCredentials
+
+        return MicrosoftAppCredentials
+    except ImportError:
+        from botbuilder.core import MicrosoftAppCredentials
+
+        return MicrosoftAppCredentials
+
+
+def proactive_credentials_probe() -> dict[str, Any]:
+    """Safe diagnostics probe — no secrets, no network."""
+    try:
+        cls = resolve_microsoft_app_credentials()
+        return {
+            "ok": True,
+            "module": getattr(cls, "__module__", ""),
+            "has_trust_service_url": hasattr(cls, "trust_service_url"),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error": f"{type(exc).__name__}: {exc}"[:200],
+            "has_trust_service_url": False,
+        }
+
+
+def _trust_bot_service_url(service_url: str) -> None:
+    cls = resolve_microsoft_app_credentials()
+    cls.trust_service_url(service_url)
+
+
 async def try_send_proactive_teams_message(session_id: str, text: str) -> bool:
     """Push text to Teams via continue_conversation. Returns True if delivered."""
     if not session_id or not text or not _teams_bot_live():
@@ -156,11 +194,7 @@ async def try_send_proactive_teams_message(session_id: str, text: str) -> bool:
 
         service_url = getattr(reference, "service_url", None)
         if service_url:
-            # botbuilder.core no longer re-exports this — connector.auth is the
-            # supported location (wrong import silently blocked all Orbit pushes).
-            from botframework.connector.auth import MicrosoftAppCredentials
-
-            MicrosoftAppCredentials.trust_service_url(service_url)
+            _trust_bot_service_url(service_url)
         await adapter.continue_conversation(reference, _logic, app_id)
         logger.info(
             "Orbit proactive send ok session=%s chars=%s",
